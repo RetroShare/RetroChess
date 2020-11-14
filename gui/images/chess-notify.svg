@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   id="svg4155"
+   version="1.1"
+   inkscape:version="0.92.3 (2405546, 2018-03-11)"
+   xml:space="preserve"
+   width="80"
+   height="80"
+   viewBox="0 0 80 80"
+   sodipodi:docname="chess-notify.svg"
+   inkscape:export-filename="C:\Users\Mustermann\Documents\GitHub\NewRetroChess\gui\images\chess-notify.png"
+   inkscape:export-xdpi="153"
+   inkscape:export-ydpi="153"><metadata
+     id="metadata4161"><rdf:RDF><cc:Work
+         rdf:about=""><dc:format>image/svg+xml</dc:format><dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" /><dc:title></dc:title></cc:Work></rdf:RDF></metadata><defs
+     id="defs4159" /><sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1152"
+     inkscape:window-height="801"
+     id="namedview4157"
+     showgrid="false"
+     inkscape:zoom="5.11875"
+     inkscape:cx="27.545788"
+     inkscape:cy="38.742614"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="g4163"><inkscape:grid
+       type="xygrid"
+       id="grid4140" /></sodipodi:namedview><g
+     id="g4163"
+     inkscape:groupmode="layer"
+     inkscape:label="ink_ext_XXXXXX"
+     transform="matrix(1.25,0,0,-1.25,0,80)"><path
+       inkscape:connector-curvature="0"
+       style="fill:#ff990d;fill-opacity:1;stroke-width:1.31012201"
+       d="m 53.830301,9.6423264 c 0,-0.9613681 -0.779391,-1.7407592 -1.740757,-1.7407592 H 12.864529 c -0.961355,0 -1.74076,0.7793911 -1.74076,1.7407592 v 3.7136066 c 0,0.961368 0.779405,1.740759 1.74076,1.740759 h 39.225015 c 0.961366,0 1.740757,-0.779391 1.740757,-1.740759 z M 60.982717,39.644815 53.43944,20.380454 c -0.261108,-0.667049 -0.90426,-1.10619 -1.620752,-1.10619 H 13.522066 c -0.709995,0 -1.348732,0.430782 -1.614254,1.089249 L 4.1324342,39.627875 c -0.3093852,0.766395 -0.037077,1.644662 0.6517334,2.101908 0.6884166,0.456538 1.6033534,0.366951 2.189882,-0.215856 l 9.4423114,-9.38523 3.00107,8.82679 c 0.174076,0.512022 0.576075,0.91402 1.088082,1.088096 0.512718,0.173604 1.076017,0.100216 1.525598,-0.199847 l 5.845228,-3.89697 2.445408,8.522043 c -2.048519,0.871545 -3.488475,2.904278 -3.488475,5.267292 0,3.154721 2.566568,5.721054 5.721053,5.721054 3.154486,0 5.72129,-2.566568 5.72129,-5.721054 0,-2.363014 -1.44019,-4.395747 -3.488709,-5.267292 l 2.426843,-8.457048 5.74774,3.831975 c 0.449582,0.299874 1.01266,0.373687 1.525599,0.199847 0.511787,-0.174076 0.91402,-0.57585 1.088083,-1.088096 l 3.030547,-8.913126 9.52912,9.471331 c 0.584198,0.580253 1.494496,0.67217 2.182218,0.220729 0.688182,-0.451207 0.96577,-1.32321 0.665661,-2.089606 z m -22.760961,-5.144968 2.852988,-9.942266 4.782666,4.753648 -2.849031,8.379763 z m -19.057323,-5.102505 4.869476,-4.839996 2.834409,9.877507 -4.884082,3.256139 z"
+       id="path3" /></g></svg>
