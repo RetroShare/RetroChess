@@ -19,7 +19,11 @@ Then restart your RetroShare. You'll see a chess logo in your chat dialog's tool
 
 send a invite in chat dialog with your friend (peer mode only now TuT)
 
+# Screenshot:
+
+![Screenshot](https://github.com/RetroShare/RetroChess/blob/main/screenshot/screenshot.png)
 
 #  extra info
 based on: https://github.com/Texas-C/RetroChess
+
 based on: https://github.com/chozabu/RetroChess
