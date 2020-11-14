@@ -3,9 +3,6 @@
 this is a combination of an existing chess game, and the exampleplugin (rename script makes it easy to use as base for new plugin)
 based on https://github.com/RetroShare/ExampleRSPlugin
 
-
-~~Both players must currently select each other and press "play game" - ensure your friend has their chess window open before making a move!~~
-
 # build & install:
 
 put/clone `RetroChess` to `RetroShare/plugins/` recommend
