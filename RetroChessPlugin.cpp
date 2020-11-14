@@ -109,13 +109,8 @@ QDialog *RetroChessPlugin::qt_about_page() const
 		about_dialog = new QMessageBox() ;
 
 		QString text ;
-		text += QObject::tr("<h3>RetroShare RetroChess plugin</h3><br/>   * Contributors: Cyril Soler, Josselin Jacquard<br/>") ;
-		text += QObject::tr("<br/>The RetroChess plugin adds RetroChess to the private chat window of RetroShare. to use it, proceed as follows:<UL>") ;
-		text += QObject::tr("<li> setup microphone levels using the configuration panel</li>") ;
-		text += QObject::tr("<li> check your microphone by looking at the VU-metters</li>") ;
-		text += QObject::tr("<li> in the private chat, enable sound input/output by clicking on the two RetroChess icons</li></ul>") ;
-		text += QObject::tr("Your friend needs to run the plugin to talk/listen to you, or course.") ;
-		text += QObject::tr("<br/><br/>This is an experimental feature. Don't hesitate to send comments and suggestion to the RS dev team.") ;
+		text += QObject::tr("<h3>RetroShare RetroChess plugin</h3><br/>  *Contributors:  Chozabu,Texas-C<br/>") ;
+		text += QObject::tr("<br/>The RetroChess plugin adds RetroChess to the private chat window of RetroShare.<UL>") ;
 
 		about_dialog->setText(text) ;
 		about_dialog->setStandardButtons(QMessageBox::Ok) ;
