@@ -1,7 +1,6 @@
 # RetroShare 0.6 Chess Plugin
 
-this is a combination of an existing chess game, and the exampleplugin (rename script makes it easy to use as base for new plugin)
-based on https://github.com/RetroShare/ExampleRSPlugin
+This is a Chess plugin, to play with your RetroShare Friends
 
 # build & install:
 
@@ -13,11 +12,12 @@ put/clone `RetroChess` to `RetroShare/plugins/` recommend
 	qmake ..
 	make 
 
+Copy your RetroChess.dll to "Data/extensions6" (Windows)
 Then restart your RetroShare. You'll see a chess logo in your chat dialog's tool-bar or home's tool-bar.
 
 # Usage:
 
-send a invite in chat dialog with your friend (peer mode only now TuT)
+Send a invite in chat dialog with your friend (peer mode only )
 
 # Screenshot:
 
