@@ -39,32 +39,27 @@ QMAKE_CXXFLAGS *= -Wall
 SOURCES = RetroChessPlugin.cpp               \
           services/p3RetroChess.cc           \
           services/rsRetroChessItems.cc \
-    gui/NEMainpage.cpp \
-    gui/RetroChessNotify.cpp \
-    gui/chess.cpp \
-    gui/tile.cpp \
-    gui/validation.cpp \
-    gui/RetroChessChatWidgetHolder.cpp
+          gui/NEMainpage.cpp \
+          gui/RetroChessNotify.cpp \
+          gui/chess.cpp \
+          gui/tile.cpp \
+          gui/validation.cpp \
+          gui/RetroChessChatWidgetHolder.cpp
 
 HEADERS = RetroChessPlugin.h                 \
           services/p3RetroChess.h            \
           services/rsRetroChessItems.h       \
           interface/rsRetroChess.h \
-    gui/NEMainpage.h \
-    gui/RetroChessNotify.h \
-    gui/tile.h \
-    gui/validation.h \
-    gui/chess.h \
-    gui/RetroChessChatWidgetHolder.h
-
-#FORMS   = gui/AudioInputConfig.ui
+          gui/NEMainpage.h \
+          gui/RetroChessNotify.h \
+          gui/tile.h \
+          gui/validation.h \
+          gui/chess.h \
+          gui/RetroChessChatWidgetHolder.h
 
 TARGET = RetroChess
 
 RESOURCES = gui/RetroChess_images.qrc
-
-
-#LIBS += -lspeex -lspeexdsp
 
 FORMS += \
     gui/NEMainpage.ui \
