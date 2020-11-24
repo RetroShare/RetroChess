@@ -18,22 +18,22 @@
  *                                                                             *
  *******************************************************************************/
 
-#include <retroshare/rsplugin.h>
-#include <retroshare/rsversion.h>
-#include <retroshare-gui/RsAutoUpdatePage.h>
 #include <QTranslator>
 #include <QApplication>
 #include <QString>
 #include <QIcon>
 #include <QMessageBox>
-#include "gui/chat/ChatWidget.h"
 
+#include "gui/chat/ChatWidget.h"
 #include "RetroChessPlugin.h"
 #include "interface/rsRetroChess.h"
 #include "gui/NEMainpage.h"
 #include "gui/RetroChessNotify.h"
 #include "gui/RetroChessChatWidgetHolder.h"
+#include <retroshare-gui/RsAutoUpdatePage.h>
 
+#include <retroshare/rsplugin.h>
+#include <retroshare/rsversion.h>
 
 #define IMAGE_RetroChess ":/images/chess.png"
 

@@ -13,6 +13,7 @@ exists($$[QMAKE_MKSPECS]/features/mobility.prf) {
 CONFIG += qt uic qrc resources
 MOBILITY = multimedia
 DESTDIR = lib
+TARGET = RetroChess
 
 DEPENDPATH += ../../retroshare-gui/src/temp/ui ../../libretroshare/src
 INCLUDEPATH += ../../retroshare-gui/src/temp/ui ../../libretroshare/src
@@ -24,15 +25,10 @@ INCLUDEPATH += ../../rapidjson-1.1.0
 
 linux-* {
 	#INCLUDEPATH += /usr/include
-	#LIBS += $$system(pkg-config --libs opencv)
 }
 
 win32 {
 	LIBS_DIR = $$PWD/../../../libs
-	#LIBS += -L"$$LIBS_DIR/lib/opencv"
-
-	#OPENCV_VERSION = 249
-	#LIBS += -lopencv_core$$OPENCV_VERSION -lopencv_highgui$$OPENCV_VERSION -lopencv_imgproc$$OPENCV_VERSION -llibjpeg -llibtiff -llibpng -llibjasper -lIlmImf -lole32 -loleaut32 -luuid -lavicap32 -lavifil32 -lvfw32 -lz
 }
 
 QMAKE_CXXFLAGS *= -Wall
@@ -58,10 +54,8 @@ HEADERS = RetroChessPlugin.h                 \
           gui/chess.h \
           gui/RetroChessChatWidgetHolder.h
 
-TARGET = RetroChess
+FORMS += \
+          gui/NEMainpage.ui \
+          gui/chess.ui
 
 RESOURCES = gui/RetroChess_images.qrc
-
-FORMS += \
-    gui/NEMainpage.ui \
-    gui/chess.ui
