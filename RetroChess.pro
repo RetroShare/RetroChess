@@ -15,23 +15,27 @@ MOBILITY = multimedia
 DESTDIR = lib
 TARGET = RetroChess
 
-DEPENDPATH += ../../retroshare-gui/src/temp/ui ../../libretroshare/src
+DEPENDPATH  += ../../retroshare-gui/src/temp/ui ../../libretroshare/src
 INCLUDEPATH += ../../retroshare-gui/src/temp/ui ../../libretroshare/src
 INCLUDEPATH += ../../retroshare-gui/src/retroshare-gui
 
 INCLUDEPATH += ../../rapidjson-1.1.0
 
-#################################### Windows #####################################
+#################################### Linux ########################################
 
 linux-* {
 	#INCLUDEPATH += /usr/include
 }
 
+#################################### Windows #####################################
+
 win32 {
 	LIBS_DIR = $$PWD/../../../libs
 }
 
-QMAKE_CXXFLAGS *= -Wall
+	QMAKE_CXXFLAGS *= -Wall
+
+################################### HEADERS & SOURCES #############################
 
 SOURCES = RetroChessPlugin.cpp               \
           services/p3RetroChess.cc           \
