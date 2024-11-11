@@ -73,6 +73,7 @@ public:
 
 	virtual ~RsRetroChessItem() {};
 	virtual void clear() {};
+	virtual void serial_process(RsGenericSerializer::SerializeJob, RsGenericSerializer::SerializeContext&) {}
 	virtual std::ostream& print(std::ostream &out, uint16_t indent = 0) = 0 ;
 
 	virtual bool serialise(void *data,uint32_t& size) = 0 ;	// Isn't it better that items can serialise themselves ?
