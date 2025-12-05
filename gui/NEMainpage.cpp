@@ -25,7 +25,7 @@
 #include "interface/rsRetroChess.h"
 #include "services/rsRetroChessItems.h"
 #include "retroshare/rsservicecontrol.h"
-#include "gui/notifyqt.h"
+//#include "gui/notifyqt.h"
 #include <qjsondocument.h>
 #include <qtreewidget.h>
 
@@ -60,7 +60,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui->friendSelectionWidget->setShowType(FriendSelectionWidget::SHOW_SSL);
 
 	connect(ui->friendSelectionWidget, SIGNAL(contentChanged()), this, SLOT(on_filterPeersButton_clicked()));
-	connect(NotifyQt::getInstance(), SIGNAL(peerStatusChanged(const QString&,int)), this, SLOT(on_filterPeersButton_clicked()));
+	//connect(NotifyQt::getInstance(), SIGNAL(peerStatusChanged(const QString&,int)), this, SLOT(on_filterPeersButton_clicked()));
 
 	QString welcomemessage = QTime::currentTime().toString() +" ";
 	welcomemessage+= tr("Welcome to RetroChess lobby");
