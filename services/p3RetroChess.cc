@@ -417,3 +417,27 @@ RsSerialiser *p3RetroChess::setupSerialiser()
 
 	return rsSerialiser ;
 }
+
+void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count)
+{
+    // Serialize move into a data item and send via tunnel
+    RsRetroChessDataItem *item = new RsRetroChessDataItem();
+    item->m_msg = QString("%1,%2,%3").arg(col).arg(row).arg(count).toStdString();
+    
+    // Logic to send through RsGxsTunnel would go here
+    //mPlugInHandler->getGxsTunnelManager()->sendMessage(gxs_id, item);
+}
+
+void p3RetroChess::requestGxsTunnel(const RsGxsId &gxsId)
+{
+    // Request a persistent tunnel for the chess session
+    //rsGxsTunnels->requestTunnel(gxsId, RS_SERVICE_TYPE_RetroChess_PLUGIN);
+}
+
+void p3RetroChess::sendGxsInvite(const RsGxsId &gxsId)
+{
+    mGxsInvitesTo.insert(gxsId);
+    // Wrap an invite message in a Distant Chat packet
+    QString inviteMsg = "CHESS_INVITE_GXS";
+    //rsGxsChat->sendDistantMessage(gxsId, inviteMsg);
+}

@@ -30,6 +30,7 @@
 
 #include "RetroChessChatWidgetHolder.h"
 
+#include <retroshare/rsidentity.h>
 #include <retroshare/rsstatus.h>
 #include <retroshare/rspeers.h>
 
@@ -40,7 +41,6 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 {
 	QIcon icon ;
 	icon.addPixmap(QPixmap(IMAGE_RetroChess)) ;
-
 
 	playChessButton = new QToolButton ;
 	playChessButton->setIcon(icon) ;
@@ -112,37 +112,34 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 void RetroChessChatWidgetHolder::chessPressed()
 {
 	ChatId chatId = mChatWidget->getChatId();
-	if (chatId.isGxsId()) {
-		RsGxsId distId = chatId.toGxsId();
+	if (chatId.isDistantChatId()) {
+		RsGxsId distId = chatId.toDistantChatId();
 		rsRetroChess->requestGxsTunnel(distId);
 		rsRetroChess->sendGxsInvite(distId);
 	} else {
 		RsPeerId peer_id = chatId.toPeerId();
-		rsRetroChess->chess_click(peer_id.toStdString(), -1, -1, -1);
-	}
-	
-	/*RsPeerId peer_id =  mChatWidget->getChatId().toPeerId();//TODO support GXSID
-	if (rsRetroChess->hasInviteFrom(peer_id))
-	{
+		//rsRetroChess->chess_click(peer_id.toStdString(), -1, -1, -1);
 
-		rsRetroChess->acceptedInvite(peer_id);
-		mRetroChessNotify->notifyChessStart(peer_id);
-		return;
+		if (rsRetroChess->hasInviteFrom(peer_id)){
+			rsRetroChess->acceptedInvite(peer_id);
+			mRetroChessNotify->notifyChessStart(peer_id);
+			return;
+		}
 
-	}
-	rsRetroChess->sendInvite(peer_id);*/
+		rsRetroChess->sendInvite(peer_id);
 
-	QString peerName = QString::fromUtf8(rsPeers->getPeerName(peer_id).c_str());
-	mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
+		QString peerName = QString::fromUtf8(rsPeers->getPeerName(peer_id).c_str());
+		mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
 	                        , tr("You're now inviting %1 to play Chess").arg(peerName), ChatWidget::MSGTYPE_SYSTEM);
+	}
 
 }
 
 void RetroChessChatWidgetHolder::chessStart()
 {
 	ChatId chatId = mChatWidget->getChatId();
-	if (chatId.isGxsId()) {
-		rsRetroChess->acceptedInviteGxs(chatId.toGxsId());
+	if (chatId.isDistantChatId()) {
+		rsRetroChess->acceptedInviteGxs(chatId.toDistantChatId());
 	} else {
 		RsPeerId peer_id = chatId.toPeerId();
 		rsRetroChess->acceptedInvite(peer_id);

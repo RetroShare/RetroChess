@@ -21,7 +21,6 @@
 #include "tile.h"
 #include "chess.h"
 #include "../interface/rsRetroChess.h"
-#include <retroshare/rsgxsids.h>
 
 /*extern int count,turn;
 extern QWidget *myWidget;
@@ -50,9 +49,9 @@ void Tile::mousePressEvent(QMouseEvent *event)
         {
             validate( ++(chess_window_p)->count );
                 if ((chess_window_p)->mIsGxs) {
-                    rsRetroChess->chess_click_gxs((chess_window_p)->mGxsId, tile_p->col, tile_p->row, (chess_window_p)->count);
+                    rsRetroChess->chess_click_gxs((chess_window_p)->mGxsId, this->row,this->col, (chess_window_p)->count);
                 } else {
-                    rsRetroChess->chess_click((chess_window_p)->mPeerId, tile_p->col, tile_p->row, (chess_window_p)->count);
+                    rsRetroChess->chess_click((chess_window_p)->mPeerId, this->row,this->col, (chess_window_p)->count);
                 }
         }
         // not local player's turn
