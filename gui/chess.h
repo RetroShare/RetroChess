@@ -58,6 +58,8 @@ public:
 	~RetroChessWindow();
 	int currentplayer;
 	int myid;
+	RsGxsId mGxsId; // Store GXS identity if using a tunnel
+	bool mIsGxs;
 
 	//from global
 

@@ -111,7 +111,17 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 
 void RetroChessChatWidgetHolder::chessPressed()
 {
-	RsPeerId peer_id =  mChatWidget->getChatId().toPeerId();//TODO support GXSID
+	ChatId chatId = mChatWidget->getChatId();
+	if (chatId.isGxsId()) {
+		RsGxsId distId = chatId.toGxsId();
+		rsRetroChess->requestGxsTunnel(distId);
+		rsRetroChess->sendGxsInvite(distId);
+	} else {
+		RsPeerId peer_id = chatId.toPeerId();
+		rsRetroChess->chess_click(peer_id.toStdString(), -1, -1, -1);
+	}
+	
+	/*RsPeerId peer_id =  mChatWidget->getChatId().toPeerId();//TODO support GXSID
 	if (rsRetroChess->hasInviteFrom(peer_id))
 	{
 
@@ -120,7 +130,7 @@ void RetroChessChatWidgetHolder::chessPressed()
 		return;
 
 	}
-	rsRetroChess->sendInvite(peer_id);
+	rsRetroChess->sendInvite(peer_id);*/
 
 	QString peerName = QString::fromUtf8(rsPeers->getPeerName(peer_id).c_str());
 	mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
@@ -130,10 +140,14 @@ void RetroChessChatWidgetHolder::chessPressed()
 
 void RetroChessChatWidgetHolder::chessStart()
 {
-	RsPeerId peer_id =  mChatWidget->getChatId().toPeerId();//TODO support GXSID
-
-	rsRetroChess->acceptedInvite(peer_id);
-	mRetroChessNotify->notifyChessStart(peer_id);
+	ChatId chatId = mChatWidget->getChatId();
+	if (chatId.isGxsId()) {
+		rsRetroChess->acceptedInviteGxs(chatId.toGxsId());
+	} else {
+		RsPeerId peer_id = chatId.toPeerId();
+		rsRetroChess->acceptedInvite(peer_id);
+		mRetroChessNotify->notifyChessStart(peer_id);
+	}
 	return;
 }
 

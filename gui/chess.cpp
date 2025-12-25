@@ -125,7 +125,11 @@ void RetroChessWindow::initAccessories()
 void RetroChessWindow::closeEvent(QCloseEvent *event)
 {
     // send leave message
-    rsRetroChess->player_leave(this->mPeerId);
+    if (mIsGxs) {
+        rsRetroChess->player_leave_gxs(this->mGxsId);
+    } else {
+        rsRetroChess->player_leave(mPeerId);
+    }
 
     QWidget::closeEvent(event);
 }
