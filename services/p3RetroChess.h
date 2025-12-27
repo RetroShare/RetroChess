@@ -30,6 +30,8 @@
 #include "serialiser/rstlvbase.h"
 #include "rsitems/rsconfigitems.h"
 #include "plugins/rspqiservice.h"
+#include "retroshare/rsidentity.h"
+
 #include <interface/rsRetroChess.h>
 
 class p3LinkMgr;

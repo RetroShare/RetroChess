@@ -25,6 +25,7 @@
 #include "pqi/p3linkmgr.h"
 #include <serialiser/rsserial.h>
 #include <rsitems/rsconfigitems.h>
+#include "retroshare/rsmsgs.h"
 
 #include <sstream> // for std::istringstream
 
@@ -453,9 +454,12 @@ void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int 
                         .arg(row)
                         .arg(count);
 
+    // 4. FIX: Construct a ChatId from the RsGxsId
+    ChatId targetChatId(gxs_id);
+
     // 3. Send the move through the tunnel
     // rsMsgs->sendDistantChatMessage is the GXS equivalent of p2p raw_msg_peer
-    if (!rsMsgs->sendDistantChatMessage(gxs_id, moveData.toStdString())) {
+    if (!rsMsgs->sendChat(targetChatId, moveData.toStdString())) {
         std::cerr << "p3RetroChess Error: Failed to send move through GXS tunnel." << std::endl;
     } else {
         std::cout << "p3RetroChess: Move sent to " << gxs_id << " via tunnel " << tunnelId << std::endl;
@@ -494,9 +498,12 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &toGxsId)
     // For GXS invites, we initiate the tunnel first. 
     // Once the tunnel is requested, we send a specific Chess packet through it.
     requestGxsTunnel(toGxsId);
+
+    // 4. FIX: Construct a ChatId from the RsGxsId
+    ChatId targetChatId = toGxsId;
     
     // After requesting the tunnel, we send a Distant Message to notify the peer.
     // The distant message serves as the "Invite" visible in their chat window.
     std::string invite_str = "ACTION_RETROCHESS_INVITE";
-    rsMsgs->sendDistantChatMessage(toGxsId, invite_str);
+    rsMsgs->sendChat(targetChatId, invite_str);
 }
