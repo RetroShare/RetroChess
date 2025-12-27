@@ -35,6 +35,52 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
 {
     m_ui->setupUi(this);
     mPeerId = gxsId.toStdString(); // Use string representation for internal tracking
+
+    m_ui->m_player1_result->hide();
+    m_ui->m_player2_result->hide();
+    m_ui->m_status_bar->hide();
+
+    m_flag_finished = 0;	// set as unfinish
+
+    //tile = { { NULL } };
+    count=0;
+    turn=1;	// white first
+    max=0;
+    texp = new int[60];
+
+    setGeometry(0,0,1370,700);
+
+    // Resolve our own primary GXS ID
+    std::list<RsGxsId> ownIds;
+    rsIdentity->getOwnIds(ownIds);
+    RsGxsId myGxsId = ownIds.empty() ? RsGxsId() : ownIds.front();
+
+    if (player) { // local player as black
+        // Note: For GXS we track identities rather than PeerIds
+        player_str = " (1)";
+        m_localplayer_turn = 0;
+        
+        RsIdentityDetails d1, d2;
+        rsIdentity->getIdDetails(myGxsId, d1);
+        rsIdentity->getIdDetails(gxsId, d2);
+        p1name = d1.mNickname;
+        p2name = d2.mNickname;
+    } else { // local player as white
+        player_str = " (2)";
+        m_localplayer_turn = 1;
+
+        RsIdentityDetails d1, d2;
+        rsIdentity->getIdDetails(gxsId, d1);
+        rsIdentity->getIdDetails(myGxsId, d2);
+        p1name = d1.mNickname;
+        p2name = d2.mNickname;
+    }
+
+    QString title = QString::fromUtf8(p2name.c_str()) + " Playing Chess against " + QString::fromUtf8(p1name.c_str()) + player_str;
+
+    setWindowTitle(title);
+    initAccessories();
+    playerTurnNotice();
     initChessBoard();
 }
 
