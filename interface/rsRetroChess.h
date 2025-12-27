@@ -53,6 +53,15 @@ class RsRetroChess
 	virtual void acceptedInvite(RsPeerId peerID) = 0;
 	virtual void gotInvite(RsPeerId peerID) = 0;
 	virtual void sendInvite(RsPeerId peerID) = 0;
+
+	// New GXSID & Tunneling methods
+	virtual void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count) = 0;
+	virtual void player_leave_gxs(const RsGxsId &gxs_id) = 0;
+	virtual void requestGxsTunnel(const RsGxsId &gxsId) = 0;
+	virtual void sendGxsInvite(const RsGxsId &gxsId) = 0;
+	virtual void addChessFriend(const RsGxsId &gxsId) = 0;
+	virtual void acceptedInviteGxs(const RsGxsId &gxsId) = 0;
+
 };
 
 

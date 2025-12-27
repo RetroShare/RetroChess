@@ -67,6 +67,7 @@ private slots:
     void on_inviteButton_clicked();
 
 	void on_filterPeersButton_clicked();
+	void onGxsTunnelOpened(const RsGxsId &gxsId);
 
 
 private:

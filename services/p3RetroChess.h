@@ -30,6 +30,8 @@
 #include "serialiser/rstlvbase.h"
 #include "rsitems/rsconfigitems.h"
 #include "plugins/rspqiservice.h"
+#include "retroshare/rsidentity.h"
+
 #include <interface/rsRetroChess.h>
 
 class p3LinkMgr;
@@ -101,11 +103,22 @@ public:
 	void gotInvite(RsPeerId peerID);
 	void acceptedInvite(RsPeerId peerID);
 	void sendInvite(RsPeerId peerID);
+
+	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
+	void player_leave_gxs(const RsGxsId &gxs_id);
+	void requestGxsTunnel(const RsGxsId &gxsId);
+	void sendGxsInvite(const RsGxsId &gxsId);
+	void addChessFriend(const RsGxsId &gxsId);
+	void acceptedInviteGxs(const RsGxsId &gxsId);
 private:
 
 
 	std::set<RsPeerId> invitesTo;
 	std::set<RsPeerId> invitesFrom;
+
+	std::set<RsGxsId> mGxsInvitesTo;
+	std::set<RsGxsId> mGxsInvitesFrom;
+
 	void handleData(RsRetroChessDataItem*) ;
 
 	RsMutex mRetroChessMtx;

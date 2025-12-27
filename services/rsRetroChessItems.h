@@ -98,6 +98,7 @@ public:
 	uint32_t flags ;
 	uint32_t data_size ;
 	std::string m_msg;
+	RsGxsId m_gxsId; // Optional: track origin GXS ID in the item
 };
 
 

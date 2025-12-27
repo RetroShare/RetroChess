@@ -25,6 +25,7 @@
 #include "pqi/p3linkmgr.h"
 #include <serialiser/rsserial.h>
 #include <rsitems/rsconfigitems.h>
+#include "retroshare/rsmsgs.h"
 
 #include <sstream> // for std::istringstream
 
@@ -416,4 +417,93 @@ RsSerialiser *p3RetroChess::setupSerialiser()
 	rsSerialiser->addSerialType(new RsGeneralConfigSerialiser());
 
 	return rsSerialiser ;
+}
+
+void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count)
+{
+    if (gxs_id.isNull()) {
+        std::cerr << "p3RetroChess::chess_click_gxs Error: Null GXS ID" << std::endl;
+        return;
+    }
+
+    // 1. Find or Initiate a connection to get a DistantChatPeerId (the tunnel)
+    // We reuse our own identity logic similar to IdDialog
+    RsGxsId fromGxsId;
+    std::list<RsGxsId> ownIdentities;
+    rsIdentity->getOwnIds(ownIdentities);
+    
+    if (ownIdentities.empty()) {
+        std::cerr << "p3RetroChess Error: No local GXS identity found to send move." << std::endl;
+        return;
+    }
+    fromGxsId = ownIdentities.front();
+
+    uint32_t error_code;
+    DistantChatPeerId tunnelId;
+
+    // Use initiateDistantChatConnexion to ensure the tunnel exists
+    if(!rsMsgs->initiateDistantChatConnexion(gxs_id, fromGxsId, tunnelId, error_code)) {
+        std::cerr << "p3RetroChess Error: Could not open tunnel for move. Code: " << error_code << std::endl;
+        return;
+    }
+
+    // 2. Serialize the move data
+    // We use a specific prefix so the receiving plugin knows this is a game move, not a text chat.
+    QString moveData = QString("ACTION_RETROCHESS_MOVE:%1,%2,%3")
+                        .arg(col)
+                        .arg(row)
+                        .arg(count);
+
+    // 4. FIX: Construct a ChatId from the RsGxsId
+    ChatId targetChatId(gxs_id);
+
+    // 3. Send the move through the tunnel
+    // rsMsgs->sendDistantChatMessage is the GXS equivalent of p2p raw_msg_peer
+    if (!rsMsgs->sendChat(targetChatId, moveData.toStdString())) {
+        std::cerr << "p3RetroChess Error: Failed to send move through GXS tunnel." << std::endl;
+    } else {
+        std::cout << "p3RetroChess: Move sent to " << gxs_id << " via tunnel " << tunnelId << std::endl;
+    }
+}
+
+void p3RetroChess::requestGxsTunnel(const RsGxsId &toGxsId)
+{
+    if (toGxsId.isNull()) return;
+
+    // 1. Determine our own identity (the sender)
+    RsGxsId fromGxsId;
+    std::list<RsGxsId> ownIdentities;
+    rsIdentity->getOwnIds(ownIdentities);
+    
+    if (ownIdentities.empty()) {
+        std::cerr << "RetroChess: No own identities found to open tunnel." << std::endl;
+        return;
+    }
+    fromGxsId = ownIdentities.front();
+
+    // 2. Initiate the connection (Tunnel)
+    uint32_t error_code;
+    DistantChatPeerId did; // This is the unique tunnel ID
+
+    if(rsMsgs->initiateDistantChatConnexion(toGxsId, fromGxsId, did, error_code)) {
+        std::cout << "RetroChess: Tunnel initiated successfully. ID: " << did << std::endl;
+        // Store 'did' to use for sending moves later via this tunnel
+    } else {
+        std::cerr << "RetroChess: Failed to initiate tunnel. Error: " << error_code << std::endl;
+    }
+}
+
+void p3RetroChess::sendGxsInvite(const RsGxsId &toGxsId)
+{
+    // For GXS invites, we initiate the tunnel first. 
+    // Once the tunnel is requested, we send a specific Chess packet through it.
+    requestGxsTunnel(toGxsId);
+
+    // 4. FIX: Construct a ChatId from the RsGxsId
+    ChatId targetChatId = toGxsId;
+    
+    // After requesting the tunnel, we send a Distant Message to notify the peer.
+    // The distant message serves as the "Invite" visible in their chat window.
+    std::string invite_str = "ACTION_RETROCHESS_INVITE";
+    rsMsgs->sendChat(targetChatId, invite_str);
 }
