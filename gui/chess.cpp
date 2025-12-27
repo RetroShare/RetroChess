@@ -26,10 +26,23 @@
 #include "gui/common/AvatarDefs.h"
 #include "../services/p3RetroChess.h"
 
+// NEW: Constructor for Distant GXS Identity
+RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *parent) :
+    QWidget(parent),
+    m_ui(new Ui::RetroChessWindow),
+    mGxsId(gxsId),
+    mIsGxs(true)
+{
+    m_ui->setupUi(this);
+    mPeerId = gxsId.toStdString(); // Use string representation for internal tracking
+    initChessBoard();
+}
+
 RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *parent) :
 	QWidget(parent),
 	m_ui( new Ui::RetroChessWindow() ),
-	mPeerId(peerid)
+	mPeerId(peerid),
+	mIsGxs(false)
 	//ui(new Ui::RetroChessWindow)
 {
 	m_ui->setupUi( this );
@@ -1002,10 +1015,22 @@ int RetroChessWindow::resultJudge()
 
 void RetroChessWindow::showPlayerLeaveMsg()
 {
-    std::string player_name = rsPeers->getPeerName( RsPeerId(mPeerId ));
-    QString status_msg(player_name.c_str());
-    status_msg += " has left";
-    m_ui->m_status_bar->setText( status_msg );
+    QString name;
+    if (mIsGxs) {
+        // Resolve GXS nickname
+        RsIdentityDetails details;
+        if (rsIdentity->getIdDetails(mGxsId, details)) {
+            name = QString::fromUtf8(details.mNickname.c_str());
+        } else {
+            name = tr("Distant Friend");
+        }
+    } else {
+        // Resolve Peer name
+        name = QString::fromStdString(rsPeers->getPeerName(RsPeerId(mPeerId)));
+    }
+
+    QString status_msg = name + tr(" has left");
+    m_ui->m_status_bar->setText(status_msg);
     m_ui->m_status_bar->setVisible(true);
 }
 

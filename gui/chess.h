@@ -27,6 +27,7 @@
 #include <QWidget>
 
 #include "retroshare/rspeers.h"
+#include "retroshare/rsidentity.h"
 
 #include <QQueue>
 
@@ -55,6 +56,7 @@ protected:
 public:
 	std::string mPeerId;
 	explicit RetroChessWindow(std::string peerid, int player = 0, QWidget *parent = 0);
+	explicit RetroChessWindow(const RsGxsId &gxsId, int player = 0, QWidget *parent = 0);
 	~RetroChessWindow();
 	int currentplayer;
 	int myid;
