@@ -58,8 +58,6 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui->friendSelectionWidget->start();
 	ui->friendSelectionWidget->setModus(FriendSelectionWidget::MODUS_SINGLE);
 	ui->friendSelectionWidget->setShowType(FriendSelectionWidget::SHOW_SSL);
-	
-	connect(mNotify, SIGNAL(gxsTunnelOpened(RsGxsId)), this, SLOT(onGxsTunnelOpened(RsGxsId)));
 
 	connect(ui->friendSelectionWidget, SIGNAL(contentChanged()), this, SLOT(on_filterPeersButton_clicked()));
 	//connect(NotifyQt::getInstance(), SIGNAL(peerStatusChanged(const QString&,int)), this, SLOT(on_filterPeersButton_clicked()));
