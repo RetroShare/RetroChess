@@ -26,6 +26,7 @@
 
 /*libretroshare"*/
 #include <retroshare/rsplugin.h>
+#include <retroshare/rsgxstunnel.h>
 
 #include "gui/NEMainpage.h"
 
@@ -75,6 +76,9 @@ private:
 	mutable ConfigPage *config_page ;
 	mutable QIcon *mIcon;
 	mutable MainPage* mainpage ;
+
+	RsGxsTunnelService *mGxsTunnels;
+	RsGxsTunnelClientService *mGxsTunnelClient;
 
 	RetroChessNotify *mRetroChessNotify ;
 	RetroChessGUIHandler *mRetroChessGUIHandler ;

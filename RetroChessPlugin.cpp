@@ -32,6 +32,7 @@
 #include "gui/RetroChessChatWidgetHolder.h"
 #include <retroshare-gui/RsAutoUpdatePage.h>
 
+#include <retroshare/rsgxstunnel.h>
 #include <retroshare/rsplugin.h>
 #include <retroshare/rsversion.h>
 
@@ -90,6 +91,7 @@ RetroChessPlugin::RetroChessPlugin()
 void RetroChessPlugin::setInterfaces(RsPlugInInterfaces &interfaces)
 {
 	mPeers = interfaces.mPeers;
+	mGxsTunnels = interfaces.mGxsTunnels;
 }
 
 /*ConfigPage *RetroChessPlugin::qt_config_page() const
@@ -145,6 +147,10 @@ p3Service *RetroChessPlugin::p3_service() const
 void RetroChessPlugin::setPlugInHandler(RsPluginHandler *pgHandler)
 {
 	mPlugInHandler = pgHandler;
+
+	if (mGxsTunnels) {
+        mGxsTunnels->registerClientService(RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, mGxsTunnelClient);
+    }
 }
 
 QIcon *RetroChessPlugin::qt_icon() const

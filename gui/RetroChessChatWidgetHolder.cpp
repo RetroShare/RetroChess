@@ -113,12 +113,9 @@ void RetroChessChatWidgetHolder::chessPressed()
 {
 	ChatId chatId = mChatWidget->getChatId();
 	if (chatId.isDistantChatId()) {
-		RsGxsId distId = chatId.toDistantChatId();
-		rsRetroChess->requestGxsTunnel(distId);
-		rsRetroChess->sendGxsInvite(distId);
+		rsRetroChess->sendGxsInvite(chatId.toGxsId());
 	} else {
 		RsPeerId peer_id = chatId.toPeerId();
-		//rsRetroChess->chess_click(peer_id.toStdString(), -1, -1, -1);
 
 		if (rsRetroChess->hasInviteFrom(peer_id)){
 			rsRetroChess->acceptedInvite(peer_id);
