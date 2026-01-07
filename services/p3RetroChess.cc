@@ -25,6 +25,7 @@
 #include "pqi/p3linkmgr.h"
 #include <serialiser/rsserial.h>
 #include <rsitems/rsconfigitems.h>
+#include "retroshare/rsmsgs.h"
 
 #include <sstream> // for std::istringstream
 
@@ -111,10 +112,11 @@ int	p3RetroChess::tick()
 #ifdef DEBUG_RetroChess
 	std::cerr << "ticking p3RetroChess" << std::endl;
 #endif
+	// Call your GXS polling logic
+	handleGxsTick();
 
-	//processIncoming();
-	//sendPackets();
-
+	// Call the base class tick if necessary, or return 0
+	// Returning 0 tells the core this service is idle for this slice
 	return 0;
 }
 
@@ -416,4 +418,103 @@ RsSerialiser *p3RetroChess::setupSerialiser()
 	rsSerialiser->addSerialType(new RsGeneralConfigSerialiser());
 
 	return rsSerialiser ;
+}
+
+void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count)
+{
+    if (mActiveTunnels.find(gxs_id) == mActiveTunnels.end()) {
+        // Tunnel not ready, try to re-open
+        sendGxsInvite(gxs_id);
+        return;
+    }
+
+    RsGxsTunnelId tunnel_id = mActiveTunnels[gxs_id];
+
+    // Create a data item for the move
+    RsRetroChessDataItem *item = new RsRetroChessDataItem();
+    item->m_msg = QString("%1,%2,%3").arg(col).arg(row).arg(count).toStdString();
+
+    // Send raw data through the secured tunnel
+    mGxsTunnel->sendData(tunnel_id, item);
+}
+
+void p3RetroChess::requestGxsTunnel(const RsGxsId &gxsId)
+{
+    // Implementation: This triggers the async tunnel request
+    sendGxsInvite(gxsId); 
+}
+
+void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
+{
+    RsGxsId from_gxs_id;
+    std::list<RsGxsId> ownIds;
+    rsIdentity->getOwnIds(ownIds);
+    if (ownIds.empty()) return;
+    from_gxs_id = ownIds.front();
+
+    RsGxsTunnelId tunnel_id;
+    uint32_t error_code;
+
+    // Open a tunnel using mGxsTunnel (Async Request)
+    if (mGxsTunnel->requestSecuredTunnel(
+            to_gxs_id, from_gxs_id, tunnel_id, 
+            RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, error_code)) 
+    {
+        mPendingTunnels[to_gxs_id] = tunnel_id;
+        std::cout << "Chess Tunnel requested. Pending ID: " << tunnel_id << std::endl;
+    }
+}
+
+void p3RetroChess::handleGxsTick()
+{
+    // Periodically check status of pending tunnels
+    auto it = mPendingTunnels.begin();
+    while (it != mPendingTunnels.end()) {
+        RsGxsTunnelInfo tinfo;
+        if (mGxsTunnel->getTunnelInfo(it->second, tinfo)) {
+            if (tinfo.status == RS_GXS_TUNNEL_STATUS_CONNECTED) {
+                // 1.c - Established! Move to active and notify UI
+                mActiveTunnels[it->first] = it->second;
+                mRetroChessNotify->notifyGxsTunnelReady(it->first);
+                it = mPendingTunnels.erase(it);
+                continue;
+            } else if (tinfo.status == RS_GXS_TUNNEL_STATUS_CLOSED || tinfo.status == RS_GXS_TUNNEL_STATUS_FAILED) {
+                it = mPendingTunnels.erase(it);
+                continue;
+            }
+        }
+        ++it;
+    }
+}
+
+// Update this signature to include gxs_id and am_I_client_side
+void p3RetroChess::handleRawData(const RsGxsId& gxs_id, 
+                                 const RsGxsTunnelId& tunnel_id, 
+                                 bool am_I_client_side, 
+                                 const uint8_t *data, 
+                                 uint32_t data_size)
+{
+    // Use the de-serialization constructor
+    uint32_t temp_size = data_size;
+    RsRetroChessDataItem item((void*)data, temp_size); 
+
+    QString qMsg = QString::fromStdString(item.m_msg);
+    QStringList parts = qMsg.split(",");
+    
+    if (parts.size() == 3) {
+        int col = parts[0].toInt();
+        int row = parts[1].toInt();
+        int count = parts[2].toInt();
+        
+        // Use the gxs_id provided by the tunnel to notify the UI
+        mRetroChessNotify->notifyChessMoveGxs(gxs_id, col, row, count);
+    }
+}
+
+void p3RetroChess::player_leave_gxs(const RsGxsId &gxs_id) {
+    // Logic to close tunnel
+    if(mActiveTunnels.count(gxs_id)) {
+        mGxsTunnel->closeExistingTunnel(mActiveTunnels[gxs_id], RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
+        mActiveTunnels.erase(gxs_id);
+    }
 }
