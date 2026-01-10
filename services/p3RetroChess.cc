@@ -440,8 +440,13 @@ void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int 
 
 void p3RetroChess::requestGxsTunnel(const RsGxsId &gxsId)
 {
-    // Implementation: This triggers the async tunnel request
-    sendGxsInvite(gxsId); 
+    // Check if we already have a tunnel
+    if (mActiveTunnels.count(gxsId)) {
+        mRetroChessNotify->notifyGxsTunnelReady(gxsId);
+        return;
+    }
+    // Otherwise, start the async tunnel request
+    this->sendGxsInvite(gxsId); 
 }
 
 void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
@@ -494,10 +499,25 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
                                  const uint8_t *data, 
                                  uint32_t data_size)
 {
-    // Use the de-serialization constructor
+    // Identify who sent the data using the Tunnel ID helper
+    // This ensures we have a record of this tunnel in our mActiveTunnels map
+    RsGxsId sender_id = findGxsIdByTunnel(tunnel_id);
+
+    // Fallback: If the map lookup fails but the API provided a valid gxs_id, use that
+    if (sender_id.isNull() && !gxs_id.isNull()) {
+        sender_id = gxs_id;
+    }
+
+    if (sender_id.isNull()) {
+        std::cerr << "p3RetroChess::handleRawData: Received data from unknown tunnel " << tunnel_id << std::endl;
+        return;
+    }
+
+    // Deserialize the raw bytes into the Chess Data Item
     uint32_t temp_size = data_size;
     RsRetroChessDataItem item((void*)data, temp_size); 
 
+    // Parse the move protocol (Format: "col,row,count")
     QString qMsg = QString::fromStdString(item.m_msg);
     QStringList parts = qMsg.split(",");
     
@@ -506,8 +526,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         int row = parts[1].toInt();
         int count = parts[2].toInt();
         
-        // Use the gxs_id provided by the tunnel to notify the UI
-        mRetroChessNotify->notifyChessMoveGxs(gxs_id, col, row, count);
+        // Notify the GUI with the resolved GXS Identity
+        mRetroChessNotify->notifyChessMoveGxs(sender_id, col, row, count);
     }
 }
 
@@ -517,4 +537,13 @@ void p3RetroChess::player_leave_gxs(const RsGxsId &gxs_id) {
         mGxsTunnel->closeExistingTunnel(mActiveTunnels[gxs_id], RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
         mActiveTunnels.erase(gxs_id);
     }
+}
+
+RsGxsId p3RetroChess::findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id)
+{
+    std::map<RsGxsId, RsGxsTunnelId>::iterator it;
+    for (it = mActiveTunnels.begin(); it != mActiveTunnels.end(); ++it) {
+        if (it->second == tunnel_id) return it->first;
+    }
+    return RsGxsId();
 }
