@@ -130,6 +130,7 @@ ChatWidgetHolder *RetroChessPlugin::qt_get_chat_widget_holder(ChatWidget *chatWi
 	case ChatWidget::CHATTYPE_UNKNOWN:
 	case ChatWidget::CHATTYPE_LOBBY:
 	case ChatWidget::CHATTYPE_DISTANT:
+		return new RetroChessChatWidgetHolder(chatWidget, mRetroChessNotify);
 		break;
 	}
 

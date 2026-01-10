@@ -47,6 +47,9 @@ signals:
 	void chessStart(const RsPeerId &peer_id) ;
 	void chessInvited(const RsPeerId &peer_id) ;
 
+	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
+	void gxsTunnelReady(const RsGxsId &gxs_id);
+
 public slots:
 };
 

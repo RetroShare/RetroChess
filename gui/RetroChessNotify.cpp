@@ -51,3 +51,13 @@ void RetroChessNotify::notifyChessInvite(const RsPeerId &peer_id)
 	emit chessInvited(peer_id) ;
 
 }
+
+void RetroChessNotify::notifyChessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count)
+{
+	emit chessMoveGxs(gxs_id, col, row, count);
+}
+
+void RetroChessNotify::notifyGxsTunnelReady(const RsGxsId &gxs_id)
+{
+	emit gxsTunnelReady(gxs_id);
+}
