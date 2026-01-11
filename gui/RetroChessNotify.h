@@ -46,6 +46,8 @@ public:
 	/** Notify the UI that a GXS tunnel is now ready for use */
 	void notifyGxsTunnelReady(const RsGxsId &gxs_id);
 
+	void notifyChessStartGxs(const RsGxsId &gxs_id); 
+
 signals:
 	void NeMsgArrived(const RsPeerId &peer_id, QString str) ; // emitted when the peer gets a msg
 
@@ -54,6 +56,8 @@ signals:
 
 	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
 	void gxsTunnelReady(const RsGxsId &gxs_id);
+
+	void chessStartGxs(const RsGxsId &gxs_id);
 
 public slots:
 };

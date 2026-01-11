@@ -61,3 +61,8 @@ void RetroChessNotify::notifyGxsTunnelReady(const RsGxsId &gxs_id)
 {
 	emit gxsTunnelReady(gxs_id);
 }
+
+void RetroChessNotify::notifyChessStartGxs(const RsGxsId &gxs_id)
+{
+	emit chessStartGxs(gxs_id);
+}

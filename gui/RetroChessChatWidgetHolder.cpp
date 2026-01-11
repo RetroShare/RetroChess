@@ -51,6 +51,10 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 	mChatWidget->addChatBarWidget(playChessButton);
 	connect(playChessButton, SIGNAL(clicked()), this, SLOT(chessPressed()));
 	connect(notify, SIGNAL(chessInvited(RsPeerId)), this, SLOT(chessnotify(RsPeerId)));
+	connect(notify, SIGNAL(chessInvitedGxs(RsGxsId)), this, SLOT(chessnotifyGxs(RsGxsId)));
+	// When the p3RetroChess service detects the tunnel is CONNECTED, 
+	// it calls notifyGxsTunnelReady, which emits this signal:
+	connect(notify, SIGNAL(gxsTunnelReady(RsGxsId)), this, SLOT(handleGxsTunnelReady(RsGxsId)));
 
 }
 
@@ -109,11 +113,74 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 	}
 }
 
+void RetroChessChatWidgetHolder::chessnotifyGxs(const RsGxsId &from_gxs_id)
+{
+    ChatId chatId = mChatWidget->getChatId();
+    
+    // Check if the current chat window matches the GXS ID of the person who invited us
+    if (!chatId.isDistantChatId()) {
+        return; 
+    }
+
+    // You need a way to check if an invite exists. 
+    // If you haven't implemented hasInviteFromGxs, you can use the active tunnel status.
+    if (true) // In GXS, the receipt of the signal itself implies an invite
+    {
+        if (mChatWidget)
+        {
+            // Get the name from the GXS Identity system
+            std::string identityName;
+            RsGxsId nameId = from_gxs_id;
+            // Attempt to get a readable name for the GXS ID
+            // If rsIdentity doesn't have a direct getName, we use a placeholder or the ID string
+            QString buttonName = QString::fromStdString(from_gxs_id.toStdString()).left(8); 
+
+            // Clear old buttons for this chat to avoid duplicates
+            button_map::iterator it = buttonMapTakeChess.begin();
+            while (it != buttonMapTakeChess.end())
+            {
+                it = buttonMapTakeChess.erase(it);
+            }
+
+            // Add the system message and the "Accept" button to the chat history
+            mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime(),
+                                   tr("%1 is inviting you to start Chess via GXS. Accept?").arg(buttonName), 
+                                   ChatWidget::MSGTYPE_SYSTEM);
+
+            RSButtonOnText *button = mChatWidget->getNewButtonOnTextBrowser(tr("Accept GXS Invite"));
+            button->setToolTip(tr("Accept Chess Invitation"));
+            
+            // Apply your specific green styling
+            button->setStyleSheet(QString("border: 1px solid #199909;")
+                                  .append("font-size: 12pt;  color: white;")
+                                  .append("min-width: 128px; min-height: 24px;")
+                                  .append("border-radius: 6px;")
+                                  .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
+                                          "stop: 0 #22c70d, stop: 1 #116a06);"));
+
+            button->updateImage();
+
+            // Connect to the logic that starts the game/tunnel
+            connect(button, SIGNAL(clicked()), this, SLOT(chessStart()));
+            connect(button, SIGNAL(mouseEnter()), this, SLOT(botMouseEnter()));
+            connect(button, SIGNAL(mouseLeave()), this, SLOT(botMouseLeave()));
+
+            buttonMapTakeChess.insert(buttonName, button);
+        }
+    }
+}
+
 void RetroChessChatWidgetHolder::chessPressed()
 {
 	ChatId chatId = mChatWidget->getChatId();
+	QString peerName;
 	if (chatId.isDistantChatId()) {
 		rsRetroChess->sendGxsInvite(RsGxsId(chatId.toDistantChatId().toStdString()));
+
+		mChatWidget->addChatMsg(true, tr("RetroChess"), QDateTime::currentDateTime(), 
+                               QDateTime::currentDateTime(), 
+                               tr("Requesting secure game tunnel..."), 
+                               ChatWidget::MSGTYPE_SYSTEM);
 	} else {
 		RsPeerId peer_id = chatId.toPeerId();
 
@@ -125,10 +192,10 @@ void RetroChessChatWidgetHolder::chessPressed()
 
 		rsRetroChess->sendInvite(peer_id);
 
-		QString peerName = QString::fromUtf8(rsPeers->getPeerName(peer_id).c_str());
-		mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
-	                        , tr("You're now inviting %1 to play Chess").arg(peerName), ChatWidget::MSGTYPE_SYSTEM);
+		peerName = QString::fromUtf8(rsPeers->getPeerName(peer_id).c_str());
 	}
+		mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
+                        , tr("You're now inviting %1 to play Chess").arg(peerName), ChatWidget::MSGTYPE_SYSTEM);
 
 }
 
@@ -137,12 +204,32 @@ void RetroChessChatWidgetHolder::chessStart()
 	ChatId chatId = mChatWidget->getChatId();
 	if (chatId.isDistantChatId()) {
 		rsRetroChess->acceptedInviteGxs(RsGxsId(chatId.toDistantChatId().toStdString()));
+
+        // We wait for the service to signal handleGxsTunnelReady.
+        mChatWidget->addChatMsg(true, tr("RetroChess"), QDateTime::currentDateTime(), 
+                               QDateTime::currentDateTime(), 
+                               tr("Establishing secure GXS tunnel..."), 
+                               ChatWidget::MSGTYPE_SYSTEM);
+
+		// Notify the UI to open the Chess window for this GXS ID
+		mRetroChessNotify->notifyChessStartGxs(RsGxsId(chatId.toDistantChatId().toStdString())); 
 	} else {
 		RsPeerId peer_id = chatId.toPeerId();
 		rsRetroChess->acceptedInvite(peer_id);
 		mRetroChessNotify->notifyChessStart(peer_id);
 	}
 	return;
+}
+
+void RetroChessChatWidgetHolder::handleGxsTunnelReady(const RsGxsId &gxs_id)
+{
+    ChatId chatId = mChatWidget->getChatId();
+    if (chatId.isDistantChatId()) {
+        // Now the tunnel is safe to use. Open the window.
+        mRetroChessNotify->notifyChessStartGxs(gxs_id);
+        
+        if (playChessButton) playChessButton->hide();
+    }
 }
 
 void RetroChessChatWidgetHolder::botMouseEnter()

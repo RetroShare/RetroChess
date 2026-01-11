@@ -50,6 +50,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 
 	connect(mNotify, SIGNAL(NeMsgArrived(RsPeerId,QString)), this, SLOT(NeMsgArrived(RsPeerId,QString)));
 	connect(mNotify, SIGNAL(chessStart(RsPeerId)), this, SLOT(chessStart(RsPeerId)));
+	connect(mNotify, SIGNAL(chessStartGxs(RsGxsId)), this, SLOT(showChessWindowGxs(RsGxsId)));
 	connect(ui->friendSelectionWidget, SIGNAL(itemSelectionChanged()), this, SLOT(friendSelectionChanged()));
 
     // enable/disable the invite button
@@ -176,6 +177,13 @@ void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 
 	activeGames.insert(peer_id, rcw);
 	ui->active_games->addItem(QString::fromStdString(peer_id));
+}
+
+void NEMainpage::showChessWindowGxs(const RsGxsId &gxs_id)
+{
+    // Open the window with the GXS constructor
+    RetroChessWindow *win = new RetroChessWindow(gxs_id, 0); 
+    win->show();
 }
 
 // enable the invite button when selected a friend

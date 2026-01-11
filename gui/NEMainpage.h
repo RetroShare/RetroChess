@@ -58,6 +58,7 @@ private slots:
 	void friendSelectionChanged();
 	void NeMsgArrived(const RsPeerId &peer_id, QString str);
 	void chessStart(const RsPeerId &peer_id);
+	void showChessWindowGxs(const RsGxsId &gxs_id);
 
 	void on_broadcastButton_clicked();
 

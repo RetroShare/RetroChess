@@ -39,6 +39,8 @@ public slots:
 	void chessStart();
 	void chessnotify(RsPeerId from_peer_id);
 
+	void chessnotifyGxs(const RsGxsId &from_gxs_id);
+	void handleGxsTunnelReady(const RsGxsId &gxs_id);
 
 private slots:
 	void botMouseEnter();
