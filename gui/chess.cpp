@@ -33,6 +33,13 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     mGxsId(gxsId),
     mIsGxs(true)
 {
+    QString player_str; 
+    if (player == 1) {
+        player_str = " (1)";
+    } else if (player == 2) {
+        player_str = " (2)";
+    }
+
     m_ui->setupUi(this);
     mPeerId = gxsId.toStdString(); // Use string representation for internal tracking
 
