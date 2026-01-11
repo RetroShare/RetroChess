@@ -55,7 +55,7 @@
 
 /**************************************************************************/
 
-const uint16_t RS_SERVICE_TYPE_RetroChess_PLUGIN = 0xc4e55;
+const uint16_t RS_SERVICE_TYPE_RetroChess_PLUGIN = 0xc4e5;
 
 const uint8_t RS_PKT_SUBTYPE_RetroChess_DATA 	   = 0x01;
 
@@ -98,6 +98,7 @@ public:
 	uint32_t flags ;
 	uint32_t data_size ;
 	std::string m_msg;
+	RsGxsId m_gxsId; // Optional: track origin GXS ID in the item
 };
 
 

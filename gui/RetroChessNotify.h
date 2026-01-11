@@ -40,12 +40,20 @@ public:
 	void notifyReceivedMsg(const RsPeerId &peer_id, QString str) ;
 	void notifyChessStart(const RsPeerId &peer_id) ;
 	void notifyChessInvite(const RsPeerId &peer_id) ;
+	/** Notify the UI of a chess move received via a GXS tunnel */
+	void notifyChessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
+
+	/** Notify the UI that a GXS tunnel is now ready for use */
+	void notifyGxsTunnelReady(const RsGxsId &gxs_id);
 
 signals:
 	void NeMsgArrived(const RsPeerId &peer_id, QString str) ; // emitted when the peer gets a msg
 
 	void chessStart(const RsPeerId &peer_id) ;
 	void chessInvited(const RsPeerId &peer_id) ;
+
+	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
+	void gxsTunnelReady(const RsGxsId &gxs_id);
 
 public slots:
 };

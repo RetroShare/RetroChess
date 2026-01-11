@@ -32,6 +32,7 @@
 #include "gui/RetroChessChatWidgetHolder.h"
 #include <retroshare-gui/RsAutoUpdatePage.h>
 
+#include <retroshare/rsgxstunnel.h>
 #include <retroshare/rsplugin.h>
 #include <retroshare/rsversion.h>
 
@@ -90,6 +91,7 @@ RetroChessPlugin::RetroChessPlugin()
 void RetroChessPlugin::setInterfaces(RsPlugInInterfaces &interfaces)
 {
 	mPeers = interfaces.mPeers;
+	mGxsTunnels = interfaces.mGxsTunnels;
 }
 
 /*ConfigPage *RetroChessPlugin::qt_config_page() const
@@ -128,6 +130,7 @@ ChatWidgetHolder *RetroChessPlugin::qt_get_chat_widget_holder(ChatWidget *chatWi
 	case ChatWidget::CHATTYPE_UNKNOWN:
 	case ChatWidget::CHATTYPE_LOBBY:
 	case ChatWidget::CHATTYPE_DISTANT:
+		return new RetroChessChatWidgetHolder(chatWidget, mRetroChessNotify);
 		break;
 	}
 
@@ -136,15 +139,23 @@ ChatWidgetHolder *RetroChessPlugin::qt_get_chat_widget_holder(ChatWidget *chatWi
 
 p3Service *RetroChessPlugin::p3_service() const
 {
-	if(mRetroChess == NULL)
-		rsRetroChess = mRetroChess = new p3RetroChess(mPlugInHandler,mRetroChessNotify) ; // , 3600 * 24 * 30 * 6); // 6 Months
-
-	return mRetroChess ;
+    if(mRetroChess == NULL)
+    {
+        // Create the service
+        rsRetroChess = mRetroChess = new p3RetroChess(mPlugInHandler, mRetroChessNotify);
+        
+        // Register it for GXS Tunnels immediately if the interface is available
+        if (mGxsTunnels) {
+            mGxsTunnels->registerClientService(RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, mRetroChess);
+        }
+    }
+    return mRetroChess;
 }
 
 void RetroChessPlugin::setPlugInHandler(RsPluginHandler *pgHandler)
 {
-	mPlugInHandler = pgHandler;
+    mPlugInHandler = pgHandler;
+    // No need to register here if done in p3_service
 }
 
 QIcon *RetroChessPlugin::qt_icon() const

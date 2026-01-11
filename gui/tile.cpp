@@ -48,7 +48,11 @@ void Tile::mousePressEvent(QMouseEvent *event)
         if((chess_window_p)->m_localplayer_turn == (chess_window_p)->turn)
         {
             validate( ++(chess_window_p)->count );
-            rsRetroChess->chess_click(peer_id, this->row,this->col,(chess_window_p)->count);
+                if ((chess_window_p)->mIsGxs) {
+                    rsRetroChess->chess_click_gxs((chess_window_p)->mGxsId, this->row,this->col, (chess_window_p)->count);
+                } else {
+                    rsRetroChess->chess_click((chess_window_p)->mPeerId, this->row,this->col, (chess_window_p)->count);
+                }
         }
         // not local player's turn
     }
