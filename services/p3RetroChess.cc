@@ -465,6 +465,19 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
     }
 }
 
+void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
+{
+    std::cout << "p3RetroChess: Accepted GXS invite from " << gxsId << std::endl;
+
+    // If we don't have an active tunnel yet, request one now
+    if (mActiveTunnels.find(gxsId) == mActiveTunnels.end()) {
+        requestGxsTunnel(gxsId);
+    } else {
+        // If tunnel is already ready, tell the GUI to start the game
+        mNotify->notifyGxsTunnelReady(gxsId);
+    }
+}
+
 void p3RetroChess::handleGxsTick()
 {
     auto it = mPendingTunnels.begin();

@@ -59,7 +59,7 @@ class RsRetroChess
 	virtual void player_leave_gxs(const RsGxsId &gxs_id) = 0;
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) = 0;
 	virtual void sendGxsInvite(const RsGxsId &gxsId) = 0;
-	virtual void addChessFriend(const RsGxsId &gxsId) = 0;
+	//virtual void addChessFriend(const RsGxsId &gxsId) = 0;
 	virtual void acceptedInviteGxs(const RsGxsId &gxsId) = 0;
 
 };

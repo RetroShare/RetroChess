@@ -107,7 +107,7 @@ public:
 	void sendInvite(RsPeerId peerID);
 
 	void player_leave_gxs(const RsGxsId &gxs_id);
-	void addChessFriend(const RsGxsId &gxsId);
+	//void addChessFriend(const RsGxsId &gxsId);
 	void sendGxsInvite(const RsGxsId &toGxsId);
 	void acceptedInviteGxs(const RsGxsId &gxsId);
 	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
