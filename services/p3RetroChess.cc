@@ -25,7 +25,7 @@
 #include "pqi/p3linkmgr.h"
 #include <serialiser/rsserial.h>
 #include <rsitems/rsconfigitems.h>
-#include "retroshare/rsmsgs.h"
+//#include "retroshare/rsmsgs.h"
 
 #include <sstream> // for std::istringstream
 
@@ -247,8 +247,6 @@ void p3RetroChess::msg_all(std::string msg)
 	//    mServiceControl->getPeersConnected(getServiceInfo().mServiceType, onlineIds);
 	rsPeers->getOnlineList(onlineIds);
 
-	double ts = getCurrentTS();
-
 #ifdef DEBUG_RetroChess
 	std::cerr << "p3RetroChess::msg_all() @ts: " << ts;
 	std::cerr << std::endl;
@@ -273,9 +271,6 @@ void p3RetroChess::broadcast_paint(int x, int y)
 	std::list< RsPeerId > onlineIds;
 	//    mServiceControl->getPeersConnected(getServiceInfo().mServiceType, onlineIds);
 	rsPeers->getOnlineList(onlineIds);
-
-	double ts = getCurrentTS();
-
 
 	std::cout << "READY TO PAINT: " << onlineIds.size() << "\n";
 	/* prepare packets */
@@ -435,14 +430,14 @@ void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int 
     item->m_msg = QString("%1,%2,%3").arg(col).arg(row).arg(count).toStdString();
 
     // Send raw data through the secured tunnel
-    mGxsTunnel->sendData(tunnel_id, item);
+    mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, (const uint8_t*)item->m_msg.c_str(), item->m_msg.size());
 }
 
 void p3RetroChess::requestGxsTunnel(const RsGxsId &gxsId)
 {
     // Check if we already have a tunnel
     if (mActiveTunnels.count(gxsId)) {
-        mRetroChessNotify->notifyGxsTunnelReady(gxsId);
+        mNotify->notifyGxsTunnelReady(gxsId);
         return;
     }
     // Otherwise, start the async tunnel request
@@ -461,7 +456,7 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
     uint32_t error_code;
 
     // Open a tunnel using mGxsTunnel (Async Request)
-    if (mGxsTunnel->requestSecuredTunnel(
+    if (mGxsTunnels->requestSecuredTunnel(
             to_gxs_id, from_gxs_id, tunnel_id, 
             RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, error_code)) 
     {
@@ -472,23 +467,25 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
 
 void p3RetroChess::handleGxsTick()
 {
-    // Periodically check status of pending tunnels
     auto it = mPendingTunnels.begin();
     while (it != mPendingTunnels.end()) {
-        RsGxsTunnelInfo tinfo;
-        if (mGxsTunnel->getTunnelInfo(it->second, tinfo)) {
-            if (tinfo.status == RS_GXS_TUNNEL_STATUS_CONNECTED) {
-                // 1.c - Established! Move to active and notify UI
+        RsGxsTunnelService::GxsTunnelInfo tinfo; 
+        if (mGxsTunnels->getTunnelInfo(it->second, tinfo)) {
+            // Check if the tunnel is "Connected" (CAN_TALK)
+            if (tinfo.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK) {
                 mActiveTunnels[it->first] = it->second;
-                mRetroChessNotify->notifyGxsTunnelReady(it->first);
+                mNotify->notifyGxsTunnelReady(it->first); 
                 it = mPendingTunnels.erase(it);
                 continue;
-            } else if (tinfo.status == RS_GXS_TUNNEL_STATUS_CLOSED || tinfo.status == RS_GXS_TUNNEL_STATUS_FAILED) {
+           } 
+            // Check for "Closed/Failed" status
+            else if (tinfo.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED || 
+                tinfo.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) {
                 it = mPendingTunnels.erase(it);
                 continue;
             }
         }
-        ++it;
+	++it;
     }
 }
 
@@ -527,14 +524,14 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         int count = parts[2].toInt();
         
         // Notify the GUI with the resolved GXS Identity
-        mRetroChessNotify->notifyChessMoveGxs(sender_id, col, row, count);
+        mNotify->notifyChessMoveGxs(sender_id, col, row, count);
     }
 }
 
 void p3RetroChess::player_leave_gxs(const RsGxsId &gxs_id) {
     // Logic to close tunnel
     if(mActiveTunnels.count(gxs_id)) {
-        mGxsTunnel->closeExistingTunnel(mActiveTunnels[gxs_id], RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
+        mGxsTunnels->closeExistingTunnel(mActiveTunnels[gxs_id], RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
         mActiveTunnels.erase(gxs_id);
     }
 }
@@ -546,4 +543,25 @@ RsGxsId p3RetroChess::findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id)
         if (it->second == tunnel_id) return it->first;
     }
     return RsGxsId();
+}
+
+// services/p3RetroChess.cc
+
+void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& /*tunnel_id*/, uint32_t /*tunnel_status*/)
+{
+}
+
+void p3RetroChess::receiveData(const RsGxsTunnelId& id, unsigned char *data, uint32_t data_size)
+{
+    this->handleRawData(RsGxsId(), id, false, (const uint8_t*)data, data_size);
+}
+
+void p3RetroChess::connectToGxsTunnelService(RsGxsTunnelService *tunnel_service)
+{
+    mGxsTunnels = tunnel_service;
+}
+
+bool p3RetroChess::acceptDataFromPeer(const RsGxsId& /*gxs_id*/, const RsGxsTunnelId& /*tunnel_id*/, bool /*am_I_client_side*/)
+{
+    return true;
 }

@@ -78,8 +78,7 @@ private:
 	mutable MainPage* mainpage ;
 
 	RsGxsTunnelService *mGxsTunnels;
-	RsGxsTunnelClientService *mGxsTunnelClient;
-
+	RsGxsTunnelService::RsGxsTunnelClientService *mGxsTunnelClient;
 	RetroChessNotify *mRetroChessNotify ;
 	RetroChessGUIHandler *mRetroChessGUIHandler ;
 };

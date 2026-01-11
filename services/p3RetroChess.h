@@ -47,7 +47,7 @@ class RetroChessNotify ;
  * This is only used to test Latency for the moment.
  */
 
-class p3RetroChess: public RsPQIService, public RsRetroChess
+class p3RetroChess: public RsPQIService, public RsRetroChess, public RsGxsTunnelService::RsGxsTunnelClientService
 // Maybe we inherit from these later - but not needed for now.
 //, public p3Config, public pqiMonitor
 {
@@ -116,12 +116,17 @@ public:
 	// Async tunnel management
 	void handleGxsTick(); // Called periodically by the core
 
-	virtual uint32_t getGxsTunnelServiceId() const override { 
+	virtual uint32_t getGxsTunnelServiceId() const { 
 			return RETRO_CHESS_GXS_TUNNEL_SERVICE_ID; 
 	}
 
 	// Fix handleRawData signature
 	void handleRawData(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side, const uint8_t *data, uint32_t data_size);
+
+	virtual void notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t tunnel_status) override;
+	virtual void receiveData(const RsGxsTunnelId& id, unsigned char *data, uint32_t data_size) override;
+	virtual void connectToGxsTunnelService(RsGxsTunnelService *tunnel_service) override;
+	virtual bool acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side) override;
 
 private:
 	// Helper to find which friend sent the data based on the tunnel ID
