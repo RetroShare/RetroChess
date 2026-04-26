@@ -67,20 +67,33 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
         player_str = " (1)";
         m_localplayer_turn = 0;
         
+        // Use non-blocking lookup with fallback for unknown identities
         RsIdentityDetails d1, d2;
-        rsIdentity->getIdDetails(myGxsId, d1);
-        rsIdentity->getIdDetails(gxsId, d2);
-        p1name = d1.mNickname;
-        p2name = d2.mNickname;
+        if (rsIdentity->getIdDetails(myGxsId, d1)) {
+            p1name = d1.mNickname;
+        } else {
+            p1name = myGxsId.toStdString().substr(0, 8) + "...";
+        }
+        if (rsIdentity->getIdDetails(gxsId, d2)) {
+            p2name = d2.mNickname;
+        } else {
+            p2name = gxsId.toStdString().substr(0, 8) + "...";
+        }
     } else { // local player as white
         player_str = " (2)";
         m_localplayer_turn = 1;
 
         RsIdentityDetails d1, d2;
-        rsIdentity->getIdDetails(gxsId, d1);
-        rsIdentity->getIdDetails(myGxsId, d2);
-        p1name = d1.mNickname;
-        p2name = d2.mNickname;
+        if (rsIdentity->getIdDetails(gxsId, d1)) {
+            p1name = d1.mNickname;
+        } else {
+            p1name = gxsId.toStdString().substr(0, 8) + "...";
+        }
+        if (rsIdentity->getIdDetails(myGxsId, d2)) {
+            p2name = d2.mNickname;
+        } else {
+            p2name = myGxsId.toStdString().substr(0, 8) + "...";
+        }
     }
 
     QString title = QString::fromUtf8(p2name.c_str()) + " Playing Chess against " + QString::fromUtf8(p1name.c_str()) + player_str;
@@ -177,13 +190,20 @@ void RetroChessWindow::initAccessories()
 	m_ui->m_player1_name->setText( p1name.c_str() );
 	m_ui->m_player2_name->setText( p2name.c_str() );
 
-	QPixmap p1avatar;
-	AvatarDefs::getAvatarFromSslId(p1id, p1avatar);
-	m_ui->m_player1_avatar->setPixmap(p1avatar);//QPixmap(":/images/profile.png"));
+	if (!mIsGxs) {
+		// SSL peer avatar loading (only valid for direct peer connections)
+		QPixmap p1avatar;
+		AvatarDefs::getAvatarFromSslId(p1id, p1avatar);
+		m_ui->m_player1_avatar->setPixmap(p1avatar);
 
-	QPixmap p2avatar;
-	AvatarDefs::getAvatarFromSslId(p2id, p2avatar);
-	m_ui->m_player2_avatar->setPixmap(p2avatar);//QPixmap(":/images/profile.png"));
+		QPixmap p2avatar;
+		AvatarDefs::getAvatarFromSslId(p2id, p2avatar);
+		m_ui->m_player2_avatar->setPixmap(p2avatar);
+	} else {
+		// GXS mode: p1id/p2id are not set, use default avatars
+		m_ui->m_player1_avatar->setPixmap(QPixmap(":/images/profile.png"));
+		m_ui->m_player2_avatar->setPixmap(QPixmap(":/images/profile.png"));
+	}
 
 	//m_ui->m_move_record->setStyleSheet("QLabel {background-color: white;}");
 }

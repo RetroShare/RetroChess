@@ -50,7 +50,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 
 	connect(mNotify, SIGNAL(NeMsgArrived(RsPeerId,QString)), this, SLOT(NeMsgArrived(RsPeerId,QString)));
 	connect(mNotify, SIGNAL(chessStart(RsPeerId)), this, SLOT(chessStart(RsPeerId)));
-	connect(mNotify, SIGNAL(chessStartGxs(RsGxsId)), this, SLOT(showChessWindowGxs(RsGxsId)));
+	connect(mNotify, SIGNAL(chessStartGxs(RsGxsId)), this, SLOT(chessStartGxs(RsGxsId)));
+	connect(mNotify, SIGNAL(chessMoveGxs(RsGxsId,int,int,int)), this, SLOT(chessMoveGxs(RsGxsId,int,int,int)));
 	connect(ui->friendSelectionWidget, SIGNAL(itemSelectionChanged()), this, SLOT(friendSelectionChanged()));
 
     // enable/disable the invite button
@@ -77,6 +78,22 @@ NEMainpage::~NEMainpage()
 void NEMainpage::chessStart(const RsPeerId &peer_id)
 {
 	create_chess_window(peer_id.toStdString(), 0);
+}
+
+void NEMainpage::chessStartGxs(const RsGxsId &gxs_id)
+{
+	create_chess_window_gxs(gxs_id, 0);
+}
+
+void NEMainpage::chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count)
+{
+	std::string key = gxs_id.toStdString();
+	if (activeGames.find(key) != activeGames.end()) {
+		RetroChessWindow* rcw = activeGames.value(key);
+		rcw->validate_tile(row, col, count);
+	} else {
+		std::cerr << "RetroChess: Received GXS move but no active game for " << key << std::endl;
+	}
 }
 
 // decode received message here
@@ -179,11 +196,16 @@ void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 	ui->active_games->addItem(QString::fromStdString(peer_id));
 }
 
-void NEMainpage::showChessWindowGxs(const RsGxsId &gxs_id)
+void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 {
     // Open the window with the GXS constructor
-    RetroChessWindow *win = new RetroChessWindow(gxs_id, 0); 
+    RetroChessWindow *win = new RetroChessWindow(gxs_id, player_id); 
     win->show();
+
+    // Track the game so GXS moves can be routed to it
+    std::string key = gxs_id.toStdString();
+    activeGames.insert(key, win);
+    ui->active_games->addItem(QString::fromStdString(key));
 }
 
 // enable the invite button when selected a friend

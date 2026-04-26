@@ -58,7 +58,8 @@ private slots:
 	void friendSelectionChanged();
 	void NeMsgArrived(const RsPeerId &peer_id, QString str);
 	void chessStart(const RsPeerId &peer_id);
-	void showChessWindowGxs(const RsGxsId &gxs_id);
+	void chessStartGxs(const RsGxsId &gxs_id);
+	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
 
 	void on_broadcastButton_clicked();
 
@@ -79,6 +80,7 @@ private:
 
 	QMap<std::string, RetroChessWindow*> activeGames;
 	void create_chess_window(std::string peer_id, int player_id);
+    void create_chess_window_gxs(const RsGxsId &gxs_id, int player_id);
 };
 
 #endif // NEMAINPAGE_H

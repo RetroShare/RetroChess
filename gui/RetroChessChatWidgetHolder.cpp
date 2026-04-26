@@ -27,6 +27,7 @@
 #include "interface/rsRetroChess.h"
 
 #include "gui/chat/ChatWidget.h"
+#include <retroshare/rschats.h>
 
 #include "RetroChessChatWidgetHolder.h"
 
@@ -175,12 +176,22 @@ void RetroChessChatWidgetHolder::chessPressed()
 	ChatId chatId = mChatWidget->getChatId();
 	QString peerName;
 	if (chatId.isDistantChatId()) {
-		rsRetroChess->sendGxsInvite(RsGxsId(chatId.toDistantChatId().toStdString()));
+		// Resolve the real remote GXS ID from the distant chat tunnel
+		DistantChatPeerInfo dcpinfo;
+		if (!rsChats->getDistantChatStatus(chatId.toDistantChatId(), dcpinfo)) {
+			std::cerr << "RetroChess: Failed to resolve distant chat status" << std::endl;
+			return;
+		}
+		RsGxsId remoteGxsId = dcpinfo.to_id;
 
+		rsRetroChess->sendGxsInvite(remoteGxsId);
+
+		peerName = QString::fromStdString(remoteGxsId.toStdString()).left(8);
 		mChatWidget->addChatMsg(true, tr("RetroChess"), QDateTime::currentDateTime(), 
                                QDateTime::currentDateTime(), 
                                tr("Requesting secure game tunnel..."), 
                                ChatWidget::MSGTYPE_SYSTEM);
+		return;
 	} else {
 		RsPeerId peer_id = chatId.toPeerId();
 
@@ -203,16 +214,22 @@ void RetroChessChatWidgetHolder::chessStart()
 {
 	ChatId chatId = mChatWidget->getChatId();
 	if (chatId.isDistantChatId()) {
-		rsRetroChess->acceptedInviteGxs(RsGxsId(chatId.toDistantChatId().toStdString()));
+		// Resolve the real remote GXS ID from the distant chat tunnel
+		DistantChatPeerInfo dcpinfo;
+		if (!rsChats->getDistantChatStatus(chatId.toDistantChatId(), dcpinfo)) {
+			std::cerr << "RetroChess: Failed to resolve distant chat status" << std::endl;
+			return;
+		}
+		RsGxsId remoteGxsId = dcpinfo.to_id;
 
-        // We wait for the service to signal handleGxsTunnelReady.
-        mChatWidget->addChatMsg(true, tr("RetroChess"), QDateTime::currentDateTime(), 
+		rsRetroChess->acceptedInviteGxs(remoteGxsId);
+
+		// Do NOT open the chess window here — wait for handleGxsTunnelReady()
+		// to fire when the tunnel is actually established.
+		mChatWidget->addChatMsg(true, tr("RetroChess"), QDateTime::currentDateTime(), 
                                QDateTime::currentDateTime(), 
                                tr("Establishing secure GXS tunnel..."), 
                                ChatWidget::MSGTYPE_SYSTEM);
-
-		// Notify the UI to open the Chess window for this GXS ID
-		mRetroChessNotify->notifyChessStartGxs(RsGxsId(chatId.toDistantChatId().toStdString())); 
 	} else {
 		RsPeerId peer_id = chatId.toPeerId();
 		rsRetroChess->acceptedInvite(peer_id);
@@ -225,10 +242,15 @@ void RetroChessChatWidgetHolder::handleGxsTunnelReady(const RsGxsId &gxs_id)
 {
     ChatId chatId = mChatWidget->getChatId();
     if (chatId.isDistantChatId()) {
-        // Now the tunnel is safe to use. Open the window.
-        mRetroChessNotify->notifyChessStartGxs(gxs_id);
-        
-        if (playChessButton) playChessButton->hide();
+        // Verify this tunnel is for the current chat
+        DistantChatPeerInfo dcpinfo;
+        if (rsChats->getDistantChatStatus(chatId.toDistantChatId(), dcpinfo)) {
+            if (dcpinfo.to_id == gxs_id) {
+                // Now the tunnel is safe to use. Open the window.
+                mRetroChessNotify->notifyChessStartGxs(gxs_id);
+                if (playChessButton) playChessButton->hide();
+            }
+        }
     }
 }
 
