@@ -38,6 +38,7 @@ public slots:
 	void chessPressed();
 	void chessStart();
 	void chessnotify(RsPeerId from_peer_id);
+	void chessReject();
 
 
 private slots:

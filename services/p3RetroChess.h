@@ -31,6 +31,8 @@
 #include "rsitems/rsconfigitems.h"
 #include "plugins/rspqiservice.h"
 #include <interface/rsRetroChess.h>
+#include "retroshare/rsgxstunnel.h"
+#include "retroshare/rsidentity.h"
 
 class p3LinkMgr;
 class RetroChessNotify ;
@@ -43,7 +45,7 @@ class RetroChessNotify ;
  * This is only used to test Latency for the moment.
  */
 
-class p3RetroChess: public RsPQIService, public RsRetroChess
+class p3RetroChess: public RsPQIService, public RsRetroChess, public RsGxsTunnelService::RsGxsTunnelClientService
 // Maybe we inherit from these later - but not needed for now.
 //, public p3Config, public pqiMonitor
 {
@@ -84,12 +86,24 @@ public:
 
 	virtual RsServiceInfo getServiceInfo() ;
 
+	/***** overloaded from RsGxsTunnelClientService *****/
+	virtual void notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t tunnel_status) override;
+	virtual void receiveData(const RsGxsTunnelId& id, unsigned char *data, uint32_t data_size) override;
+	virtual void connectToGxsTunnelService(RsGxsTunnelService *tunnel_service) override;
+	virtual bool acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side) override;
+
+	void connectToIdentityService(RsIdentity *identity_service);
+	void connectToChatService(RsChats *chat_service);
+	virtual std::string getPeerName(const RsPeerId& id) override;
+	virtual std::string getGxsName(const RsGxsId& gxs_id) override;
+
 	void 	ping_all();
 
 	void broadcast_paint(int x, int y);
 	void 	msg_all(std::string msg);
 	void str_msg_peer(RsPeerId peerID, QString strdata);
 	void raw_msg_peer(RsPeerId peerID, std::string msg);
+	void raw_msg_gxs(const RsGxsId& targetId, const RsGxsId& sourceId, const std::string& msg);
 	void 	qvm_msg_peer(RsPeerId peerID, QVariantMap data);
 
     void chess_click(std::string peer_id, int col, int row, int count);
@@ -100,13 +114,23 @@ public:
 	bool hasInviteTo(RsPeerId peerID);
 	void gotInvite(RsPeerId peerID);
 	void acceptedInvite(RsPeerId peerID);
-	void sendInvite(RsPeerId peerID);
+	virtual void sendInvite(RsPeerId peerID) override;
+
+	virtual void chess_click_chat(const ChatId& chatId, int col, int row, int count) override;
+	virtual void player_leave_chat(const ChatId& chatId) override;
+	virtual void sendInvite_chat(const ChatId& chatId) override;
+	virtual void acceptedInvite_chat(const ChatId& chatId) override;
+	virtual bool hasInviteFrom_chat(const ChatId& chatId) override;
+	virtual bool hasInviteTo_chat(const ChatId& chatId) override;
 private:
 
 
 	std::set<RsPeerId> invitesTo;
 	std::set<RsPeerId> invitesFrom;
+	std::set<RsGxsId> gxsInvitesTo;
+	std::set<RsGxsId> gxsInvitesFrom;
 	void handleData(RsRetroChessDataItem*) ;
+	void msg_chat(const ChatId& chatId, const std::string& msg);
 
 	RsMutex mRetroChessMtx;
 
@@ -114,10 +138,30 @@ private:
 
 
 	static RsTlvKeyValue push_int_value(const std::string& key,int value) ;
+
+	struct TunnelKey {
+		RsGxsId toId;
+		RsGxsId ownId;
+		bool operator<(const TunnelKey& other) const {
+			if (toId != other.toId) return toId < other.toId;
+			return ownId < other.ownId;
+		}
+	};
+
+	std::map<TunnelKey, RsGxsTunnelId> mGxsToTunnelMap;
+	std::map<RsGxsId, RsGxsTunnelId> mTargetGxsToTunnelMap;
+	std::map<RsGxsTunnelId, RsGxsId> mTunnelToPeerGxsIdMap;
+	std::map<RsGxsTunnelId, std::list<std::string>> mPendingTunnelMessages;
+	std::map<RsPeerId, std::string> mPseudoToNameMap;
+	std::map<RsPeerId, RsGxsId> mPseudoToRealGxsMap;
 	static int pop_int_value(const std::string& s) ;
 
 
 	RsServiceControl *mServiceControl;
 	RetroChessNotify *mNotify ;
+
+	RsGxsTunnelService *mGxsTunnels;
+	RsIdentity *mIdentity;
+	RsChats *mChats;
 
 };

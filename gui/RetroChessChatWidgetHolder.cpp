@@ -22,6 +22,7 @@
 #include <QPropertyAnimation>
 #include <QIcon>
 #include <QLayout>
+#include <QMessageBox>
 
 
 #include "interface/rsRetroChess.h"
@@ -52,10 +53,58 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 	playChessButton->setIconSize(QSize(28,28)) ;
 	playChessButton->setAutoRaise(true) ;
 
+	ChatId chatId = mChatWidget->getChatId();
+	RsDbg() << "CHESS: chessnotify for " << chatId.toStdString() 
+	        << " From: " << rsRetroChess->hasInviteFrom_chat(chatId)
+	        << " To: " << rsRetroChess->hasInviteTo_chat(chatId);
+
+	if (rsRetroChess->hasInviteFrom_chat(chatId))
+	{
+		// On évite les popups en boucle
+		static ChatId lastInviteChatId;
+		if (lastInviteChatId.toStdString() != chatId.toStdString()) {
+			lastInviteChatId = chatId;
+			
+			QString buttonName = "Unknown GXS Friend";
+			DistantChatPeerInfo info;
+			if (rsChats->getDistantChatStatus(chatId.toDistantChatId(), info)) {
+				buttonName = QString::fromUtf8(rsRetroChess->getGxsName(info.to_id).c_str());
+			}
+
+			// POPUP RADICALE pour garantir le clic
+			QMessageBox::StandardButton reply;
+			reply = QMessageBox::question(mChatWidget, tr("Chess Invitation"),
+			                              tr("%1 is inviting you to a game of Chess. Accept?").arg(buttonName),
+			                              QMessageBox::Yes|QMessageBox::No);
+			
+			if (reply == QMessageBox::Yes) {
+				RsDbg() << "CHESS: User accepted via popup";
+				chessStart();
+			} else {
+				RsDbg() << "CHESS: User rejected via popup";
+			}
+		}
+		playChessButton->setEnabled(true); 
+	}
+	else if (rsRetroChess->hasInviteTo_chat(chatId))
+	{
+		RsDbg() << "CHESS: Button DISABLED (Waiting for opponent)";
+		playChessButton->setEnabled(false);
+		playChessButton->setToolTip(tr("Waiting for oponent..."));
+	}
+	else
+	{
+		RsDbg() << "CHESS: Button ENABLED (Ready to play)";
+		playChessButton->setEnabled(true);
+		playChessButton->setToolTip(tr("Play Chess"));
+	}
+
 	mChatWidget->addTitleBarWidget(playChessButton); // <--- PLACE LE BOUTON EN HAUT
 	connect(playChessButton, SIGNAL(clicked()), this, SLOT(chessPressed()));
 	connect(notify, SIGNAL(chessInvited(RsPeerId)), this, SLOT(chessnotify(RsPeerId)));
 
+	// Vérifier immédiatement s'il y a une invitation en attente à l'ouverture de la fenêtre
+	chessnotify(mChatWidget->getChatId().toPeerId());
 }
 
 RetroChessChatWidgetHolder::~RetroChessChatWidgetHolder()
@@ -70,64 +119,69 @@ RetroChessChatWidgetHolder::~RetroChessChatWidgetHolder()
 
 void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 {
-	RsPeerId peer_id =  mChatWidget->getChatId().toPeerId();//TODO support GXSID
-	//if (peer_id!=from_peer_id)return;//invite from another chat
-	if (rsRetroChess->hasInviteFrom(peer_id))
+	ChatId chatId = mChatWidget->getChatId();
+	
+	if (rsRetroChess->hasInviteFrom_chat(chatId))
 	{
-		if (mChatWidget)
-		{
-			QString buttonName = QString::fromUtf8(rsPeers->getPeerName(peer_id).c_str());
-			if (buttonName.isEmpty()) buttonName = "Chess";//TODO maybe change all with GxsId
-			//disable old buttons
-			button_map::iterator it = buttonMapTakeChess.begin();
-			while (it != buttonMapTakeChess.end())
-			{
-				it = buttonMapTakeChess.erase(it);
+		// On évite les popups en boucle
+		static ChatId lastInviteChatId;
+		if (lastInviteChatId.toStdString() != chatId.toStdString()) {
+			lastInviteChatId = chatId;
+			
+			QString buttonName = "Unknown GXS Friend";
+			DistantChatPeerInfo info;
+			if (rsChats->getDistantChatStatus(chatId.toDistantChatId(), info)) {
+				buttonName = QString::fromUtf8(rsRetroChess->getGxsName(info.to_id).c_str());
 			}
-			//button_map::iterator it = buttonMapTakeChess.find(buttonName);
-			//if (it == buttonMapTakeChess.end()){
-			mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
-			                        , tr("%1 inviting you to start Chess. Do you want to accept or decline the invitation?").arg(buttonName), ChatWidget::MSGTYPE_SYSTEM);
-			RSButtonOnText *button = mChatWidget->getNewButtonOnTextBrowser(tr("Accept"));
-			button->setToolTip(tr("Accept"));
-			button->setStyleSheet(QString("border: 1px solid #199909;")
-			                      .append("font-size: 12pt;  color: white;")
-			                      .append("min-width: 128px; min-height: 24px;")
-			                      .append("border-radius: 6px;")
-			                      .append("padding: 3px;") // <--- AJOUT DU PADDING
-			                      .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
-			                              "stop: 0 #22c70d, stop: 1 #116a06);")
 
-			                     );
-
-			button->updateImage();
-
-			connect(button,SIGNAL(clicked()),this,SLOT(chessStart()));
-			connect(button,SIGNAL(mouseEnter()),this,SLOT(botMouseEnter()));
-			connect(button,SIGNAL(mouseLeave()),this,SLOT(botMouseLeave()));
-
-			buttonMapTakeChess.insert(buttonName, button);
-			//}
+			RsDbg() << "CHESS: Showing popup for " << buttonName.toStdString();
+			// POPUP RADICALE pour garantir le clic
+			QMessageBox::StandardButton reply;
+			reply = QMessageBox::question(mChatWidget, tr("Chess Invitation"),
+			                              tr("%1 is inviting you to a game of Chess. Accept?").arg(buttonName),
+			                              QMessageBox::Yes|QMessageBox::No);
+			
+			if (reply == QMessageBox::Yes) {
+				RsDbg() << "CHESS: User accepted via popup";
+				chessStart();
+			} else {
+				RsDbg() << "CHESS: User rejected via popup";
+			}
 		}
-
-
+		playChessButton->setEnabled(true); 
+	}
+	else if (rsRetroChess->hasInviteTo_chat(chatId))
+	{
+		RsDbg() << "CHESS: Button DISABLED (Waiting for opponent)";
+		playChessButton->setEnabled(false);
+		playChessButton->setToolTip(tr("Waiting for oponent..."));
+	}
+	else
+	{
+		RsDbg() << "CHESS: Button ENABLED (Ready to play)";
+		playChessButton->setEnabled(true);
+		playChessButton->setToolTip(tr("Play Chess"));
 	}
 }
 
 void RetroChessChatWidgetHolder::chessPressed()
 {
-	RsPeerId peer_id =  mChatWidget->getChatId().toPeerId();//TODO support GXSID
-	if (rsRetroChess->hasInviteFrom(peer_id))
+	ChatId chatId = mChatWidget->getChatId();
+	RsDbg() << "CHESS: chessPressed() for chatId: " << chatId.toStdString();
+
+	if (rsRetroChess->hasInviteFrom_chat(chatId))
 	{
-
-		rsRetroChess->acceptedInvite(peer_id);
-		mRetroChessNotify->notifyChessStart(peer_id);
+		rsRetroChess->acceptedInvite_chat(chatId);
+		// Note: we might need to handle RsPeerId vs RsGxsId in notification
+		mRetroChessNotify->notifyChessStart(chatId.toPeerId(), 1); // Accept = Guest (1)
 		return;
-
 	}
-	rsRetroChess->sendInvite(peer_id);
+	rsRetroChess->sendInvite_chat(chatId);
 
-	QString peerName = QString::fromUtf8(rsPeers->getPeerName(peer_id).c_str());
+	QString peerName = chatId.isPeerId() ? 
+		QString::fromUtf8(rsPeers->getPeerName(chatId.toPeerId()).c_str()) :
+		tr("GXS Friend");
+
 	mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
 	                        , tr("You're now inviting %1 to play Chess").arg(peerName), ChatWidget::MSGTYPE_SYSTEM);
 
@@ -135,26 +189,27 @@ void RetroChessChatWidgetHolder::chessPressed()
 
 void RetroChessChatWidgetHolder::chessStart()
 {
-	RsPeerId peer_id =  mChatWidget->getChatId().toPeerId();//TODO support GXSID
+	RsDbg() << "CHESS: UI Accept button clicked!";
+	ChatId chatId = mChatWidget->getChatId();
+	RsPeerId targetId = chatId.toPeerId();
 
-	// Désactiver et détruire le bouton pour éviter d'ouvrir 2 fenêtres
-	RSButtonOnText *source = qobject_cast<RSButtonOnText *>(QObject::sender());
-	if (source) {
-		source->setEnabled(false);
-		button_map::iterator it = buttonMapTakeChess.begin();
-		while (it != buttonMapTakeChess.end()) {
-			if (it.value() == source) {
-				it = buttonMapTakeChess.erase(it);
-			} else {
-				++it;
-			}
+	if (chatId.isDistantChatId()) {
+		RsDbg() << "CHESS: Handling GXS invite for " << chatId.toStdString();
+		DistantChatPeerInfo info;
+		if (rsChats->getDistantChatStatus(chatId.toDistantChatId(), info)) {
+			targetId = RsPeerId(info.to_id.toStdString());
+			RsDbg() << "CHESS: Using pseudo-ID for GXS start: " << targetId;
 		}
-		source->deleteLater();
 	}
 
-	rsRetroChess->acceptedInvite(peer_id);
-	mRetroChessNotify->notifyChessStart(peer_id);
-	return;
+	rsRetroChess->acceptedInvite_chat(chatId);
+	mRetroChessNotify->notifyChessStart(targetId, 1); // Accept = Guest (1)
+}
+
+void RetroChessChatWidgetHolder::chessReject()
+{
+	RsDbg() << "CHESS: UI Reject button clicked!";
+	// Pour l'instant on se contente de logger, on pourra ajouter rsRetroChess->rejectInvite_chat plus tard
 }
 
 void RetroChessChatWidgetHolder::botMouseEnter()

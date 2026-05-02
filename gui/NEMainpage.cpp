@@ -49,7 +49,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	setupMenuActions();
 
 	connect(mNotify, SIGNAL(NeMsgArrived(RsPeerId,QString)), this, SLOT(NeMsgArrived(RsPeerId,QString)));
-	connect(mNotify, SIGNAL(chessStart(RsPeerId)), this, SLOT(chessStart(RsPeerId)));
+	connect(mNotify, SIGNAL(chessStart(RsPeerId,int)), this, SLOT(chessStart(RsPeerId,int)));
 	connect(ui->friendSelectionWidget, SIGNAL(itemSelectionChanged()), this, SLOT(friendSelectionChanged()));
 
     // enable/disable the invite button
@@ -73,9 +73,9 @@ NEMainpage::~NEMainpage()
 	delete ui;
 }
 
-void NEMainpage::chessStart(const RsPeerId &peer_id)
+void NEMainpage::chessStart(const RsPeerId &peer_id, int player_id)
 {
-	create_chess_window(peer_id.toStdString(), 1); // Invited node plays Black (1)
+	create_chess_window(peer_id.toStdString(), player_id);
 }
 
 // decode received message here

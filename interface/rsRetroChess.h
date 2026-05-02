@@ -27,6 +27,7 @@
 #include <list>
 #include <vector>
 #include <retroshare/rstypes.h>
+#include <retroshare/rschats.h>
 
 #include <QVariantMap>
 #include <QString>
@@ -53,6 +54,15 @@ class RsRetroChess
 	virtual void acceptedInvite(RsPeerId peerID) = 0;
 	virtual void gotInvite(RsPeerId peerID) = 0;
 	virtual void sendInvite(RsPeerId peerID) = 0;
+
+	virtual void chess_click_chat(const ChatId& chatId, int col, int row, int count) = 0;
+	virtual void player_leave_chat(const ChatId& chatId) = 0;
+	virtual void sendInvite_chat(const ChatId& chatId) = 0;
+	virtual void acceptedInvite_chat(const ChatId& chatId) = 0;
+	virtual bool hasInviteFrom_chat(const ChatId& chatId) = 0;
+	virtual bool hasInviteTo_chat(const ChatId& chatId) = 0;
+	virtual std::string getPeerName(const RsPeerId& id) = 0;
+	virtual std::string getGxsName(const RsGxsId& id) = 0;
 };
 
 

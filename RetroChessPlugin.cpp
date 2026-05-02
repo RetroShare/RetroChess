@@ -83,6 +83,9 @@ RetroChessPlugin::RetroChessPlugin()
 	mPeers = NULL;
 	config_page = NULL ;
 	mIcon = NULL ;
+	mGxsTunnels = NULL;
+	mIdentity = NULL;
+	mChats = NULL;
 
 	mRetroChessNotify = new RetroChessNotify;
 }
@@ -90,6 +93,21 @@ RetroChessPlugin::RetroChessPlugin()
 void RetroChessPlugin::setInterfaces(RsPlugInInterfaces &interfaces)
 {
 	mPeers = interfaces.mPeers;
+	mGxsTunnels = interfaces.mGxsTunnels;
+	mIdentity = interfaces.mIdentity;
+	mChats = interfaces.mChats;
+
+	RsDbg() << "CHESS: setInterfaces: mChats=" << (mChats?"OK":"NULL") << " mGxsTunnels=" << (mGxsTunnels?"OK":"NULL");
+
+	if(mRetroChess)
+	{
+		RsDbg() << "CHESS: Plugin calling service connections...";
+		mRetroChess->connectToGxsTunnelService(mGxsTunnels);
+		RsDbg() << "CHESS: Calling connectToIdentityService";
+		mRetroChess->connectToIdentityService(mIdentity);
+		RsDbg() << "CHESS: Calling connectToChatService";
+		mRetroChess->connectToChatService(mChats);
+	}
 }
 
 /*ConfigPage *RetroChessPlugin::qt_config_page() const
@@ -124,10 +142,10 @@ ChatWidgetHolder *RetroChessPlugin::qt_get_chat_widget_holder(ChatWidget *chatWi
 	switch (chatWidget->chatType())
 	{
 	case ChatWidget::CHATTYPE_PRIVATE:
+	case ChatWidget::CHATTYPE_DISTANT:
 		return new RetroChessChatWidgetHolder(chatWidget, mRetroChessNotify);
 	case ChatWidget::CHATTYPE_UNKNOWN:
 	case ChatWidget::CHATTYPE_LOBBY:
-	case ChatWidget::CHATTYPE_DISTANT:
 		break;
 	}
 
@@ -137,7 +155,24 @@ ChatWidgetHolder *RetroChessPlugin::qt_get_chat_widget_holder(ChatWidget *chatWi
 p3Service *RetroChessPlugin::p3_service() const
 {
 	if(mRetroChess == NULL)
+	{
 		rsRetroChess = mRetroChess = new p3RetroChess(mPlugInHandler,mRetroChessNotify) ; // , 3600 * 24 * 30 * 6); // 6 Months
+		if(mGxsTunnels)
+		{
+			RsDbg() << "CHESS: p3_service: calling connectToGxsTunnelService";
+			mRetroChess->connectToGxsTunnelService(mGxsTunnels);
+		}
+		if(mIdentity)
+		{
+			RsDbg() << "CHESS: p3_service: calling connectToIdentityService";
+			mRetroChess->connectToIdentityService(mIdentity);
+		}
+		if(mChats)
+		{
+			RsDbg() << "CHESS: p3_service: calling connectToChatService";
+			mRetroChess->connectToChatService(mChats);
+		}
+	}
 
 	return mRetroChess ;
 }

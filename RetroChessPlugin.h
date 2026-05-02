@@ -75,6 +75,9 @@ private:
 	mutable ConfigPage *config_page ;
 	mutable QIcon *mIcon;
 	mutable MainPage* mainpage ;
+	mutable RsGxsTunnelService *mGxsTunnels;
+	mutable RsIdentity *mIdentity;
+	mutable RsChats *mChats;
 
 	RetroChessNotify *mRetroChessNotify ;
 	RetroChessGUIHandler *mRetroChessGUIHandler ;

@@ -65,13 +65,13 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
         m_localplayer_turn = 1;
     }
 
-	p1name = rsPeers->getPeerName(p1id);
-	p2name = rsPeers->getPeerName(p2id);
+	p1name = rsRetroChess->getPeerName(p1id);
+	p2name = rsRetroChess->getPeerName(p2id);
 
 	// Correction du titre : Toujours "Local Playing Chess against Remote"
 	QString title = QString::fromStdString(rsPeers->getPeerName(rsPeers->getOwnId()));
 	title += " Playing Chess against ";
-	title += QString::fromStdString(rsPeers->getPeerName(RsPeerId(peerid)));
+	title += QString::fromStdString(rsRetroChess->getPeerName(RsPeerId(peerid)));
 
 	this->setWindowTitle(title);
 

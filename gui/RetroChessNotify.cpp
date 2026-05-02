@@ -41,11 +41,11 @@ void RetroChessNotify::notifyReceivedMsg(const RsPeerId& peer_id, QString str)
 	emit NeMsgArrived(peer_id, str) ;
 }
 
-void RetroChessNotify::notifyChessStart(const RsPeerId &peer_id)
+void RetroChessNotify::notifyChessStart(const RsPeerId &peer_id, int player_id)
 {
-	emit chessStart(peer_id) ;
-
+	emit chessStart(peer_id, player_id) ;
 }
+
 void RetroChessNotify::notifyChessInvite(const RsPeerId &peer_id)
 {
 	emit chessInvited(peer_id) ;
