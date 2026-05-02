@@ -55,7 +55,10 @@
 
 /**************************************************************************/
 
-const uint16_t RS_SERVICE_TYPE_RetroChess_PLUGIN = 0xc4e55;
+// 0xc4e55 était trop grand pour un uint16_t et causait un warning.
+// Le compilateur le tronquait silencieusement à 0x4e55. Pour garder la
+// compatibilité réseau sans warning, on utilise directement la valeur tronquée.
+const uint16_t RS_SERVICE_TYPE_RetroChess_PLUGIN = 0x4e55;
 
 const uint8_t RS_PKT_SUBTYPE_RetroChess_DATA 	   = 0x01;
 

@@ -32,15 +32,19 @@
 
 #include <retroshare/rsstatus.h>
 #include <retroshare/rspeers.h>
+#include <util/rsdebug.h>
 
 #define IMAGE_RetroChess ":/images/chess.png"
 
 RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, RetroChessNotify *notify)
 	: QObject(), ChatWidgetHolder(chatWidget), mRetroChessNotify(notify)
 {
+	Q_INIT_RESOURCE(RetroChess_images); // <--- ASSURE LE CHARGEMENT DE L'ICONE
+
+	RsDbg() << "CHESS: RetroChessChatWidgetHolder has been instantiated!" << std::endl;
+
 	QIcon icon ;
 	icon.addPixmap(QPixmap(IMAGE_RetroChess)) ;
-
 
 	playChessButton = new QToolButton ;
 	playChessButton->setIcon(icon) ;
@@ -48,7 +52,7 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 	playChessButton->setIconSize(QSize(28,28)) ;
 	playChessButton->setAutoRaise(true) ;
 
-	mChatWidget->addChatBarWidget(playChessButton);
+	mChatWidget->addTitleBarWidget(playChessButton); // <--- PLACE LE BOUTON EN HAUT
 	connect(playChessButton, SIGNAL(clicked()), this, SLOT(chessPressed()));
 	connect(notify, SIGNAL(chessInvited(RsPeerId)), this, SLOT(chessnotify(RsPeerId)));
 
@@ -90,6 +94,7 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 			                      .append("font-size: 12pt;  color: white;")
 			                      .append("min-width: 128px; min-height: 24px;")
 			                      .append("border-radius: 6px;")
+			                      .append("padding: 3px;") // <--- AJOUT DU PADDING
 			                      .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
 			                              "stop: 0 #22c70d, stop: 1 #116a06);")
 
@@ -132,6 +137,21 @@ void RetroChessChatWidgetHolder::chessStart()
 {
 	RsPeerId peer_id =  mChatWidget->getChatId().toPeerId();//TODO support GXSID
 
+	// Désactiver et détruire le bouton pour éviter d'ouvrir 2 fenêtres
+	RSButtonOnText *source = qobject_cast<RSButtonOnText *>(QObject::sender());
+	if (source) {
+		source->setEnabled(false);
+		button_map::iterator it = buttonMapTakeChess.begin();
+		while (it != buttonMapTakeChess.end()) {
+			if (it.value() == source) {
+				it = buttonMapTakeChess.erase(it);
+			} else {
+				++it;
+			}
+		}
+		source->deleteLater();
+	}
+
 	rsRetroChess->acceptedInvite(peer_id);
 	mRetroChessNotify->notifyChessStart(peer_id);
 	return;
@@ -146,6 +166,7 @@ void RetroChessChatWidgetHolder::botMouseEnter()
 		                      .append("font-size: 12pt; color: white;")
 		                      .append("min-width: 128px; min-height: 24px;")
 		                      .append("border-radius: 6px;")
+		                      .append("padding: 3px;") // <--- AJOUT DU PADDING
 		                      .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
 		                              "stop: 0 #444444, stop: 1 #222222);")
 
@@ -163,6 +184,7 @@ void RetroChessChatWidgetHolder::botMouseLeave()
 		                      .append("font-size: 12pt; color: white;")
 		                      .append("min-width: 128px; min-height: 24px;")
 		                      .append("border-radius: 6px;")
+		                      .append("padding: 3px;") // <--- AJOUT DU PADDING
 		                      .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
 		                              "stop: 0 #22c70d, stop: 1 #116a06);")
 

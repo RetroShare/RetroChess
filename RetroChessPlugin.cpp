@@ -181,7 +181,7 @@ std::string RetroChessPlugin::getPluginName() const
 	return "RetroChess";
 }
 
-QTranslator* RetroChessPlugin::qt_translator(QApplication */*app*/, const QString& languageCode, const QString& externalDir) const
+QTranslator* RetroChessPlugin::qt_translator(QApplication */*app*/, const QString& /*languageCode*/, const QString& /*externalDir*/) const
 {
 	return NULL;
 }

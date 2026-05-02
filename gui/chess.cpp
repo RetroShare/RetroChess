@@ -68,16 +68,24 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	p1name = rsPeers->getPeerName(p1id);
 	p2name = rsPeers->getPeerName(p2id);
 
-	QString title = QString::fromStdString(p2name);
+	// Correction du titre : Toujours "Local Playing Chess against Remote"
+	QString title = QString::fromStdString(rsPeers->getPeerName(rsPeers->getOwnId()));
 	title += " Playing Chess against ";
-	title += QString::fromStdString(p1name);
-	title+=player_str;
-
+	title += QString::fromStdString(rsPeers->getPeerName(RsPeerId(peerid)));
 
 	this->setWindowTitle(title);
 
 	this->initAccessories();
 	this->initChessBoard();
+
+	// Si le joueur local joue les Noirs, on inverse les blocs d'information UI
+	// pour que ses informations soient en bas (comme son échiquier).
+	if (m_localplayer_turn == 0) {
+		m_ui->gridLayout_4->removeWidget(m_ui->frame);
+		m_ui->gridLayout_4->removeWidget(m_ui->frame_2);
+		m_ui->gridLayout_4->addWidget(m_ui->frame_2, 0, 0); // Les Blancs passent en haut
+		m_ui->gridLayout_4->addWidget(m_ui->frame, 5, 0);   // Les Noirs passent en bas
+	}
 
     this->playerTurnNotice();
 }
@@ -139,7 +147,7 @@ void RetroChessWindow::disOrange()
 
 }
 
-void RetroChessWindow::validate_tile(int row, int col, int c)
+void RetroChessWindow::validate_tile(int row, int col, int /*c*/)
 {
 	Tile *clickedtile = tile[col][row];
 	//if (!click1)click1=clickedtile;
@@ -152,7 +160,7 @@ void RetroChessWindow::initChessBoard()
 	//QWidget *baseWidget, Tile *tile[8][8]
 	QWidget *baseWidget = m_ui->m_chess_board;
 
-	int i,j,k = 0,hor,ver;
+	int i,j,k = 0;
 
 	Border *border[4] = { NULL };
 
@@ -165,11 +173,8 @@ void RetroChessWindow::initChessBoard()
 	}
 
 	//Create 64 tiles (allocating memories to the objects of Tile class)
-	ver = 20;
-
 	for(i = 0; i < 8; i++)
 	{
-		hor = 20;
 		for(j=0; j<8; j++)
 		{
 			tile[i][j] = new Tile(baseWidget);
@@ -180,12 +185,21 @@ void RetroChessWindow::initChessBoard()
 			tile[i][j]->col=j;
 			tile[i][j]->tileNum=k++;
 			tile[i][j]->tileDisplay();
-			tile[i][j]->setGeometry(hor,ver,64,64);
-			tile[i][j]->resize( 64, 64 );
 
-			hor+=64;
+			// Flip the board visually if the local player plays Black (0)
+			int display_row = i;
+			int display_col = j;
+			if (m_localplayer_turn == 0) {
+				display_row = 7 - i;
+				display_col = 7 - j;
+			}
+
+			int calc_hor = 20 + display_col * 64;
+			int calc_ver = 20 + display_row * 64;
+
+			tile[i][j]->setGeometry(calc_hor, calc_ver, 64, 64);
+			tile[i][j]->resize( 64, 64 );
 		}
-		ver+=64;
 	}
 
 	//white pawns
@@ -903,9 +917,8 @@ int RetroChessWindow::validateBishop(Tile *tile_p)
 
 // seems like "check" method is check "King"'s status in current situation. (alive or done)
 // for help player to make decition to keep "King" alive.
-int RetroChessWindow::check(Tile *tile_p)
+int RetroChessWindow::check(Tile * /*tile_p*/)
 {
-	int r,c,flag;
 	retVal=0;
 
 	return retVal;

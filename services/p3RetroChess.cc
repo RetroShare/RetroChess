@@ -64,6 +64,7 @@ static double getCurrentTS()
 	return cts;
 }
 
+#if 0
 static uint64_t convertTsTo64bits(double ts)
 {
 	uint32_t secs = (uint32_t) ts;
@@ -80,6 +81,7 @@ static double convert64bitsToTs(uint64_t bits)
 
 	return ts;
 }
+#endif
 
 p3RetroChess::p3RetroChess(RsPluginHandler *handler,RetroChessNotify *notifier)
 	: RsPQIService(RS_SERVICE_TYPE_RetroChess_PLUGIN,0,handler), mRetroChessMtx("p3RetroChess"), mServiceControl(handler->getServiceControl()), mNotify(notifier)
@@ -246,6 +248,7 @@ void p3RetroChess::msg_all(std::string msg)
 	rsPeers->getOnlineList(onlineIds);
 
 	double ts = getCurrentTS();
+	(void) ts;
 
 #ifdef DEBUG_RetroChess
 	std::cerr << "p3RetroChess::msg_all() @ts: " << ts;
@@ -273,6 +276,7 @@ void p3RetroChess::broadcast_paint(int x, int y)
 	rsPeers->getOnlineList(onlineIds);
 
 	double ts = getCurrentTS();
+	(void) ts;
 
 
 	std::cout << "READY TO PAINT: " << onlineIds.size() << "\n";
@@ -384,6 +388,7 @@ bool p3RetroChess::loadList(std::list<RsItem*>& load)
 		assert(item!=NULL) ;
 #endif
 		RsConfigKeyValueSet *vitem = dynamic_cast<RsConfigKeyValueSet*>(*it) ;
+		(void) vitem;
 		/*
 		if(vitem != NULL)
 			for(std::list<RsTlvKeyValue>::const_iterator kit = vitem->tlvkvs.pairs.begin(); kit != vitem->tlvkvs.pairs.end(); ++kit)

@@ -42,8 +42,8 @@
 
 NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	MainPage(parent),
-	mNotify(notify),
-	ui(new Ui::NEMainpage)
+	ui(new Ui::NEMainpage),
+	mNotify(notify)
 {
 	ui->setupUi(this);
 	setupMenuActions();
@@ -75,7 +75,7 @@ NEMainpage::~NEMainpage()
 
 void NEMainpage::chessStart(const RsPeerId &peer_id)
 {
-	create_chess_window(peer_id.toStdString(), 0);
+	create_chess_window(peer_id.toStdString(), 1); // Invited node plays Black (1)
 }
 
 // decode received message here
@@ -137,7 +137,7 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 	{
 		if (rsRetroChess->hasInviteTo(peer_id))
 		{
-			create_chess_window(peer_id.toStdString(), 1);
+			create_chess_window(peer_id.toStdString(), 0); // Inviter plays White (0)
 			rsRetroChess->acceptedInvite(peer_id);
 		}
 	}
@@ -201,7 +201,7 @@ void NEMainpage::on_inviteButton_clicked()
     if( fid != "")	// selected a friend
     {
         //make_board();
-        create_chess_window(fid, 1);
+        create_chess_window(fid, 0); // Inviter plays White (0)
 
         QVariantMap map;
         //map.insert("type", "chess_init");
