@@ -89,14 +89,17 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 	else if (rsRetroChess->hasInviteTo_chat(chatId))
 	{
 		RsDbg() << "CHESS: Button DISABLED (Waiting for opponent)";
+		playChessButton->setText(tr("Invite Sent..."));
 		playChessButton->setEnabled(false);
 		playChessButton->setToolTip(tr("Waiting for oponent..."));
 	}
 	else
 	{
-		RsDbg() << "CHESS: Button ENABLED (Ready to play)";
-		playChessButton->setEnabled(true);
-		playChessButton->setToolTip(tr("Play Chess"));
+		bool ready = rsRetroChess->isPeerReady_chat(chatId);
+		RsDbg() << "CHESS: isPeerReady_chat for " << chatId.toStdString() << " returned " << (ready?"TRUE":"FALSE");
+		playChessButton->setText(tr("Play Chess"));
+		playChessButton->setEnabled(ready);
+		playChessButton->setToolTip(ready ? tr("Play Chess") : tr("Chess handshake is only possible if a message has been previously sent to the friend. Checking..."));
 	}
 
 	mChatWidget->addTitleBarWidget(playChessButton); // <--- PLACE LE BOUTON EN HAUT
@@ -105,6 +108,9 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 
 	// Vérifier immédiatement s'il y a une invitation en attente à l'ouverture de la fenêtre
 	chessnotify(mChatWidget->getChatId().toPeerId());
+
+	// POKER le tunnel GXS immédiatement pour déclencher le handshake
+	rsRetroChess->pokeTunnel_chat(mChatWidget->getChatId());
 }
 
 RetroChessChatWidgetHolder::~RetroChessChatWidgetHolder()
@@ -117,7 +123,7 @@ RetroChessChatWidgetHolder::~RetroChessChatWidgetHolder()
 	}
 }
 
-void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
+void RetroChessChatWidgetHolder::chessnotify(RsPeerId /*from_peer_id*/)
 {
 	ChatId chatId = mChatWidget->getChatId();
 	
@@ -148,19 +154,23 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 				RsDbg() << "CHESS: User rejected via popup";
 			}
 		}
+		playChessButton->setText(tr("Accept Invite"));
 		playChessButton->setEnabled(true); 
 	}
 	else if (rsRetroChess->hasInviteTo_chat(chatId))
 	{
 		RsDbg() << "CHESS: Button DISABLED (Waiting for opponent)";
+		playChessButton->setText(tr("Invite Sent..."));
 		playChessButton->setEnabled(false);
 		playChessButton->setToolTip(tr("Waiting for oponent..."));
 	}
 	else
 	{
-		RsDbg() << "CHESS: Button ENABLED (Ready to play)";
-		playChessButton->setEnabled(true);
-		playChessButton->setToolTip(tr("Play Chess"));
+		bool ready = rsRetroChess->isPeerReady_chat(chatId);
+		RsDbg() << "CHESS: isPeerReady_chat for " << chatId.toStdString() << " returned " << (ready?"TRUE":"FALSE");
+		playChessButton->setText(tr("Play Chess"));
+		playChessButton->setEnabled(ready);
+		playChessButton->setToolTip(ready ? tr("Play Chess") : tr("Chess handshake is only possible if a message has been previously sent to the friend. Checking..."));
 	}
 }
 

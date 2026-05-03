@@ -59,9 +59,11 @@ class RsRetroChess
 	virtual void chess_click_chat(const ChatId& chatId, int col, int row, int count) = 0;
 	virtual void player_leave_chat(const ChatId& chatId) = 0;
 	virtual void sendInvite_chat(const ChatId& chatId) = 0;
+	virtual void pokeTunnel_chat(const ChatId& chatId) = 0;
 	virtual void acceptedInvite_chat(const ChatId& chatId) = 0;
 	virtual bool hasInviteFrom_chat(const ChatId& chatId) = 0;
 	virtual bool hasInviteTo_chat(const ChatId& chatId) = 0;
+	virtual bool isPeerReady_chat(const ChatId& chatId) = 0;
 	virtual std::string getPeerName(const RsPeerId& id) = 0;
 	virtual std::string getGxsName(const RsGxsId& id) = 0;
 	virtual bool getAvatar(const RsPeerId& id, QPixmap& avatar) = 0;

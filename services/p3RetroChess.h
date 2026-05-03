@@ -122,9 +122,12 @@ public:
 	virtual void chess_click_chat(const ChatId& chatId, int col, int row, int count) override;
 	virtual void player_leave_chat(const ChatId& chatId) override;
 	virtual void sendInvite_chat(const ChatId& chatId) override;
+	virtual void pokeTunnel_chat(const ChatId& chatId);
 	virtual void acceptedInvite_chat(const ChatId& chatId) override;
 	virtual bool hasInviteFrom_chat(const ChatId& chatId) override;
 	virtual bool hasInviteTo_chat(const ChatId& chatId) override;
+	virtual bool isPeerReady_chat(const ChatId& chatId);
+
 private:
 
 
@@ -132,6 +135,7 @@ private:
 	std::set<RsPeerId> invitesFrom;
 	std::set<RsGxsId> gxsInvitesTo;
 	std::set<RsGxsId> gxsInvitesFrom;
+	std::set<RsGxsId> gxsPeersReady;
 	void handleData(RsRetroChessDataItem*) ;
 	void msg_chat(const ChatId& chatId, const std::string& msg);
 
