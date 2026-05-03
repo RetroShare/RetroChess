@@ -96,6 +96,9 @@ public:
 	void connectToChatService(RsChats *chat_service);
 	virtual std::string getPeerName(const RsPeerId& id) override;
 	virtual std::string getGxsName(const RsGxsId& gxs_id) override;
+	virtual bool getAvatar(const RsPeerId& id, QPixmap& avatar) override;
+	virtual RsPeerId getOwnId(const RsPeerId& remoteId) override;
+	virtual bool isLocalId(const RsPeerId& id) override;
 
 	void 	ping_all();
 
@@ -150,6 +153,7 @@ private:
 
 	std::map<TunnelKey, RsGxsTunnelId> mGxsToTunnelMap;
 	std::map<RsGxsId, RsGxsTunnelId> mTargetGxsToTunnelMap;
+	std::map<RsGxsId, RsGxsId> mTargetToOwnGxsIdMap;
 	std::map<RsGxsTunnelId, RsGxsId> mTunnelToPeerGxsIdMap;
 	std::map<RsGxsTunnelId, std::list<std::string>> mPendingTunnelMessages;
 	std::map<RsPeerId, std::string> mPseudoToNameMap;

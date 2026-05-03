@@ -28,6 +28,7 @@
 #include <vector>
 #include <retroshare/rstypes.h>
 #include <retroshare/rschats.h>
+#include <QPixmap>
 
 #include <QVariantMap>
 #include <QString>
@@ -63,6 +64,9 @@ class RsRetroChess
 	virtual bool hasInviteTo_chat(const ChatId& chatId) = 0;
 	virtual std::string getPeerName(const RsPeerId& id) = 0;
 	virtual std::string getGxsName(const RsGxsId& id) = 0;
+	virtual bool getAvatar(const RsPeerId& id, QPixmap& avatar) = 0;
+	virtual RsPeerId getOwnId(const RsPeerId& remoteId) = 0;
+	virtual bool isLocalId(const RsPeerId& id) = 0;
 };
 
 

@@ -47,26 +47,33 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 
 	setGeometry(0,0,1370,700);
 
-	QString player_str;
+	QString player_str;	p1id = RsPeerId(peerid); // Initial guess: Player 1 (Top) = Remote
+	p2id = rsRetroChess->getOwnId(p1id); // Initial guess: Player 2 (Bottom) = Local
+	
+	// CRITICAL CHECK: If Player 1 is actually US, swap them!
+	if (rsRetroChess->isLocalId(p1id)) {
+		std::swap(p1id, p2id);
+	}
+	
+	p1name = rsRetroChess->getPeerName(p1id);
+	p2name = rsRetroChess->getPeerName(p2id);
+
+	RsDbg() << "CHESS: Final Assignment - TOP: " << p1name << " BOTTOM: " << p2name;
+
     if (player )	// local player as black
 	{
-		p1id = rsPeers->getOwnId();
-		p2id = RsPeerId(peerid);
 		player_str = " (1)";
-
         m_localplayer_turn = 0;
+		m_ui->m_black_title->setText(tr("White (Opponent):")); // Top label
+		m_ui->m_white_title->setText(tr("Black (You):"));      // Bottom label
 	}
     else	// local player as white
 	{
-		p1id = RsPeerId(peerid);
-		p2id = rsPeers->getOwnId();
 		player_str = " (2)";
-
         m_localplayer_turn = 1;
+		m_ui->m_black_title->setText(tr("Black (Opponent):")); // Top label
+		m_ui->m_white_title->setText(tr("White (You):"));      // Bottom label
     }
-
-	p1name = rsRetroChess->getPeerName(p1id);
-	p2name = rsRetroChess->getPeerName(p2id);
 
 	// Correction du titre : Toujours "Local Playing Chess against Remote"
 	QString title = QString::fromStdString(rsPeers->getPeerName(rsPeers->getOwnId()));
@@ -75,17 +82,9 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 
 	this->setWindowTitle(title);
 
+	this->mPeerId = peerid;
 	this->initAccessories();
 	this->initChessBoard();
-
-	// Si le joueur local joue les Noirs, on inverse les blocs d'information UI
-	// pour que ses informations soient en bas (comme son échiquier).
-	if (m_localplayer_turn == 0) {
-		m_ui->gridLayout_4->removeWidget(m_ui->frame);
-		m_ui->gridLayout_4->removeWidget(m_ui->frame_2);
-		m_ui->gridLayout_4->addWidget(m_ui->frame_2, 0, 0); // Les Blancs passent en haut
-		m_ui->gridLayout_4->addWidget(m_ui->frame, 5, 0);   // Les Noirs passent en bas
-	}
 
     this->playerTurnNotice();
 }
@@ -120,12 +119,22 @@ void RetroChessWindow::initAccessories()
 	m_ui->m_player2_name->setText( p2name.c_str() );
 
 	QPixmap p1avatar;
-	AvatarDefs::getAvatarFromSslId(p1id, p1avatar);
-	m_ui->m_player1_avatar->setPixmap(p1avatar);//QPixmap(":/images/profile.png"));
+	if (rsRetroChess->getAvatar(p1id, p1avatar) && !p1avatar.isNull()) {
+		m_ui->m_player1_avatar->setPixmap(p1avatar.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+	} else {
+		AvatarDefs::getAvatarFromSslId(p1id, p1avatar);
+		m_ui->m_player1_avatar->setPixmap(p1avatar.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+	}
+	m_ui->m_player1_avatar->setAlignment(Qt::AlignCenter);
 
 	QPixmap p2avatar;
-	AvatarDefs::getAvatarFromSslId(p2id, p2avatar);
-	m_ui->m_player2_avatar->setPixmap(p2avatar);//QPixmap(":/images/profile.png"));
+	if (rsRetroChess->getAvatar(p2id, p2avatar) && !p2avatar.isNull()) {
+		m_ui->m_player2_avatar->setPixmap(p2avatar.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+	} else {
+		AvatarDefs::getAvatarFromSslId(p2id, p2avatar);
+		m_ui->m_player2_avatar->setPixmap(p2avatar.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+	}
+	m_ui->m_player2_avatar->setAlignment(Qt::AlignCenter);
 
 	//m_ui->m_move_record->setStyleSheet("QLabel {background-color: white;}");
 }
@@ -1020,26 +1029,24 @@ void RetroChessWindow::showPlayerLeaveMsg()
 
 void RetroChessWindow::playerTurnNotice()
 {
-    if( this->turn )
+    // The bottom player (p2/You) gets the "Turn" notice only if it's their turn
+    if (m_localplayer_turn == turn)
     {
-        m_ui->m_player1_result->setText("Waiting for opponent");
+        m_ui->m_player2_result->setText(tr("Turn"));
+        m_ui->m_player2_result->setStyleSheet("QLabel {font: 14pt; color: green; font-weight: bold;}");
+
+        m_ui->m_player1_result->setText(tr("Waiting for opponent"));
         m_ui->m_player1_result->setStyleSheet("QLabel {font: 14pt; color: gray;}");
-
-        m_ui->m_player2_result->setText("Turn");
-        m_ui->m_player2_result->setStyleSheet("QLabel {font: 14pt; color: green; text:bold;}");
-
-        m_ui->m_player1_result->setVisible(true);
-        m_ui->m_player2_result->setVisible(true);
     }
     else
     {
-        m_ui->m_player1_result->setText("Turn");
-        m_ui->m_player1_result->setStyleSheet("QLabel {font: 14pt;color: green;}");
+        m_ui->m_player1_result->setText(tr("Turn"));
+        m_ui->m_player1_result->setStyleSheet("QLabel {font: 14pt; color: green; font-weight: bold;}");
 
-        m_ui->m_player2_result->setText("Waiting for opponent");
-        m_ui->m_player2_result->setStyleSheet("QLabel {font: 14pt;color: gray; text:bold;}");
-
-        m_ui->m_player1_result->setVisible(true);
-        m_ui->m_player2_result->setVisible(true);
+        m_ui->m_player2_result->setText(tr("Waiting for opponent"));
+        m_ui->m_player2_result->setStyleSheet("QLabel {font: 14pt; color: gray;}");
     }
+
+    m_ui->m_player1_result->setVisible(true);
+    m_ui->m_player2_result->setVisible(true);
 }

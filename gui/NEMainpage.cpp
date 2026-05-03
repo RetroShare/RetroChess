@@ -137,7 +137,7 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 	{
 		if (rsRetroChess->hasInviteTo(peer_id))
 		{
-			create_chess_window(peer_id.toStdString(), 0); // Inviter plays White (0)
+			create_chess_window(peer_id.toStdString(), 1); // Guest plays Black (1)
 			rsRetroChess->acceptedInvite(peer_id);
 		}
 	}
@@ -255,7 +255,7 @@ void NEMainpage::on_filterPeersButton_clicked()
 
         // get friend 's avatar
         QPixmap friend_avatar;
-        AvatarDefs::getAvatarFromSslId( id, friend_avatar);
+        rsRetroChess->getAvatar(id, friend_avatar);
 
 		rsServiceControl->getServicesAllowed (*it, local_service_perms) ;
 		rsServiceControl->getServicesProvided(*it,remote_service_perms) ;

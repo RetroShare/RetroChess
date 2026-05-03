@@ -30,6 +30,7 @@
 
 #include "services/p3RetroChess.h"
 #include "services/rsRetroChessItems.h"
+#include "gui/common/AvatarDefs.h"
 
 #include <sys/time.h>
 
@@ -215,6 +216,34 @@ void p3RetroChess::sendInvite(RsPeerId peerID)
 {
 	mPeerID = peer;
 }*/
+RsPeerId p3RetroChess::getOwnId(const RsPeerId& remoteId)
+{
+	RsStackMutex stack(mRetroChessMtx);
+	if (mPseudoToRealGxsMap.count(remoteId)) {
+		RsGxsId targetId = mPseudoToRealGxsMap[remoteId];
+		if (mTargetToOwnGxsIdMap.count(targetId)) {
+			return RsPeerId(mTargetToOwnGxsIdMap[targetId].toStdString());
+		}
+	}
+	return rsPeers->getOwnId();
+}
+
+bool p3RetroChess::isLocalId(const RsPeerId& id)
+{
+	if (id == rsPeers->getOwnId()) return true;
+	
+	RsStackMutex stack(mRetroChessMtx);
+	RsGxsId gxsId(id.toStdString());
+	if (mPseudoToRealGxsMap.count(id)) {
+		gxsId = mPseudoToRealGxsMap[id];
+	}
+
+	if (!gxsId.isNull() && mIdentity) {
+		return mIdentity->isOwnId(gxsId);
+	}
+	return false;
+}
+
 void p3RetroChess::raw_msg_peer(RsPeerId peerID, std::string msg)
 {
 	{
@@ -465,7 +494,13 @@ void p3RetroChess::raw_msg_gxs(const RsGxsId& targetId, const RsGxsId& sourceId,
 		if (mGxsTunnels->requestSecuredTunnel(targetId, sourceId, tunnelId, RS_SERVICE_TYPE_RetroChess_PLUGIN, error_code)) {
 			mGxsToTunnelMap[key] = tunnelId;
 			mTargetGxsToTunnelMap[targetId] = tunnelId;
+			mTargetToOwnGxsIdMap[targetId] = sourceId;
 			mTunnelToPeerGxsIdMap[tunnelId] = targetId;
+
+			// On mémorise aussi notre propre ID pour que getAvatar fonctionne pour nous
+			mPseudoToRealGxsMap[RsPeerId(sourceId.toStdString())] = sourceId;
+			mPseudoToNameMap[RsPeerId(sourceId.toStdString())] = getGxsName(sourceId);
+
 			RsDbg() << "CHESS: Tunnel requested successfully: " << tunnelId;
 		} else {
 			RsErr() << "CHESS: Failed to request tunnel, error=" << error_code;
@@ -703,6 +738,30 @@ void p3RetroChess::acceptedInvite_chat(const ChatId& chatId)
 	}
 }
 
+bool p3RetroChess::getAvatar(const RsPeerId& id, QPixmap& avatar)
+{
+	RsStackMutex stack(mRetroChessMtx);
+	RsGxsId gxsId;
+
+	if (mPseudoToRealGxsMap.count(id)) {
+		gxsId = mPseudoToRealGxsMap[id];
+		RsDbg() << "CHESS: getAvatar - Found GXS ID for pseudo " << id << " -> " << gxsId;
+	} else {
+		// Tentative de détection directe si l'ID est binaire mais compatible
+		gxsId = RsGxsId(id.toStdString());
+	}
+
+	if (!gxsId.isNull()) {
+		if (AvatarDefs::getAvatarFromGxsId(gxsId, avatar)) {
+			RsDbg() << "CHESS: getAvatar - Successfully loaded GXS avatar for " << gxsId;
+			return true;
+		}
+	}
+	
+	RsDbg() << "CHESS: getAvatar - Falling back to SSL avatar for " << id;
+	return AvatarDefs::getAvatarFromSslId(id, avatar);
+}
+
 std::string p3RetroChess::getGxsName(const RsGxsId& gxs_id)
 {
 	if (mIdentity) {
@@ -722,6 +781,18 @@ std::string p3RetroChess::getPeerName(const RsPeerId& id)
 		RsDbg() << "CHESS: Found name in pseudo map: " << mPseudoToNameMap[id];
 		return mPseudoToNameMap[id];
 	}
+	
+	// Fallback : si c'est un pseudo-ID GXS, on tente une résolution directe
+	RsGxsId gxsId(id.toStdString());
+	if (mPseudoToRealGxsMap.count(id)) {
+		gxsId = mPseudoToRealGxsMap[id];
+	}
+	
+	if (!gxsId.isNull()) {
+		std::string name = getGxsName(gxsId);
+		if (!name.empty() && name != "GXS Friend") return name;
+	}
+	
 	return rsPeers->getPeerName(id);
 }
 
