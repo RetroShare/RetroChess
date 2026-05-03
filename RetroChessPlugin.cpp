@@ -78,12 +78,16 @@ void RetroChessPlugin::getPluginVersion(int& major, int& minor, int& build, int&
 RetroChessPlugin::RetroChessPlugin()
 {
 	qRegisterMetaType<RsPeerId>("RsPeerId");
+	qRegisterMetaType<RsGxsId>("RsGxsId");
 	mainpage = NULL ;
 	mRetroChess = NULL ;
 	mPlugInHandler = NULL;
 	mPeers = NULL;
 	config_page = NULL ;
 	mIcon = NULL ;
+	mGxsTunnels = NULL;
+	mIdentity = NULL;
+	mChats = NULL;
 
 	mRetroChessNotify = new RetroChessNotify;
 }
@@ -92,6 +96,13 @@ void RetroChessPlugin::setInterfaces(RsPlugInInterfaces &interfaces)
 {
 	mPeers = interfaces.mPeers;
 	mGxsTunnels = interfaces.mGxsTunnels;
+	mIdentity = interfaces.mIdentity;
+	mChats = interfaces.mChats;
+
+	if(mRetroChess)
+	{
+		mRetroChess->connectToGxsTunnelService(mGxsTunnels);
+	}
 }
 
 /*ConfigPage *RetroChessPlugin::qt_config_page() const
@@ -127,10 +138,10 @@ ChatWidgetHolder *RetroChessPlugin::qt_get_chat_widget_holder(ChatWidget *chatWi
 	{
 	case ChatWidget::CHATTYPE_PRIVATE:
 		return new RetroChessChatWidgetHolder(chatWidget, mRetroChessNotify);
-	case ChatWidget::CHATTYPE_UNKNOWN:
-	case ChatWidget::CHATTYPE_LOBBY:
 	case ChatWidget::CHATTYPE_DISTANT:
 		return new RetroChessChatWidgetHolder(chatWidget, mRetroChessNotify);
+	case ChatWidget::CHATTYPE_UNKNOWN:
+	case ChatWidget::CHATTYPE_LOBBY:
 		break;
 	}
 
@@ -143,10 +154,10 @@ p3Service *RetroChessPlugin::p3_service() const
     {
         // Create the service
         rsRetroChess = mRetroChess = new p3RetroChess(mPlugInHandler, mRetroChessNotify);
-        
+
         // Register it for GXS Tunnels immediately if the interface is available
         if (mGxsTunnels) {
-            mGxsTunnels->registerClientService(RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, mRetroChess);
+            mRetroChess->connectToGxsTunnelService(mGxsTunnels);
         }
     }
     return mRetroChess;

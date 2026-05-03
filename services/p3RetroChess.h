@@ -32,6 +32,7 @@
 #include "plugins/rspqiservice.h"
 #include "retroshare/rsidentity.h"
 #include <retroshare/rsgxstunnel.h>
+#include <retroshare/rschats.h>
 
 #include <interface/rsRetroChess.h>
 
@@ -113,8 +114,13 @@ public:
 	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) override;
 
+	// Send invite via existing distant chat tunnel (correct approach)
+	virtual void sendInvite_chat(const ChatId &chatId) override;
+
 	// Async tunnel management
 	void handleGxsTick(); // Called periodically by the core
+	void retryPendingDistantChatInvites(); // Retry invites queued before the tunnel was ready
+	void doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId); // Actually request tunnel + queue invite
 
 	virtual uint32_t getGxsTunnelServiceId() const { 
 			return RETRO_CHESS_GXS_TUNNEL_SERVICE_ID; 
@@ -141,6 +147,13 @@ private:
 	std::map<RsGxsId, RsGxsTunnelId> mPendingTunnels;
 	// Tracks established tunnels ready for data
 	std::map<RsGxsId, RsGxsTunnelId> mActiveTunnels;
+	// Pending invite messages to send once a tunnel becomes CAN_TALK
+	std::map<RsGxsId, std::string> mPendingGxsInvites;
+	// Maps tunnel ID → remote GXS ID (populated by acceptDataFromPeer, server-side)
+	std::map<RsGxsTunnelId, RsGxsId> mTunnelToGxsIdMap;
+	// DistantChatIds for which sendInvite_chat() was called but getDistantChatStatus()
+	// failed (tunnel not established yet). Retried every tick() until it succeeds.
+	std::map<DistantChatPeerId, time_t> mPendingDistantChatInvites;
 
 	RsGxsTunnelService *mGxsTunnels;
 	RsMutex mRetroChessMtx;

@@ -43,6 +43,9 @@ public:
 	/** Notify the UI of a chess move received via a GXS tunnel */
 	void notifyChessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
 
+	/** Notify the UI that a GXS chess invite was received */
+	void notifyChessInviteGxs(const RsGxsId &gxs_id);
+
 	/** Notify the UI that a GXS tunnel is now ready for use */
 	void notifyGxsTunnelReady(const RsGxsId &gxs_id);
 
@@ -57,6 +60,7 @@ signals:
 	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
 	void gxsTunnelReady(const RsGxsId &gxs_id);
 
+	void chessInvitedGxs(const RsGxsId &gxs_id);
 	void chessStartGxs(const RsGxsId &gxs_id);
 
 public slots:

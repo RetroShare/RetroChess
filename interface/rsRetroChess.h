@@ -27,6 +27,7 @@
 #include <list>
 #include <vector>
 #include <retroshare/rstypes.h>
+#include <retroshare/rschats.h>  // for ChatId
 
 #include <QVariantMap>
 #include <QString>
@@ -61,6 +62,9 @@ class RsRetroChess
 	virtual void sendGxsInvite(const RsGxsId &gxsId) = 0;
 	//virtual void addChessFriend(const RsGxsId &gxsId) = 0;
 	virtual void acceptedInviteGxs(const RsGxsId &gxsId) = 0;
+
+	// Send invite via an *existing* distant chat tunnel (the right approach for distant chat)
+	virtual void sendInvite_chat(const ChatId &chatId) = 0;
 
 };
 

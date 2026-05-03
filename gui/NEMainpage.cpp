@@ -77,7 +77,7 @@ NEMainpage::~NEMainpage()
 
 void NEMainpage::chessStart(const RsPeerId &peer_id)
 {
-	create_chess_window(peer_id.toStdString(), 0);
+	create_chess_window(peer_id.toStdString(), 1);
 }
 
 void NEMainpage::chessStartGxs(const RsGxsId &gxs_id)

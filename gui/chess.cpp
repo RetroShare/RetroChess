@@ -1111,7 +1111,7 @@ void RetroChessWindow::playerTurnNotice()
 {
     if( this->turn )
     {
-        m_ui->m_player1_result->setText("Waiting for opponent");
+        m_ui->m_player1_result->setText("Waiting");
         m_ui->m_player1_result->setStyleSheet("QLabel {font: 14pt; color: gray;}");
 
         m_ui->m_player2_result->setText("Turn");
@@ -1125,7 +1125,7 @@ void RetroChessWindow::playerTurnNotice()
         m_ui->m_player1_result->setText("Turn");
         m_ui->m_player1_result->setStyleSheet("QLabel {font: 14pt;color: green;}");
 
-        m_ui->m_player2_result->setText("Waiting for opponent");
+        m_ui->m_player2_result->setText("Waiting");
         m_ui->m_player2_result->setStyleSheet("QLabel {font: 14pt;color: gray; text:bold;}");
 
         m_ui->m_player1_result->setVisible(true);

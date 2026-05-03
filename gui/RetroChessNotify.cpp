@@ -52,6 +52,11 @@ void RetroChessNotify::notifyChessInvite(const RsPeerId &peer_id)
 
 }
 
+void RetroChessNotify::notifyChessInviteGxs(const RsGxsId &gxs_id)
+{
+	emit chessInvitedGxs(gxs_id);
+}
+
 void RetroChessNotify::notifyChessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count)
 {
 	emit chessMoveGxs(gxs_id, col, row, count);
