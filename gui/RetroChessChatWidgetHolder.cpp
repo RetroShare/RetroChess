@@ -56,6 +56,7 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 	// When the p3RetroChess service detects the tunnel is CONNECTED, 
 	// it calls notifyGxsTunnelReady, which emits this signal:
 	connect(notify, SIGNAL(gxsTunnelReady(RsGxsId)), this, SLOT(handleGxsTunnelReady(RsGxsId)));
+	connect(notify, SIGNAL(gxsTunnelClosed(RsGxsId)), this, SLOT(handleGxsTunnelClosed(RsGxsId)));
 
 }
 
@@ -259,6 +260,34 @@ void RetroChessChatWidgetHolder::handleGxsTunnelReady(const RsGxsId &gxs_id)
         }
     }
 }
+
+void RetroChessChatWidgetHolder::handleGxsTunnelClosed(const RsGxsId &gxs_id)
+{
+    ChatId chatId = mChatWidget->getChatId();
+    if (!chatId.isDistantChatId())
+        return;
+
+    // Check that this closure is for the remote peer of THIS chat window
+    DistantChatPeerInfo dcpinfo;
+    if (rsChats->getDistantChatStatus(chatId.toDistantChatId(), dcpinfo)) {
+        if (dcpinfo.to_id != gxs_id)
+            return; // Belongs to a different chat window
+    }
+
+    // Restore the button so the user can start a new game
+    if (playChessButton) {
+        playChessButton->show();
+    }
+
+    if (mChatWidget) {
+        mChatWidget->addChatMsg(true, tr("RetroChess"),
+                                QDateTime::currentDateTime(),
+                                QDateTime::currentDateTime(),
+                                tr("Connection to chess partner was lost. You can invite them again."),
+                                ChatWidget::MSGTYPE_SYSTEM);
+    }
+}
+
 
 void RetroChessChatWidgetHolder::botMouseEnter()
 {

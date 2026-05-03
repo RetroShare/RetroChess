@@ -696,8 +696,31 @@ RsGxsId p3RetroChess::findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id)
 
 // services/p3RetroChess.cc
 
-void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& /*tunnel_id*/, uint32_t /*tunnel_status*/)
+void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t tunnel_status)
 {
+    // React to tunnel being closed or going down
+    if (tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED ||
+        tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN)
+    {
+        RsGxsId gxs_id;
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            // Search active tunnels for the closed tunnel
+            for (auto it = mActiveTunnels.begin(); it != mActiveTunnels.end(); ++it) {
+                if (it->second == tunnel_id) {
+                    gxs_id = it->first;
+                    mActiveTunnels.erase(it);
+                    break;
+                }
+            }
+            // Also clean up mapping
+            mTunnelToGxsIdMap.erase(tunnel_id);
+        }
+        if (!gxs_id.isNull()) {
+            std::cout << "Chess: Tunnel closed for GXS " << gxs_id << std::endl;
+            mNotify->notifyGxsTunnelClosed(gxs_id);
+        }
+    }
 }
 
 void p3RetroChess::receiveData(const RsGxsTunnelId& id, unsigned char *data, uint32_t data_size)

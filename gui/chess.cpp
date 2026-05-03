@@ -200,9 +200,36 @@ void RetroChessWindow::initAccessories()
 		AvatarDefs::getAvatarFromSslId(p2id, p2avatar);
 		m_ui->m_player2_avatar->setPixmap(p2avatar);
 	} else {
-		// GXS mode: p1id/p2id are not set, use default avatars
-		m_ui->m_player1_avatar->setPixmap(QPixmap(":/images/profile.png"));
-		m_ui->m_player2_avatar->setPixmap(QPixmap(":/images/profile.png"));
+		// GXS mode: retrieve avatars via the GXS identity service.
+		// Determine which slot is "us" and which is the remote peer,
+		// mirroring the same player/role logic used in the constructor.
+		std::list<RsGxsId> ownIds;
+		rsIdentity->getOwnIds(ownIds);
+		RsGxsId myGxsId = ownIds.empty() ? RsGxsId() : ownIds.front();
+
+		QPixmap p1avatar, p2avatar;
+		// p1 is always the identity shown in the player-1 slot (set in constructor)
+		// p2 is the identity shown in the player-2 slot
+		// The remote peer is mGxsId; our own is myGxsId.
+		// Which slot each maps to depends on the player role (set by the constructor).
+		RsGxsId slot1Id, slot2Id;
+		if (m_localplayer_turn == 0) {
+			// We are black (player 1 slot = us, player 2 slot = remote)
+			slot1Id = myGxsId;
+			slot2Id = mGxsId;
+		} else {
+			// We are white (player 1 slot = remote, player 2 slot = us)
+			slot1Id = mGxsId;
+			slot2Id = myGxsId;
+		}
+
+		if (!slot1Id.isNull())
+			AvatarDefs::getAvatarFromGxsId(slot1Id, p1avatar);
+		if (!slot2Id.isNull())
+			AvatarDefs::getAvatarFromGxsId(slot2Id, p2avatar);
+
+		m_ui->m_player1_avatar->setPixmap(p1avatar);
+		m_ui->m_player2_avatar->setPixmap(p2avatar);
 	}
 
 	//m_ui->m_move_record->setStyleSheet("QLabel {background-color: white;}");
