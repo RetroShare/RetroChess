@@ -25,6 +25,7 @@
 #include <gui/chat/ChatWidget.h>
 #include <gui/common/RsButtonOnText.h>
 #include <gui/RetroChessNotify.h>
+#include <set>
 
 class RetroChessChatWidgetHolder : public QObject, public ChatWidgetHolder
 {
@@ -39,6 +40,10 @@ public slots:
 	void chessStart();
 	void chessnotify(RsPeerId from_peer_id);
 
+	void chessnotifyGxs(const RsGxsId &from_gxs_id);
+	void handleGxsTunnelReady(const RsGxsId &gxs_id);
+	void handleGxsTunnelClosed(const RsGxsId &gxs_id);
+	void handleChessPlayerLeftGxs(const RsGxsId &gxs_id);
 
 private slots:
 	void botMouseEnter();
@@ -50,6 +55,9 @@ protected:
 
 	typedef QMap<QString, RSButtonOnText*> button_map;
 	button_map buttonMapTakeChess;
+	std::set<RsGxsId> displayedGxsInvites;
+	void showGxsInviteIfMatching(const RsGxsId &from_gxs_id, int retriesLeft);
+	void recoverPendingGxsInvite(int retriesLeft);
 };
 
 #endif // RETROCHESSCHATWIDGETHOLDER_H

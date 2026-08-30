@@ -15,7 +15,10 @@
         <file>images/chess-icon.png</file>
         <file>images/chess-icon-32.png</file>
         <file>images/chess.png</file>
+		<file>images/chess-notify.png</file>
 		<file>images/profile.png</file>
 		<file>images/retrochess.png</file>
+		<file>sound/Move.mp3</file>
+		<file>sound/Capture.mp3</file>
     </qresource>
 </RCC>

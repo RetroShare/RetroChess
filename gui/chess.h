@@ -27,8 +27,14 @@
 #include <QWidget>
 
 #include "retroshare/rspeers.h"
+#include "retroshare/rsidentity.h"
 
 #include <QQueue>
+#include <QStringList>
+
+class QLabel;
+class QTableWidget;
+class QMediaPlayer;
 
 namespace Ui
 {
@@ -51,13 +57,21 @@ private:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+	void resizeEvent(QResizeEvent *event) override;
 
 public:
 	std::string mPeerId;
 	explicit RetroChessWindow(std::string peerid, int player = 0, QWidget *parent = 0);
+	explicit RetroChessWindow(const RsGxsId &gxsId, int player = 0, QWidget *parent = 0);
 	~RetroChessWindow();
 	int currentplayer;
 	int myid;
+	RsGxsId mGxsId; // Store GXS identity if using a tunnel
+	RsGxsId mOwnGxsId; // Exact local identity used by this GXS tunnel
+	bool mIsGxs;
+	bool m_suppressLeave;
+	bool m_resultPopupShown;
+	bool m_rematchRequested;
 
 	//from global
 
@@ -89,13 +103,36 @@ public:
 	int check(Tile *temp);
 
     QQueue<int> m_last_move_que;	// record last move numbers
+	QStringList m_move_history;
+	QString m_capturedBlack;
+	QString m_capturedWhite;
+	QLabel *m_capturedBlackLabel;
+	QLabel *m_capturedWhiteLabel;
+	QTableWidget *m_moveTable;
+	QMediaPlayer *m_moveSound;
+	QMediaPlayer *m_captureSound;
     void recordLastMove( int tile_num );
+	void recordMove(int fromTile, int toTile, char pieceName, bool capture);
+	void recordCapturedPiece(char pieceName, int pieceColor);
+	void playMoveSound(bool capture);
+	void sendGameAction(const QString &action);
+	void applyGameAction(const QString &action, bool remote);
+	void showGameStatus(const QString &status);
+	void refreshBoardTheme();
     void drawLastMove();
     void clearLastMove();
 
     int resultJudge();	// judge result (slow method)
     void showPlayerLeaveMsg();	// show player leave message
     void playerTurnNotice();
+	void closeForRematch();
+	void showGameResultDialog(bool localWon, bool draw = false);
+
+signals:
+	void rematchRequested(const RsGxsId &gxsId, int localColor);
+	void rematchRequestedPeer(QString peerId, int localColor);
+	void gameClosed(QString gameId);
+	void gameEnded(QString gameId);
 };
 
 

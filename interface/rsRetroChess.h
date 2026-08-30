@@ -27,6 +27,7 @@
 #include <list>
 #include <vector>
 #include <retroshare/rstypes.h>
+#include <retroshare/rschats.h>  // for ChatId
 
 #include <QVariantMap>
 #include <QString>
@@ -51,8 +52,25 @@ class RsRetroChess
 	virtual bool hasInviteFrom(RsPeerId peerID) = 0;
 	virtual bool hasInviteTo(RsPeerId peerID) = 0;
 	virtual void acceptedInvite(RsPeerId peerID) = 0;
+	virtual void clearInvite(RsPeerId peerID) = 0;
 	virtual void gotInvite(RsPeerId peerID) = 0;
 	virtual void sendInvite(RsPeerId peerID) = 0;
+
+	// New GXSID & Tunneling methods
+	virtual void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count) = 0;
+	virtual void player_leave_gxs(const RsGxsId &gxs_id) = 0;
+	virtual void requestGxsTunnel(const RsGxsId &gxsId) = 0;
+	virtual void sendGxsInvite(const RsGxsId &gxsId) = 0;
+	//virtual void addChessFriend(const RsGxsId &gxsId) = 0;
+	virtual void acceptedInviteGxs(const RsGxsId &gxsId) = 0;
+	virtual bool hasInviteFromGxs(const RsGxsId &gxsId) = 0;
+	virtual RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) = 0;
+	virtual bool sendRematchGxs(const RsGxsId &gxsId, int localColor) = 0;
+	virtual bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) = 0;
+
+	// Send invite via an *existing* distant chat tunnel (the right approach for distant chat)
+	virtual bool sendInvite_chat(const ChatId &chatId) = 0;
+
 };
 
 

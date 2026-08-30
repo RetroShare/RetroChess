@@ -20,6 +20,7 @@
 
 #include "tile.h"
 #include "chess.h"
+#include "RetroChessSettings.h"
 #include "../interface/rsRetroChess.h"
 
 /*extern int count,turn;
@@ -48,7 +49,11 @@ void Tile::mousePressEvent(QMouseEvent *event)
         if((chess_window_p)->m_localplayer_turn == (chess_window_p)->turn)
         {
             validate( ++(chess_window_p)->count );
-            rsRetroChess->chess_click(peer_id, this->row,this->col,(chess_window_p)->count);
+                if ((chess_window_p)->mIsGxs) {
+                    rsRetroChess->chess_click_gxs((chess_window_p)->mGxsId, this->row,this->col, (chess_window_p)->count);
+                } else {
+                    rsRetroChess->chess_click((chess_window_p)->mPeerId, this->row,this->col, (chess_window_p)->count);
+                }
         }
         // not local player's turn
     }
@@ -169,6 +174,11 @@ void Tile::validate(int c)
             // next postion is valiad, then move
             if(tile_p->tileNum==(chess_window_p)->texp[i])
             {
+				const int fromTile = (chess_window_p)->click1->tileNum;
+				const char movedPiece = (chess_window_p)->click1->pieceName;
+				const bool wasCapture = tile_p->piece;
+				const char capturedPiece = tile_p->pieceName;
+				const int capturedColor = tile_p->pieceColor;
                 (chess_window_p)->click1->piece=0;
                 tile_p->piece=1;
 
@@ -202,6 +212,10 @@ void Tile::validate(int c)
 
                 (chess_window_p)->recordLastMove((chess_window_p)->click1->tileNum);
                 (chess_window_p)->recordLastMove(tile_p->tileNum);
+				(chess_window_p)->recordMove(fromTile, tile_p->tileNum, movedPiece, wasCapture);
+				if (wasCapture)
+					(chess_window_p)->recordCapturedPiece(capturedPiece, capturedColor);
+				(chess_window_p)->playMoveSound(wasCapture);
 
                 (chess_window_p)->playerTurnNotice();
                 // ----
@@ -220,11 +234,12 @@ void Tile::validate(int c)
 
 void Tile::tileDisplay()
 {
-
-    if(this->tileColor)
-        this->setStyleSheet("QLabel {background-color: rgb(120, 120, 90);}:hover{background-color: rgb(170,85,127);}");
-    else
-        this->setStyleSheet("QLabel {background-color: rgb(211, 211, 158);}:hover{background-color: rgb(170,95,127);}");
+	const RetroChessBoardTheme theme = RetroChessSettings::boardTheme();
+	const QColor color = this->tileColor ? theme.dark : theme.light;
+	const QColor hover = color.lighter(120);
+	this->setStyleSheet(QString(
+	        "QLabel { background-color: %1; } QLabel:hover { background-color: %2; }")
+	        .arg(color.name(), hover.name()));
 }
 
 void Tile::pawnLevelupCheck()

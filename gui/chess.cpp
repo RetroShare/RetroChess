@@ -19,20 +19,122 @@
  *******************************************************************************/
 
 #include <QApplication>
+#include <QDialog>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QHeaderView>
+#include <QTableWidget>
+#include <QMediaPlayer>
+#include <QMessageBox>
+#include <QUrl>
+#include <QVBoxLayout>
 
 #include "chess.h"
 #include "ui_chess.h"
+#include "RetroChessSettings.h"
 
 #include "gui/common/AvatarDefs.h"
 #include "../services/p3RetroChess.h"
 
+// NEW: Constructor for Distant GXS Identity
+RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *parent) :
+    QWidget(parent),
+    m_ui(new Ui::RetroChessWindow),
+    mGxsId(gxsId),
+    mIsGxs(true),
+    m_suppressLeave(false),
+    m_resultPopupShown(false),
+    m_rematchRequested(false),
+    m_capturedBlackLabel(nullptr),
+    m_capturedWhiteLabel(nullptr),
+    m_moveTable(nullptr),
+    m_moveSound(nullptr),
+    m_captureSound(nullptr)
+{
+    QString player_str; 
+    if (player == 1) {
+        player_str = " (1)";
+    } else if (player == 2) {
+        player_str = " (2)";
+    }
+
+    m_ui->setupUi(this);
+    setAttribute(Qt::WA_DeleteOnClose);
+    mPeerId = gxsId.toStdString(); // Use string representation for internal tracking
+	mOwnGxsId = rsRetroChess->ownGxsIdForPeer(gxsId);
+
+    m_ui->m_player1_result->hide();
+    m_ui->m_player2_result->hide();
+    m_ui->m_status_bar->hide();
+
+    m_flag_finished = 0;	// set as unfinish
+
+    //tile = { { NULL } };
+    count=0;
+    turn=1;	// white first
+    max=0;
+    texp = new int[60];
+
+    if (player) { // local player as black
+        // Note: For GXS we track identities rather than PeerIds
+        player_str = " (1)";
+        m_localplayer_turn = 0;
+        
+        // Use non-blocking lookup with fallback for unknown identities
+        RsIdentityDetails d1, d2;
+        if (rsIdentity->getIdDetails(mOwnGxsId, d1)) {
+            p1name = d1.mNickname;
+        } else {
+            p1name = mOwnGxsId.isNull() ? "Local GXS identity" : mOwnGxsId.toStdString().substr(0, 8) + "...";
+        }
+        if (rsIdentity->getIdDetails(gxsId, d2)) {
+            p2name = d2.mNickname;
+        } else {
+            p2name = gxsId.toStdString().substr(0, 8) + "...";
+        }
+    } else { // local player as white
+        player_str = " (2)";
+        m_localplayer_turn = 1;
+
+        RsIdentityDetails d1, d2;
+        if (rsIdentity->getIdDetails(gxsId, d1)) {
+            p1name = d1.mNickname;
+        } else {
+            p1name = gxsId.toStdString().substr(0, 8) + "...";
+        }
+        if (rsIdentity->getIdDetails(mOwnGxsId, d2)) {
+            p2name = d2.mNickname;
+        } else {
+            p2name = mOwnGxsId.isNull() ? "Local GXS identity" : mOwnGxsId.toStdString().substr(0, 8) + "...";
+        }
+    }
+
+    QString title = QString::fromUtf8(p2name.c_str()) + " Playing Chess against " + QString::fromUtf8(p1name.c_str()) + player_str;
+
+    setWindowTitle(title);
+    initAccessories();
+    playerTurnNotice();
+    initChessBoard();
+}
+
 RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *parent) :
 	QWidget(parent),
 	m_ui( new Ui::RetroChessWindow() ),
-	mPeerId(peerid)
+	mPeerId(peerid),
+	mIsGxs(false),
+	m_suppressLeave(false),
+	m_resultPopupShown(false),
+	m_rematchRequested(false),
+	m_capturedBlackLabel(nullptr),
+	m_capturedWhiteLabel(nullptr),
+	m_moveTable(nullptr),
+	m_moveSound(nullptr),
+	m_captureSound(nullptr)
 	//ui(new Ui::RetroChessWindow)
 {
 	m_ui->setupUi( this );
+	setAttribute(Qt::WA_DeleteOnClose);
     m_ui->m_player1_result->hide();
     m_ui->m_player2_result->hide();
     m_ui->m_status_bar->hide();
@@ -44,8 +146,6 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
     turn=1;	// white first
 	max=0;
 	texp = new int[60];
-
-	setGeometry(0,0,1370,700);
 
 	QString player_str;
     if (player )	// local player as black
@@ -94,6 +194,7 @@ public:
 	void outline(QWidget *baseWidget, int xPos, int yPos, int Pos)
 	{
 		QLabel *outLabel = new QLabel(baseWidget);
+		outLabel->setProperty("retroChessBoardBorder", true);
 
 		if(!Pos)
 			outLabel->setGeometry(xPos,yPos,552,20);        //Horizontal Borders
@@ -101,7 +202,9 @@ public:
 		else
 			outLabel->setGeometry(xPos,yPos,20,512);        //Vertical Borders
 
-		outLabel->setStyleSheet("QLabel { background-color :rgb(170, 170, 127); color : black; }");
+		const QColor borderColor = RetroChessSettings::boardTheme().dark.lighter(135);
+		outLabel->setStyleSheet(QString("QLabel { background-color: %1; color: black; }")
+		                            .arg(borderColor.name()));
 	}
 };
 
@@ -110,14 +213,171 @@ void RetroChessWindow::initAccessories()
 	// display player's name
 	m_ui->m_player1_name->setText( p1name.c_str() );
 	m_ui->m_player2_name->setText( p2name.c_str() );
+	m_ui->m_move_record->hide();
+	m_ui->moveHistoryLayout->removeWidget(m_ui->m_move_record);
+	m_moveTable = new QTableWidget(0, 3, m_ui->moveHistoryFrame);
+	m_moveTable->setHorizontalHeaderLabels(QStringList() << "#" << tr("White") << tr("Black"));
+	m_moveTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+	m_moveTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+	m_moveTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+	m_moveTable->verticalHeader()->hide();
+	m_moveTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+	m_moveTable->setSelectionMode(QAbstractItemView::NoSelection);
+	m_moveTable->setFocusPolicy(Qt::NoFocus);
+	m_moveTable->setShowGrid(false);
+	m_moveTable->setAlternatingRowColors(true);
+	m_moveTable->setStyleSheet(
+	        "QTableWidget { border: 0; background: transparent; alternate-background-color: #eeeeee; }"
+	        "QHeaderView::section { background: #e3e3e3; border: 0; padding: 4px; color: #555; }");
+	m_ui->moveHistoryLayout->addWidget(m_moveTable, 1);
 
-	QPixmap p1avatar;
-	AvatarDefs::getAvatarFromSslId(p1id, p1avatar);
-	m_ui->m_player1_avatar->setPixmap(p1avatar);//QPixmap(":/images/profile.png"));
+	// Compact captured-piece strips, arranged like online chess boards:
+	// Black's lost pieces above the moves and White's below them.
+	m_capturedBlackLabel = new QLabel(m_ui->moveHistoryFrame);
+	m_capturedWhiteLabel = new QLabel(m_ui->moveHistoryFrame);
+	for (QLabel *label : {m_capturedBlackLabel, m_capturedWhiteLabel}) {
+		label->setFixedHeight(29);
+		label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+		label->setWordWrap(false);
+		label->setTextFormat(Qt::RichText);
+		label->setStyleSheet("QLabel { color: #666; font-size: 12px; padding: 1px 4px; }");
+	}
+	m_capturedBlackLabel->setToolTip(tr("Captured black pieces"));
+	m_capturedWhiteLabel->setToolTip(tr("Captured white pieces"));
+	m_ui->moveHistoryLayout->insertWidget(0, m_capturedBlackLabel);
+	m_ui->moveHistoryLayout->addWidget(m_capturedWhiteLabel);
 
-	QPixmap p2avatar;
-	AvatarDefs::getAvatarFromSslId(p2id, p2avatar);
-	m_ui->m_player2_avatar->setPixmap(p2avatar);//QPixmap(":/images/profile.png"));
+	QHBoxLayout *gameControls = new QHBoxLayout;
+	gameControls->setContentsMargins(2, 2, 2, 2);
+	gameControls->setSpacing(2);
+	QPushButton *abortButton = new QPushButton(tr("Abort"), m_ui->moveHistoryFrame);
+	QPushButton *drawButton = new QPushButton(QString::fromUtf8("½ ") + tr("Draw"), m_ui->moveHistoryFrame);
+	QPushButton *resignButton = new QPushButton(tr("Resign"), m_ui->moveHistoryFrame);
+	for (QPushButton *button : {abortButton, drawButton, resignButton}) {
+		button->setMinimumWidth(0);
+		button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		button->setStyleSheet("QPushButton { padding: 4px 2px; font-size: 10px; }");
+		gameControls->addWidget(button);
+	}
+	abortButton->setToolTip(tr("Abort game"));
+	drawButton->setToolTip(tr("Offer a draw"));
+	resignButton->setToolTip(tr("Resign the game"));
+	m_ui->moveHistoryLayout->addLayout(gameControls);
+
+	connect(abortButton, &QPushButton::clicked, this, [this]() {
+		if (m_flag_finished || QMessageBox::question(
+		        this, tr("Abort game"), tr("Abort this game?")) != QMessageBox::Yes)
+			return;
+		sendGameAction("abort");
+		applyGameAction("abort", false);
+	});
+	connect(resignButton, &QPushButton::clicked, this, [this]() {
+		if (m_flag_finished || QMessageBox::question(
+		        this, tr("Resign"), tr("Are you sure you want to resign?")) != QMessageBox::Yes)
+			return;
+		sendGameAction("resign");
+		applyGameAction("resign", false);
+	});
+	connect(drawButton, &QPushButton::clicked, this, [this]() {
+		if (m_flag_finished) return;
+		sendGameAction("draw_offer");
+		m_ui->m_status_bar->setText(tr("Draw offer sent"));
+		m_ui->m_status_bar->show();
+	});
+
+	m_moveSound = new QMediaPlayer(this);
+	m_captureSound = new QMediaPlayer(this);
+	m_moveSound->setMedia(QUrl("qrc:/sound/Move.mp3"));
+	m_captureSound->setMedia(QUrl("qrc:/sound/Capture.mp3"));
+	m_moveSound->setVolume(70);
+	m_captureSound->setVolume(70);
+
+	// Keep game notifications out of the sidebar layout. This compact overlay
+	// behaves like a status bar and never changes the window's size hint.
+	m_ui->gridLayout_4->removeWidget(m_ui->m_status_bar);
+	m_ui->m_status_bar->setParent(this);
+	m_ui->m_status_bar->setFixedHeight(24);
+	m_ui->m_status_bar->setAlignment(Qt::AlignCenter);
+	m_ui->m_status_bar->setStyleSheet(
+	        "QLabel { background: #fff3cd; color: #7a1f1f; border-top: 1px solid #d6b656; padding: 2px; }");
+	m_ui->m_status_bar->setGeometry(0, height() - 24, width(), 24);
+	m_ui->m_status_bar->raise();
+
+	if (!mIsGxs) {
+		// Direct games need separate lookup paths: getAvatarFromSslId() is for
+		// remote peers, while our own node avatar comes from getOwnAvatar().
+		QPixmap p1avatar;
+		QPixmap p2avatar;
+		const RsPeerId ownId = rsPeers->getOwnId();
+		auto loadPeerAvatar = [&ownId](const RsPeerId &id, QPixmap &avatar) {
+			if (id != ownId) {
+				AvatarDefs::getAvatarFromSslId(id, avatar);
+				return;
+			}
+
+			unsigned char *avatarData = nullptr;
+			int avatarSize = 0;
+			rsChats->getOwnNodeAvatarData(avatarData, avatarSize);
+			if (avatarData)
+				free(avatarData);
+			if (avatarSize > 0)
+				AvatarDefs::getOwnAvatar(avatar);
+			else
+				// Generate the familiar per-peer coloured fallback instead of
+				// RetroShare's static blue missing-avatar image.
+				AvatarDefs::getAvatarFromSslId(ownId, avatar);
+		};
+		loadPeerAvatar(p1id, p1avatar);
+		loadPeerAvatar(p2id, p2avatar);
+
+		const QSize avatarSize(128, 128);
+		auto setPeerAvatar = [&avatarSize](QLabel *label, const QPixmap &avatar) {
+			label->setFixedSize(avatarSize);
+			label->setAlignment(Qt::AlignCenter);
+			label->setScaledContents(false);
+			if (!avatar.isNull())
+				label->setPixmap(avatar.scaled(
+				        avatarSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+		};
+		setPeerAvatar(m_ui->m_player1_avatar, p1avatar);
+		setPeerAvatar(m_ui->m_player2_avatar, p2avatar);
+	} else {
+		// GXS mode: retrieve avatars via the GXS identity service.
+		// Determine which slot is "us" and which is the remote peer,
+		// mirroring the same player/role logic used in the constructor.
+		QPixmap p1avatar, p2avatar;
+		// p1 is always the identity shown in the player-1 slot (set in constructor)
+		// p2 is the identity shown in the player-2 slot
+		// The remote peer is mGxsId; our own is myGxsId.
+		// Which slot each maps to depends on the player role (set by the constructor).
+		RsGxsId slot1Id, slot2Id;
+		if (m_localplayer_turn == 0) {
+			// We are black (player 1 slot = us, player 2 slot = remote)
+			slot1Id = mOwnGxsId;
+			slot2Id = mGxsId;
+		} else {
+			// We are white (player 1 slot = remote, player 2 slot = us)
+			slot1Id = mGxsId;
+			slot2Id = mOwnGxsId;
+		}
+
+		if (!slot1Id.isNull())
+			AvatarDefs::getAvatarFromGxsId(slot1Id, p1avatar);
+		if (!slot2Id.isNull())
+			AvatarDefs::getAvatarFromGxsId(slot2Id, p2avatar);
+
+		const QSize avatarSize(128, 128);
+		auto setGxsAvatar = [&avatarSize](QLabel *label, const QPixmap &avatar) {
+			label->setFixedSize(avatarSize);
+			label->setAlignment(Qt::AlignCenter);
+			label->setScaledContents(false);
+			label->setPixmap(avatar.scaled(
+			        avatarSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+		};
+
+		setGxsAvatar(m_ui->m_player1_avatar, p1avatar);
+		setGxsAvatar(m_ui->m_player2_avatar, p2avatar);
+	}
 
 	//m_ui->m_move_record->setStyleSheet("QLabel {background-color: white;}");
 }
@@ -125,7 +385,13 @@ void RetroChessWindow::initAccessories()
 void RetroChessWindow::closeEvent(QCloseEvent *event)
 {
     // send leave message
-    rsRetroChess->player_leave(this->mPeerId);
+    if (!m_suppressLeave && mIsGxs) {
+        rsRetroChess->player_leave_gxs(this->mGxsId);
+    } else if (!m_suppressLeave) {
+        rsRetroChess->player_leave(mPeerId);
+    }
+
+    emit gameClosed(QString::fromStdString(mPeerId));
 
     QWidget::closeEvent(event);
 }
@@ -186,6 +452,24 @@ void RetroChessWindow::initChessBoard()
 			hor+=64;
 		}
 		ver+=64;
+	}
+
+	// Board coordinates use the existing 20-pixel border, so they do not
+	// increase the board or window dimensions.
+	for (i = 0; i < 8; ++i) {
+		QLabel *rankLabel = new QLabel(QString::number(8 - i), baseWidget);
+		rankLabel->setGeometry(0, 20 + i * 64, 20, 64);
+		rankLabel->setAlignment(Qt::AlignCenter);
+		rankLabel->setStyleSheet(
+		        "QLabel { color: #353525; background: transparent; font-weight: bold; }");
+		rankLabel->raise();
+
+		QLabel *fileLabel = new QLabel(QString(QChar('a' + i)), baseWidget);
+		fileLabel->setGeometry(20 + i * 64, 532, 64, 20);
+		fileLabel->setAlignment(Qt::AlignCenter);
+		fileLabel->setStyleSheet(
+		        "QLabel { color: #353525; background: transparent; font-weight: bold; }");
+		fileLabel->raise();
 	}
 
 	//white pawns
@@ -922,15 +1206,241 @@ void RetroChessWindow::recordLastMove(int tile_num)
     this->m_last_move_que.push_back(tile_num);
 }
 
+void RetroChessWindow::refreshBoardTheme()
+{
+	const QColor borderColor = RetroChessSettings::boardTheme().dark.lighter(135);
+	const QString borderStyle = QString(
+	        "QLabel { background-color: %1; color: black; }")
+	        .arg(borderColor.name());
+	const QList<QLabel*> labels = findChildren<QLabel*>();
+	for (QLabel *label : labels)
+		if (label->property("retroChessBoardBorder").toBool())
+			label->setStyleSheet(borderStyle);
+
+	for (int row = 0; row < 8; ++row)
+		for (int column = 0; column < 8; ++column)
+			if (tile[row][column])
+				tile[row][column]->tileDisplay();
+
+	drawLastMove();
+}
+
+void RetroChessWindow::closeForRematch()
+{
+    m_suppressLeave = true;
+    close();
+}
+
+void RetroChessWindow::showGameResultDialog(bool localWon, bool draw)
+{
+    if (m_resultPopupShown)
+        return;
+    m_resultPopupShown = true;
+
+    QDialog *dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(tr("Game over"));
+    dialog->setModal(true);
+    dialog->setMinimumWidth(390);
+    dialog->setStyleSheet(
+        "QDialog { background: #282725; color: white; }"
+        "QLabel#resultTitle { font-size: 25px; font-weight: bold; color: white; }"
+        "QLabel#resultText { font-size: 15px; color: #d6d6d6; }"
+        "QPushButton { min-height: 38px; padding: 4px 22px; font-size: 15px; "
+        "background: #3a3937; color: white; border: 1px solid #555; border-radius: 5px; }"
+        "QPushButton:hover { background: #4b7f2b; }"
+        "QPushButton:disabled { color: #888; background: #333; }");
+
+    QVBoxLayout *layout = new QVBoxLayout(dialog);
+    layout->setContentsMargins(24, 20, 24, 20);
+    layout->setSpacing(14);
+
+    QLabel *title = new QLabel(draw ? tr("Draw") : (localWon ? tr("You won!") : tr("You lost")), dialog);
+    title->setObjectName("resultTitle");
+    title->setAlignment(Qt::AlignCenter);
+    QLabel *message = new QLabel(draw ? tr("The game ended in a draw.")
+                                      : (localWon ? tr("Congratulations — the game is over.")
+                                                  : tr("The game is over. Ready for another one?")), dialog);
+    message->setObjectName("resultText");
+    message->setAlignment(Qt::AlignCenter);
+    layout->addWidget(title);
+    layout->addWidget(message);
+
+    QHBoxLayout *buttons = new QHBoxLayout;
+    QPushButton *lobbyButton = new QPushButton(tr("Chess lobby"), dialog);
+    QPushButton *rematchButton = new QPushButton(tr("Rematch"), dialog);
+    buttons->addWidget(lobbyButton);
+    buttons->addWidget(rematchButton);
+    layout->addLayout(buttons);
+
+    connect(lobbyButton, &QPushButton::clicked, this, [this, dialog]() {
+        dialog->close();
+        close();
+    });
+    connect(rematchButton, &QPushButton::clicked, this, [this, dialog]() {
+        dialog->close();
+        if (mIsGxs)
+            emit rematchRequested(mGxsId, m_localplayer_turn);
+        else
+            emit rematchRequestedPeer(QString::fromStdString(mPeerId), m_localplayer_turn);
+    });
+    dialog->show();
+}
+
+void RetroChessWindow::resizeEvent(QResizeEvent *event)
+{
+	QWidget::resizeEvent(event);
+	if (m_ui && m_ui->m_status_bar) {
+		m_ui->m_status_bar->setGeometry(0, height() - 24, width(), 24);
+		m_ui->m_status_bar->raise();
+	}
+}
+
+void RetroChessWindow::recordMove(int fromTile, int toTile, char pieceName, bool capture)
+{
+	auto squareName = [](int tileNumber) {
+		const QChar file('a' + tileNumber % 8);
+		const QChar rank('8' - tileNumber / 8);
+		return QString(file) + QString(rank);
+	};
+
+	QString notation;
+	if (pieceName != 'P') notation += QChar(pieceName);
+	notation += squareName(fromTile);
+	notation += capture ? "x" : "-";
+	notation += squareName(toTile);
+	m_move_history.push_back(notation);
+
+	const int row = (m_move_history.size() - 1) / 2;
+	if (m_moveTable->rowCount() <= row) {
+		m_moveTable->insertRow(row);
+		m_moveTable->setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
+		m_moveTable->setRowHeight(row, 23);
+	}
+	const int column = (m_move_history.size() % 2) ? 1 : 2;
+	m_moveTable->setItem(row, column, new QTableWidgetItem(notation));
+	m_moveTable->scrollToBottom();
+}
+
+void RetroChessWindow::recordCapturedPiece(char pieceName, int pieceColor)
+{
+	if (pieceColor == 0) {
+		m_capturedBlack.append(QChar(pieceName));
+	} else {
+		m_capturedWhite.append(QChar(pieceName));
+	}
+
+	auto compactPieces = [](const QString &pieces, const QString &color) {
+		QString result;
+		const QString order = "QRRBBHHPPPPPPPPK";
+		QString rendered;
+		for (const QChar piece : order) {
+			if (rendered.contains(piece) || !pieces.contains(piece))
+				continue;
+			rendered += piece;
+			QString name;
+			switch (piece.toLatin1()) {
+			case 'K': name = "king"; break;
+			case 'Q': name = "queen"; break;
+			case 'R': name = "rook"; break;
+			case 'B': name = "bishop"; break;
+			case 'H': name = "knight"; break;
+			default: name = "pawn"; break;
+			}
+			const int amount = pieces.count(piece);
+			result += QString("<img src=\":/images/%1_%2.svg\" width=\"20\" height=\"20\">")
+			        .arg(name, color);
+			if (amount > 1)
+				result += QString("×%1").arg(amount);
+			result += "&nbsp;";
+		}
+		return result;
+	};
+	m_capturedBlackLabel->setText(compactPieces(m_capturedBlack, "black"));
+	m_capturedWhiteLabel->setText(compactPieces(m_capturedWhite, "white"));
+}
+
+void RetroChessWindow::playMoveSound(bool capture)
+{
+	QMediaPlayer *player = capture ? m_captureSound : m_moveSound;
+	if (!player)
+		return;
+	player->stop();
+	player->setPosition(0);
+	player->play();
+}
+
+void RetroChessWindow::sendGameAction(const QString &action)
+{
+	if (mIsGxs) {
+		rsRetroChess->sendGameActionGxs(mGxsId, action.toStdString());
+	} else {
+		QVariantMap map;
+		map.insert("type", "game_action");
+		map.insert("action", action);
+		rsRetroChess->qvm_msg_peer(RsPeerId(mPeerId), map);
+	}
+}
+
+void RetroChessWindow::showGameStatus(const QString &status)
+{
+	m_ui->m_status_bar->setText(status);
+	m_ui->m_status_bar->show();
+}
+
+void RetroChessWindow::applyGameAction(const QString &action, bool remote)
+{
+	if (action == "draw_offer" && remote) {
+		const bool accepted = QMessageBox::question(
+		        this, tr("Draw offer"), tr("Your opponent offers a draw. Accept?"),
+		        QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
+		sendGameAction(accepted ? "draw_accept" : "draw_decline");
+		if (accepted) applyGameAction("draw_accept", false);
+		return;
+	}
+	if (action == "draw_decline") {
+		m_ui->m_status_bar->setText(tr("Draw offer declined"));
+		m_ui->m_status_bar->show();
+		return;
+	}
+	if (action == "rematch_decline") {
+		m_rematchRequested = false;
+		m_ui->m_status_bar->setText(tr("Rematch request declined"));
+		m_ui->m_status_bar->show();
+		return;
+	}
+	if (m_flag_finished) return;
+
+	if (action == "abort") {
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		m_ui->m_status_bar->setText(remote ? tr("Opponent aborted the game") : tr("Game aborted"));
+		m_ui->m_status_bar->show();
+		emit gameEnded(QString::fromStdString(mPeerId));
+	} else if (action == "resign") {
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		showGameResultDialog(remote);
+		emit gameEnded(QString::fromStdString(mPeerId));
+	} else if (action == "draw_accept") {
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		showGameResultDialog(false, true);
+		emit gameEnded(QString::fromStdString(mPeerId));
+	}
+}
+
 void RetroChessWindow::drawLastMove()
 {
+    const QString highlightStyle = QString("QLabel { background-color: %1; }")
+            .arg(RetroChessSettings::boardTheme().lastMove.name());
     // draw last move
     for( QQueue<int>::iterator it = this->m_last_move_que.begin();
          it != this->m_last_move_que.end();
          ++it)
     {
         int tile_num = *it;
-        tile[ tile_num / 8][ tile_num % 8]->setStyleSheet("QLabel {background-color: lightGray;}");
+        tile[ tile_num / 8][ tile_num % 8]->setStyleSheet(highlightStyle);
     }
 }
 
@@ -978,6 +1488,7 @@ int RetroChessWindow::resultJudge()
 
         m_ui->m_player1_result->setVisible(true);
         m_ui->m_player2_result->setVisible(true);
+        showGameResultDialog(m_localplayer_turn == 0);
         return 1;
     }
     else if( flag_black_king_alive == false)
@@ -990,6 +1501,7 @@ int RetroChessWindow::resultJudge()
 
         m_ui->m_player1_result->setVisible(true);
         m_ui->m_player2_result->setVisible(true);
+        showGameResultDialog(m_localplayer_turn == 1);
         return 2;
     }
     else
@@ -998,10 +1510,24 @@ int RetroChessWindow::resultJudge()
 
 void RetroChessWindow::showPlayerLeaveMsg()
 {
-    std::string player_name = rsPeers->getPeerName( RsPeerId(mPeerId ));
-    QString status_msg(player_name.c_str());
-    status_msg += " has left";
-    m_ui->m_status_bar->setText( status_msg );
+	// Stop all local interaction as soon as the opponent leaves.
+	m_flag_finished = 1;
+    QString name;
+    if (mIsGxs) {
+        // Resolve GXS nickname
+        RsIdentityDetails details;
+        if (rsIdentity->getIdDetails(mGxsId, details)) {
+            name = QString::fromUtf8(details.mNickname.c_str());
+        } else {
+            name = tr("Distant Friend");
+        }
+    } else {
+        // Resolve Peer name
+        name = QString::fromStdString(rsPeers->getPeerName(RsPeerId(mPeerId)));
+    }
+
+    QString status_msg = name + tr(" has left");
+    m_ui->m_status_bar->setText(status_msg);
     m_ui->m_status_bar->setVisible(true);
 }
 
@@ -1009,7 +1535,7 @@ void RetroChessWindow::playerTurnNotice()
 {
     if( this->turn )
     {
-        m_ui->m_player1_result->setText("Waiting for opponent");
+        m_ui->m_player1_result->setText("Waiting");
         m_ui->m_player1_result->setStyleSheet("QLabel {font: 14pt; color: gray;}");
 
         m_ui->m_player2_result->setText("Turn");
@@ -1023,7 +1549,7 @@ void RetroChessWindow::playerTurnNotice()
         m_ui->m_player1_result->setText("Turn");
         m_ui->m_player1_result->setStyleSheet("QLabel {font: 14pt;color: green;}");
 
-        m_ui->m_player2_result->setText("Waiting for opponent");
+        m_ui->m_player2_result->setText("Waiting");
         m_ui->m_player2_result->setStyleSheet("QLabel {font: 14pt;color: gray; text:bold;}");
 
         m_ui->m_player1_result->setVisible(true);

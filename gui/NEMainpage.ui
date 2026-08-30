@@ -127,84 +127,53 @@
          <property name="orientation">
           <enum>Qt::Horizontal</enum>
          </property>
-         <widget class="QGroupBox" name="groupBox_2">
-          <property name="title">
-           <string>Invite Friends</string>
-          </property>
-          <layout class="QGridLayout" name="gridLayout_5">
-           <item row="1" column="0">
-            <widget class="QPushButton" name="filterPeersButton">
-             <property name="text">
-              <string>CheckPeers</string>
-             </property>
-            </widget>
-           </item>
-           <item row="1" column="2">
-            <widget class="QPushButton" name="inviteButton">
-             <property name="enabled">
-              <bool>false</bool>
-             </property>
-             <property name="text">
-              <string>Invite play</string>
-             </property>
-            </widget>
-           </item>
-           <item row="1" column="1">
-            <spacer name="horizontalSpacer_2">
+         <widget class="QWidget" name="officialLobbyPanel">
+          <layout class="QVBoxLayout" name="officialLobbyLayout">
+           <item>
+            <spacer name="officialLobbyTopSpacer">
              <property name="orientation">
-              <enum>Qt::Horizontal</enum>
+              <enum>Qt::Vertical</enum>
              </property>
              <property name="sizeHint" stdset="0">
-              <size>
-               <width>41</width>
-               <height>20</height>
-              </size>
+              <size><width>20</width><height>80</height></size>
              </property>
             </spacer>
            </item>
-           <item row="1" column="3">
-            <widget class="QCheckBox" name="check_enableBeInvited">
-             <property name="enabled">
-              <bool>true</bool>
-             </property>
-             <property name="text">
-              <string>Enable to be invited</string>
-             </property>
-             <property name="checked">
-              <bool>true</bool>
-             </property>
+           <item>
+            <widget class="QLabel" name="officialLobbyTitle">
+             <property name="text"><string>Official RetroChess Lobby</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
+             <property name="styleSheet"><string>font-size: 18pt; font-weight: bold;</string></property>
             </widget>
            </item>
-           <item row="0" column="0" colspan="4">
-            <widget class="FriendSelectionWidget" name="friendSelectionWidget" native="true">
-             <property name="contextMenuPolicy">
-              <enum>Qt::CustomContextMenu</enum>
-             </property>
+           <item>
+            <widget class="QLabel" name="officialLobbyDescription">
+             <property name="text"><string>Meet RetroChess players and arrange games in the official RetroShare chat room.</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
+             <property name="wordWrap"><bool>true</bool></property>
             </widget>
            </item>
-          </layout>
-         </widget>
-         <widget class="QWidget" name="layoutWidget">
-          <layout class="QGridLayout" name="gridLayout">
-           <item row="0" column="0" colspan="3">
-            <layout class="QHBoxLayout" name="horizontalLayout"/>
-           </item>
-           <item row="1" column="0" colspan="3">
-            <widget class="QListWidget" name="listWidget"/>
-           </item>
-           <item row="2" column="0">
-            <widget class="QLineEdit" name="msgInput">
-             <property name="placeholderText">
-              <string>Type a message here</string>
-             </property>
+           <item>
+            <widget class="QLabel" name="officialLobbyStatus">
+             <property name="text"><string>Searching for the official lobby…</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
             </widget>
            </item>
-           <item row="2" column="1">
-            <widget class="QPushButton" name="broadcastButton">
-             <property name="text">
-              <string>Send</string>
-             </property>
+           <item>
+            <widget class="QWidget" name="embeddedLobbyContainer" native="true">
+             <layout class="QVBoxLayout" name="embeddedLobbyLayout">
+              <property name="leftMargin"><number>0</number></property>
+              <property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property>
+              <property name="bottomMargin"><number>0</number></property>
+             </layout>
             </widget>
+           </item>
+           <item>
+            <spacer name="officialLobbyBottomSpacer">
+             <property name="orientation"><enum>Qt::Vertical</enum></property>
+             <property name="sizeHint" stdset="0"><size><width>20</width><height>80</height></size></property>
+            </spacer>
            </item>
           </layout>
          </widget>
@@ -250,14 +219,6 @@
    </item>
   </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>FriendSelectionWidget</class>
-   <extends>QWidget</extends>
-   <header>gui/common/FriendSelectionWidget.h</header>
-   <container>1</container>
-  </customwidget>
- </customwidgets>
  <resources>
   <include location="RetroChess_images.qrc"/>
  </resources>

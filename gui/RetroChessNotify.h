@@ -40,12 +40,41 @@ public:
 	void notifyReceivedMsg(const RsPeerId &peer_id, QString str) ;
 	void notifyChessStart(const RsPeerId &peer_id) ;
 	void notifyChessInvite(const RsPeerId &peer_id) ;
+	/** Notify the UI of a chess move received via a GXS tunnel */
+	void notifyChessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
+
+	/** Notify the UI that a GXS chess invite was received */
+	void notifyChessInviteGxs(const RsGxsId &gxs_id);
+
+	/** Notify the UI that a GXS tunnel is now ready for use */
+	void notifyGxsTunnelReady(const RsGxsId &gxs_id);
+	/** Notify the inviter that the remote player explicitly accepted */
+	void notifyChessAcceptedGxs(const RsGxsId &gxs_id);
+
+	/** Notify the UI that a GXS tunnel has been closed/lost */
+	void notifyGxsTunnelClosed(const RsGxsId &gxs_id);
+	void notifyChessPlayerLeftGxs(const RsGxsId &gxs_id);
+	void notifyChessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
+	void notifyChessGameActionGxs(const RsGxsId &gxs_id, QString action);
+
+	void notifyChessStartGxs(const RsGxsId &gxs_id); 
 
 signals:
 	void NeMsgArrived(const RsPeerId &peer_id, QString str) ; // emitted when the peer gets a msg
 
 	void chessStart(const RsPeerId &peer_id) ;
 	void chessInvited(const RsPeerId &peer_id) ;
+
+	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
+	void gxsTunnelReady(const RsGxsId &gxs_id);
+	void chessAcceptedGxs(const RsGxsId &gxs_id);
+	void gxsTunnelClosed(const RsGxsId &gxs_id);
+	void chessPlayerLeftGxs(const RsGxsId &gxs_id);
+	void chessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
+	void chessGameActionGxs(const RsGxsId &gxs_id, QString action);
+
+	void chessInvitedGxs(const RsGxsId &gxs_id);
+	void chessStartGxs(const RsGxsId &gxs_id);
 
 public slots:
 };

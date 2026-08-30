@@ -38,7 +38,11 @@
 
 #include <QWidget>
 
-class QAction;
+class QTimer;
+class ChatDialog;
+class ChatWidget;
+class UserNotify;
+class QShowEvent;
 
 namespace Ui
 {
@@ -52,32 +56,40 @@ class NEMainpage : public MainPage
 public:
 	explicit NEMainpage(QWidget *parent, RetroChessNotify *notify);
 	~NEMainpage();
+	UserNotify *createUserNotify(QObject *parent) override;
+	unsigned int lobbyUnreadCount() const { return mLobbyUnreadCount; }
+
+signals:
+	void lobbyUnreadCountChanged();
 
 private slots:
 	void setupMenuActions();
-	void friendSelectionChanged();
 	void NeMsgArrived(const RsPeerId &peer_id, QString str);
 	void chessStart(const RsPeerId &peer_id);
-
-	void on_broadcastButton_clicked();
-
-    //--- test invite button, try to invite p2p friend
-    void enable_inviteButton();	// enable the invite button when selected a friend
-
-    void on_inviteButton_clicked();
-
-	void on_filterPeersButton_clicked();
-
-
+	void chessStartGxs(const RsGxsId &gxs_id);
+	void chessStartGxsAsBlack(const RsGxsId &gxs_id);
+	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
+	void chessPlayerLeftGxs(const RsGxsId &gxs_id);
+	void chessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
+	void chessGameActionGxs(const RsGxsId &gxs_id, QString action);
+	void requestRematchGxs(const RsGxsId &gxs_id, int localColor);
+	void requestRematchPeer(QString peerId, int localColor);
+	void removeActiveGame(QString gameId);
+	void removeActiveGameListing(QString gameId);
+	void autoJoinOfficialLobby();
+	void officialLobbyNewMessage(ChatWidget *chatWidget);
 private:
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
-
-	QAction *mActionPlayChess;
-	//RetroChessWindow *tempwindow;
+	QTimer *mOfficialLobbyTimer;
+	ChatDialog *mOfficialLobbyDialog;
+	unsigned int mLobbyUnreadCount;
 
 	QMap<std::string, RetroChessWindow*> activeGames;
 	void create_chess_window(std::string peer_id, int player_id);
+    void create_chess_window_gxs(const RsGxsId &gxs_id, int player_id);
+	void showOfficialLobby();
+	void showEvent(QShowEvent *event) override;
 };
 
 #endif // NEMAINPAGE_H

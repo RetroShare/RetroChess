@@ -51,3 +51,48 @@ void RetroChessNotify::notifyChessInvite(const RsPeerId &peer_id)
 	emit chessInvited(peer_id) ;
 
 }
+
+void RetroChessNotify::notifyChessInviteGxs(const RsGxsId &gxs_id)
+{
+	emit chessInvitedGxs(gxs_id);
+}
+
+void RetroChessNotify::notifyChessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count)
+{
+	emit chessMoveGxs(gxs_id, col, row, count);
+}
+
+void RetroChessNotify::notifyGxsTunnelReady(const RsGxsId &gxs_id)
+{
+	emit gxsTunnelReady(gxs_id);
+}
+
+void RetroChessNotify::notifyChessAcceptedGxs(const RsGxsId &gxs_id)
+{
+	emit chessAcceptedGxs(gxs_id);
+}
+
+void RetroChessNotify::notifyGxsTunnelClosed(const RsGxsId &gxs_id)
+{
+	emit gxsTunnelClosed(gxs_id);
+}
+
+void RetroChessNotify::notifyChessPlayerLeftGxs(const RsGxsId &gxs_id)
+{
+	emit chessPlayerLeftGxs(gxs_id);
+}
+
+void RetroChessNotify::notifyChessRematchGxs(const RsGxsId &gxs_id, int remoteColor)
+{
+	emit chessRematchGxs(gxs_id, remoteColor);
+}
+
+void RetroChessNotify::notifyChessGameActionGxs(const RsGxsId &gxs_id, QString action)
+{
+	emit chessGameActionGxs(gxs_id, action);
+}
+
+void RetroChessNotify::notifyChessStartGxs(const RsGxsId &gxs_id)
+{
+	emit chessStartGxs(gxs_id);
+}
