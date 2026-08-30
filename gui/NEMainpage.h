@@ -38,6 +38,12 @@
 
 #include <QWidget>
 
+class QTimer;
+class ChatDialog;
+class ChatWidget;
+class UserNotify;
+class QShowEvent;
+
 namespace Ui
 {
 class NEMainpage;
@@ -50,6 +56,11 @@ class NEMainpage : public MainPage
 public:
 	explicit NEMainpage(QWidget *parent, RetroChessNotify *notify);
 	~NEMainpage();
+	UserNotify *createUserNotify(QObject *parent) override;
+	unsigned int lobbyUnreadCount() const { return mLobbyUnreadCount; }
+
+signals:
+	void lobbyUnreadCountChanged();
 
 private slots:
 	void setupMenuActions();
@@ -65,15 +76,20 @@ private slots:
 	void requestRematchPeer(QString peerId, int localColor);
 	void removeActiveGame(QString gameId);
 	void removeActiveGameListing(QString gameId);
-
-	void on_broadcastButton_clicked();
+	void autoJoinOfficialLobby();
+	void officialLobbyNewMessage(ChatWidget *chatWidget);
 private:
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
+	QTimer *mOfficialLobbyTimer;
+	ChatDialog *mOfficialLobbyDialog;
+	unsigned int mLobbyUnreadCount;
 
 	QMap<std::string, RetroChessWindow*> activeGames;
 	void create_chess_window(std::string peer_id, int player_id);
     void create_chess_window_gxs(const RsGxsId &gxs_id, int player_id);
+	void showOfficialLobby();
+	void showEvent(QShowEvent *event) override;
 };
 
 #endif // NEMAINPAGE_H

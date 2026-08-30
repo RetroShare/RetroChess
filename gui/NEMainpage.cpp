@@ -28,21 +28,29 @@
 #include <qjsondocument.h>
 
 #include <iostream>
+#include <algorithm>
 #include <string>
 #include <QTime>
 #include <QMenu>
 #include <QMessageBox>
 #include <QToolButton>
+#include <QTimer>
+#include <QShowEvent>
 
 #include "gui/RetroChessSettings.h"
+#include "gui/RetroChessUserNotify.h"
 
 #include "gui/chat/ChatDialog.h"
+#include <retroshare/rsidentity.h>
 
 
 NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	MainPage(parent),
+	ui(new Ui::NEMainpage),
 	mNotify(notify),
-	ui(new Ui::NEMainpage)
+	mOfficialLobbyTimer(new QTimer(this)),
+	mOfficialLobbyDialog(nullptr),
+	mLobbyUnreadCount(0)
 {
 	ui->setupUi(this);
 	setupMenuActions();
@@ -57,15 +65,127 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	connect(mNotify, SIGNAL(chessRematchGxs(RsGxsId,int)), this, SLOT(chessRematchGxs(RsGxsId,int)));
 	connect(mNotify, SIGNAL(chessGameActionGxs(RsGxsId,QString)), this, SLOT(chessGameActionGxs(RsGxsId,QString)));
 
-	QString welcomemessage = QTime::currentTime().toString() +" ";
-	welcomemessage+= tr("Welcome to RetroChess lobby");
-	ui->listWidget->addItem(welcomemessage);
+	connect(mOfficialLobbyTimer, SIGNAL(timeout()), this, SLOT(autoJoinOfficialLobby()));
+	mOfficialLobbyTimer->setInterval(15000);
+	mOfficialLobbyTimer->start();
+	QTimer::singleShot(0, this, SLOT(autoJoinOfficialLobby()));
 
 }
 
 NEMainpage::~NEMainpage()
 {
 	delete ui;
+}
+
+UserNotify *NEMainpage::createUserNotify(QObject *parent)
+{
+	return new RetroChessUserNotify(this, parent);
+}
+
+namespace
+{
+const ChatLobbyId OFFICIAL_RETROCHESS_LOBBY_ID = 0x0174BD3E49231CDAULL;
+}
+
+void NEMainpage::autoJoinOfficialLobby()
+{
+	std::list<ChatLobbyId> subscribedLobbies;
+	rsChats->getChatLobbyList(subscribedLobbies);
+	if (std::find(subscribedLobbies.begin(), subscribedLobbies.end(),
+	              OFFICIAL_RETROCHESS_LOBBY_ID) != subscribedLobbies.end()) {
+		rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
+		ui->officialLobbyStatus->setText(tr("Connected to the official RetroChess lobby."));
+		mOfficialLobbyTimer->stop();
+		showOfficialLobby();
+		return;
+	}
+
+	std::vector<VisibleChatLobbyRecord> visibleLobbies;
+	rsChats->getListOfNearbyChatLobbies(visibleLobbies);
+	bool found = false;
+	for (const VisibleChatLobbyRecord &lobby : visibleLobbies)
+		if (lobby.lobby_id == OFFICIAL_RETROCHESS_LOBBY_ID) {
+			found = true;
+			break;
+		}
+
+	if (!found) {
+		ui->officialLobbyStatus->setText(
+		        tr("Searching for official lobby 0174BD3E49231CDA…"));
+		return;
+	}
+
+	RsGxsId joinIdentity;
+	rsChats->getDefaultIdentityForChatLobby(joinIdentity);
+	RsIdentityDetails details;
+	if (joinIdentity.isNull() || !rsIdentity->getIdDetails(joinIdentity, details)
+	    || !(details.mFlags & RS_IDENTITY_FLAGS_PGP_LINKED)) {
+		std::list<RsGxsId> ownIds;
+		rsIdentity->getOwnIds(ownIds);
+		for (const RsGxsId &id : ownIds)
+			if (rsIdentity->getIdDetails(id, details)
+			    && (details.mFlags & RS_IDENTITY_FLAGS_PGP_LINKED)) {
+				joinIdentity = id;
+				break;
+			}
+	}
+
+	if (joinIdentity.isNull() || !(details.mFlags & RS_IDENTITY_FLAGS_PGP_LINKED)) {
+		ui->officialLobbyStatus->setText(
+		        tr("A PGP-linked GXS identity is required to join this lobby."));
+		return;
+	}
+
+	if (rsChats->joinVisibleChatLobby(OFFICIAL_RETROCHESS_LOBBY_ID, joinIdentity)) {
+		rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
+		ui->officialLobbyStatus->setText(tr("Connected to the official RetroChess lobby."));
+		mOfficialLobbyTimer->stop();
+		showOfficialLobby();
+	} else {
+		ui->officialLobbyStatus->setText(tr("The official lobby was found, but joining failed. Retrying…"));
+	}
+}
+
+void NEMainpage::showOfficialLobby()
+{
+	if (mOfficialLobbyDialog)
+		return;
+
+	mOfficialLobbyDialog = ChatDialog::getChat(
+	        ChatId(OFFICIAL_RETROCHESS_LOBBY_ID), RsChatFlags::RS_CHAT_OPEN);
+	if (!mOfficialLobbyDialog) {
+		ui->officialLobbyStatus->setText(tr("The official lobby could not be opened."));
+		return;
+	}
+
+	mOfficialLobbyDialog->setParent(ui->embeddedLobbyContainer);
+	ui->embeddedLobbyLayout->addWidget(mOfficialLobbyDialog);
+	mOfficialLobbyDialog->addToParent(ui->embeddedLobbyContainer);
+	mOfficialLobbyDialog->show();
+	connect(mOfficialLobbyDialog->getChatWidget(), SIGNAL(newMessage(ChatWidget*)),
+	        this, SLOT(officialLobbyNewMessage(ChatWidget*)), Qt::UniqueConnection);
+	ui->officialLobbyTitle->hide();
+	ui->officialLobbyDescription->hide();
+	ui->officialLobbyStatus->hide();
+	ui->officialLobbyTopSpacer->changeSize(0, 0, QSizePolicy::Minimum, QSizePolicy::Minimum);
+	ui->officialLobbyBottomSpacer->changeSize(0, 0, QSizePolicy::Minimum, QSizePolicy::Minimum);
+}
+
+void NEMainpage::officialLobbyNewMessage(ChatWidget *)
+{
+	if (isVisible())
+		return;
+	++mLobbyUnreadCount;
+	emit lobbyUnreadCountChanged();
+}
+
+void NEMainpage::showEvent(QShowEvent *event)
+{
+	if (mLobbyUnreadCount) {
+		mLobbyUnreadCount = 0;
+		emit lobbyUnreadCountChanged();
+	}
+	MainPage::showEvent(event);
 }
 
 void NEMainpage::chessStart(const RsPeerId &peer_id)
@@ -173,15 +293,7 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 	std::cout << " saying " << str.toStdString();
 	std::cout << std::endl;
 	QString type = vmap.value("type").toString();
-	if (type == "chat")
-	{
-		QString output = QTime::currentTime().toString() +" ";
-		output+= QString::fromStdString(rsPeers->getPeerName(peer_id));
-		output+=": ";
-		output+=vmap.value("message").toString();
-		ui->listWidget->addItem(output);
-	}
-	else if (type == "chessclick")
+	if (type == "chessclick")
 	{
 		int row = vmap.value("row").toInt();
 		int col = vmap.value("col").toInt();
@@ -267,7 +379,7 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		output+= QString::fromStdString(rsPeers->getPeerName(peer_id));
 		output+=": ";
 		output+=str;
-		ui->listWidget->addItem(output);
+		ui->netLogWidget->addItem(output);
 	}
 
 	/*
@@ -279,13 +391,6 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		ui->netLogWidget->addItem(output);
 	}
 	*/
-}
-
-void NEMainpage::on_broadcastButton_clicked()
-{
-	rsRetroChess->msg_all(ui->msgInput->text().toStdString());
-	NeMsgArrived(rsPeers->getOwnId(),ui->msgInput->text());
-	ui->msgInput->clear();
 }
 
 void NEMainpage::create_chess_window(std::string peer_id, int player_id)
