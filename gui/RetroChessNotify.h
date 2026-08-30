@@ -55,6 +55,7 @@ public:
 	void notifyGxsTunnelClosed(const RsGxsId &gxs_id);
 	void notifyChessPlayerLeftGxs(const RsGxsId &gxs_id);
 	void notifyChessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
+	void notifyChessGameActionGxs(const RsGxsId &gxs_id, QString action);
 
 	void notifyChessStartGxs(const RsGxsId &gxs_id); 
 
@@ -70,6 +71,7 @@ signals:
 	void gxsTunnelClosed(const RsGxsId &gxs_id);
 	void chessPlayerLeftGxs(const RsGxsId &gxs_id);
 	void chessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
+	void chessGameActionGxs(const RsGxsId &gxs_id, QString action);
 
 	void chessInvitedGxs(const RsGxsId &gxs_id);
 	void chessStartGxs(const RsGxsId &gxs_id);

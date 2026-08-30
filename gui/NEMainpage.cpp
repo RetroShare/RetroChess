@@ -33,6 +33,7 @@
 #include <string>
 #include <QTime>
 #include <QMenu>
+#include <QMessageBox>
 
 #include "gui/chat/ChatDialog.h"
 
@@ -56,6 +57,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	connect(mNotify, SIGNAL(chessMoveGxs(RsGxsId,int,int,int)), this, SLOT(chessMoveGxs(RsGxsId,int,int,int)));
 	connect(mNotify, SIGNAL(chessPlayerLeftGxs(RsGxsId)), this, SLOT(chessPlayerLeftGxs(RsGxsId)));
 	connect(mNotify, SIGNAL(chessRematchGxs(RsGxsId,int)), this, SLOT(chessRematchGxs(RsGxsId,int)));
+	connect(mNotify, SIGNAL(chessGameActionGxs(RsGxsId,QString)), this, SLOT(chessGameActionGxs(RsGxsId,QString)));
 	connect(ui->friendSelectionWidget, SIGNAL(itemSelectionChanged()), this, SLOT(friendSelectionChanged()));
 
     // enable/disable the invite button
@@ -81,6 +83,8 @@ NEMainpage::~NEMainpage()
 
 void NEMainpage::chessStart(const RsPeerId &peer_id)
 {
+	// This signal is emitted on the participant who accepted the invitation.
+	// The participant is Black; the inviter is White.
 	create_chess_window(peer_id.toStdString(), 1);
 }
 
@@ -101,7 +105,8 @@ void NEMainpage::chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count
 	std::string key = gxs_id.toStdString();
 	if (activeGames.find(key) != activeGames.end()) {
 		RetroChessWindow* rcw = activeGames.value(key);
-		rcw->validate_tile(row, col, count);
+		if (rcw->m_flag_finished == 0)
+			rcw->validate_tile(row, col, count);
 	} else {
 		std::cerr << "RetroChess: Received GXS move but no active game for " << key << std::endl;
 	}
@@ -120,6 +125,11 @@ void NEMainpage::removeActiveGame(QString gameId)
 {
 	const std::string key = gameId.toStdString();
 	activeGames.remove(key);
+	removeActiveGameListing(gameId);
+}
+
+void NEMainpage::removeActiveGameListing(QString gameId)
+{
 	for (int row = ui->active_games->count() - 1; row >= 0; --row) {
 		if (ui->active_games->item(row)->text() == gameId)
 			delete ui->active_games->takeItem(row);
@@ -132,20 +142,39 @@ void NEMainpage::requestRematchGxs(const RsGxsId &gxs_id, int localColor)
 		return;
 
 	const std::string key = gxs_id.toStdString();
-	if (activeGames.contains(key))
-		activeGames.value(key)->closeForRematch();
-	create_chess_window_gxs(gxs_id, localColor == 0 ? 1 : 0);
+	if (activeGames.contains(key)) {
+		RetroChessWindow *window = activeGames.value(key);
+		window->m_rematchRequested = true;
+		window->showGameStatus(tr("Waiting for opponent to accept rematch"));
+	}
 }
 
 void NEMainpage::chessRematchGxs(const RsGxsId &gxs_id, int remoteColor)
 {
 	const std::string key = gxs_id.toStdString();
-	if (activeGames.contains(key))
-		activeGames.value(key)->closeForRematch();
-
-	// The other player's colour determines our opposite colour.
+	if (!activeGames.contains(key)) {
+		rsRetroChess->sendGameActionGxs(gxs_id, "rematch_decline");
+		return;
+	}
+	RetroChessWindow *window = activeGames.value(key);
+	const bool alreadyRequested = window->m_rematchRequested;
+	if (!alreadyRequested && QMessageBox::question(
+	        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?")) != QMessageBox::Yes) {
+		rsRetroChess->sendGameActionGxs(gxs_id, "rematch_decline");
+		return;
+	}
+	if (!alreadyRequested)
+		rsRetroChess->sendRematchGxs(gxs_id, window->m_localplayer_turn);
+	window->closeForRematch();
 	const int localColor = remoteColor == 0 ? 1 : 0;
 	create_chess_window_gxs(gxs_id, localColor == 0 ? 1 : 0);
+}
+
+void NEMainpage::chessGameActionGxs(const RsGxsId &gxs_id, QString action)
+{
+	const std::string key = gxs_id.toStdString();
+	if (activeGames.contains(key))
+		activeGames.value(key)->applyGameAction(action, true);
 }
 
 // decode received message here
@@ -170,8 +199,9 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		int row = vmap.value("row").toInt();
 		int col = vmap.value("col").toInt();
 		int count = vmap.value("count").toInt();
-		RetroChessWindow* rcw = activeGames.value(peer_id.toStdString());
-		rcw->validate_tile(row,col,count);
+		RetroChessWindow* rcw = activeGames.value(peer_id.toStdString(), nullptr);
+		if (rcw && rcw->m_flag_finished == 0)
+			rcw->validate_tile(row,col,count);
 	}
     else if(type == "player_status_message")
     {
@@ -210,17 +240,46 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 	{
 		if (rsRetroChess->hasInviteTo(peer_id))
 		{
-			create_chess_window(peer_id.toStdString(), 1);
-			rsRetroChess->acceptedInvite(peer_id);
+			// We sent the invitation, so we are White and move first.
+			rsRetroChess->clearInvite(peer_id);
+			create_chess_window(peer_id.toStdString(), 0);
 		}
 	}
 	else if (type == "chess_rematch")
 	{
 		const std::string key = peer_id.toStdString();
-		if (activeGames.contains(key))
-			activeGames.value(key)->closeForRematch();
+		if (!activeGames.contains(key)) {
+			QVariantMap decline;
+			decline.insert("type", "game_action");
+			decline.insert("action", "rematch_decline");
+			rsRetroChess->qvm_msg_peer(peer_id, decline);
+			return;
+		}
+		RetroChessWindow *window = activeGames.value(key);
+		const bool alreadyRequested = window->m_rematchRequested;
+		if (!alreadyRequested && QMessageBox::question(
+		        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?")) != QMessageBox::Yes) {
+			QVariantMap decline;
+			decline.insert("type", "game_action");
+			decline.insert("action", "rematch_decline");
+			rsRetroChess->qvm_msg_peer(peer_id, decline);
+			return;
+		}
+		if (!alreadyRequested) {
+			QVariantMap accept;
+			accept.insert("type", "chess_rematch");
+			accept.insert("color", window->m_localplayer_turn);
+			rsRetroChess->qvm_msg_peer(peer_id, accept);
+		}
+		window->closeForRematch();
 		const int localColor = vmap.value("color").toInt() == 0 ? 1 : 0;
 		create_chess_window(key, localColor == 0 ? 1 : 0);
+	}
+	else if (type == "game_action")
+	{
+		const std::string key = peer_id.toStdString();
+		if (activeGames.contains(key))
+			activeGames.value(key)->applyGameAction(vmap.value("action").toString(), true);
 	}
 	// else if( type == "chess_reject") // other player rejected your invite (need to be finish)
 	else
@@ -256,6 +315,7 @@ void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 	connect(rcw, SIGNAL(rematchRequestedPeer(QString,int)),
 	        this, SLOT(requestRematchPeer(QString,int)));
 	connect(rcw, SIGNAL(gameClosed(QString)), this, SLOT(removeActiveGame(QString)));
+	connect(rcw, SIGNAL(gameEnded(QString)), this, SLOT(removeActiveGameListing(QString)));
 	rcw->show();
 
 	activeGames.insert(peer_id, rcw);
@@ -270,9 +330,10 @@ void NEMainpage::requestRematchPeer(QString peerId, int localColor)
 	rsRetroChess->qvm_msg_peer(RsPeerId(peerId.toStdString()), map);
 
 	const std::string key = peerId.toStdString();
-	if (activeGames.contains(key))
-		activeGames.value(key)->closeForRematch();
-	create_chess_window(key, localColor == 0 ? 1 : 0);
+	if (activeGames.contains(key)) {
+		activeGames.value(key)->m_rematchRequested = true;
+		activeGames.value(key)->showGameStatus(tr("Waiting for opponent to accept rematch"));
+	}
 }
 
 void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
@@ -282,6 +343,7 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
     connect(win, SIGNAL(rematchRequested(RsGxsId,int)),
             this, SLOT(requestRematchGxs(RsGxsId,int)));
     connect(win, SIGNAL(gameClosed(QString)), this, SLOT(removeActiveGame(QString)));
+    connect(win, SIGNAL(gameEnded(QString)), this, SLOT(removeActiveGameListing(QString)));
     win->show();
 
     // Track the game so GXS moves can be routed to it
@@ -303,7 +365,6 @@ void NEMainpage::enable_inviteButton()
         ui->inviteButton->setEnabled(true);
 }
 
-// just for test (still not good, cause native player don't know whether friend accept)
 void NEMainpage::on_inviteButton_clicked()
 {
 	//get peer
@@ -312,12 +373,8 @@ void NEMainpage::on_inviteButton_clicked()
 
     if( fid != "")	// selected a friend
     {
-        //make_board();
-        create_chess_window(fid, 1);
-
-        QVariantMap map;
-        //map.insert("type", "chess_init");
-        map.insert("type", "chess_invite");
+		QVariantMap map;
+		map.insert("type", "chess_invite");
 
         rsRetroChess->qvm_msg_peer(RsPeerId(fid),map);
 

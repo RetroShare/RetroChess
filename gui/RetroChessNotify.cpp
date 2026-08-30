@@ -87,6 +87,11 @@ void RetroChessNotify::notifyChessRematchGxs(const RsGxsId &gxs_id, int remoteCo
 	emit chessRematchGxs(gxs_id, remoteColor);
 }
 
+void RetroChessNotify::notifyChessGameActionGxs(const RsGxsId &gxs_id, QString action)
+{
+	emit chessGameActionGxs(gxs_id, action);
+}
+
 void RetroChessNotify::notifyChessStartGxs(const RsGxsId &gxs_id)
 {
 	emit chessStartGxs(gxs_id);

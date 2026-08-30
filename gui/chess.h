@@ -71,6 +71,7 @@ public:
 	bool mIsGxs;
 	bool m_suppressLeave;
 	bool m_resultPopupShown;
+	bool m_rematchRequested;
 
 	//from global
 
@@ -114,6 +115,9 @@ public:
 	void recordMove(int fromTile, int toTile, char pieceName, bool capture);
 	void recordCapturedPiece(char pieceName, int pieceColor);
 	void playMoveSound(bool capture);
+	void sendGameAction(const QString &action);
+	void applyGameAction(const QString &action, bool remote);
+	void showGameStatus(const QString &status);
     void drawLastMove();
     void clearLastMove();
 
@@ -121,12 +125,13 @@ public:
     void showPlayerLeaveMsg();	// show player leave message
     void playerTurnNotice();
 	void closeForRematch();
-	void showGameResultDialog(bool localWon);
+	void showGameResultDialog(bool localWon, bool draw = false);
 
 signals:
 	void rematchRequested(const RsGxsId &gxsId, int localColor);
 	void rematchRequestedPeer(QString peerId, int localColor);
 	void gameClosed(QString gameId);
+	void gameEnded(QString gameId);
 };
 
 

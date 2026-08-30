@@ -26,6 +26,7 @@
 #include <QHeaderView>
 #include <QTableWidget>
 #include <QMediaPlayer>
+#include <QMessageBox>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -43,6 +44,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     mIsGxs(true),
     m_suppressLeave(false),
     m_resultPopupShown(false),
+    m_rematchRequested(false),
     m_capturedBlackLabel(nullptr),
     m_capturedWhiteLabel(nullptr),
     m_moveTable(nullptr),
@@ -122,6 +124,7 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	mIsGxs(false),
 	m_suppressLeave(false),
 	m_resultPopupShown(false),
+	m_rematchRequested(false),
 	m_capturedBlackLabel(nullptr),
 	m_capturedWhiteLabel(nullptr),
 	m_moveTable(nullptr),
@@ -240,6 +243,44 @@ void RetroChessWindow::initAccessories()
 	m_ui->moveHistoryLayout->insertWidget(0, m_capturedBlackLabel);
 	m_ui->moveHistoryLayout->addWidget(m_capturedWhiteLabel);
 
+	QHBoxLayout *gameControls = new QHBoxLayout;
+	gameControls->setContentsMargins(2, 2, 2, 2);
+	gameControls->setSpacing(2);
+	QPushButton *abortButton = new QPushButton(tr("Abort"), m_ui->moveHistoryFrame);
+	QPushButton *drawButton = new QPushButton(QString::fromUtf8("½ ") + tr("Draw"), m_ui->moveHistoryFrame);
+	QPushButton *resignButton = new QPushButton(tr("Resign"), m_ui->moveHistoryFrame);
+	for (QPushButton *button : {abortButton, drawButton, resignButton}) {
+		button->setMinimumWidth(0);
+		button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		button->setStyleSheet("QPushButton { padding: 4px 2px; font-size: 10px; }");
+		gameControls->addWidget(button);
+	}
+	abortButton->setToolTip(tr("Abort game"));
+	drawButton->setToolTip(tr("Offer a draw"));
+	resignButton->setToolTip(tr("Resign the game"));
+	m_ui->moveHistoryLayout->addLayout(gameControls);
+
+	connect(abortButton, &QPushButton::clicked, this, [this]() {
+		if (m_flag_finished || QMessageBox::question(
+		        this, tr("Abort game"), tr("Abort this game?")) != QMessageBox::Yes)
+			return;
+		sendGameAction("abort");
+		applyGameAction("abort", false);
+	});
+	connect(resignButton, &QPushButton::clicked, this, [this]() {
+		if (m_flag_finished || QMessageBox::question(
+		        this, tr("Resign"), tr("Are you sure you want to resign?")) != QMessageBox::Yes)
+			return;
+		sendGameAction("resign");
+		applyGameAction("resign", false);
+	});
+	connect(drawButton, &QPushButton::clicked, this, [this]() {
+		if (m_flag_finished) return;
+		sendGameAction("draw_offer");
+		m_ui->m_status_bar->setText(tr("Draw offer sent"));
+		m_ui->m_status_bar->show();
+	});
+
 	m_moveSound = new QMediaPlayer(this);
 	m_captureSound = new QMediaPlayer(this);
 	m_moveSound->setMedia(QUrl("qrc:/sound/Move.mp3"));
@@ -259,14 +300,43 @@ void RetroChessWindow::initAccessories()
 	m_ui->m_status_bar->raise();
 
 	if (!mIsGxs) {
-		// SSL peer avatar loading (only valid for direct peer connections)
+		// Direct games need separate lookup paths: getAvatarFromSslId() is for
+		// remote peers, while our own node avatar comes from getOwnAvatar().
 		QPixmap p1avatar;
-		AvatarDefs::getAvatarFromSslId(p1id, p1avatar);
-		m_ui->m_player1_avatar->setPixmap(p1avatar);
-
 		QPixmap p2avatar;
-		AvatarDefs::getAvatarFromSslId(p2id, p2avatar);
-		m_ui->m_player2_avatar->setPixmap(p2avatar);
+		const RsPeerId ownId = rsPeers->getOwnId();
+		auto loadPeerAvatar = [&ownId](const RsPeerId &id, QPixmap &avatar) {
+			if (id != ownId) {
+				AvatarDefs::getAvatarFromSslId(id, avatar);
+				return;
+			}
+
+			unsigned char *avatarData = nullptr;
+			int avatarSize = 0;
+			rsChats->getOwnNodeAvatarData(avatarData, avatarSize);
+			if (avatarData)
+				free(avatarData);
+			if (avatarSize > 0)
+				AvatarDefs::getOwnAvatar(avatar);
+			else
+				// Generate the familiar per-peer coloured fallback instead of
+				// RetroShare's static blue missing-avatar image.
+				AvatarDefs::getAvatarFromSslId(ownId, avatar);
+		};
+		loadPeerAvatar(p1id, p1avatar);
+		loadPeerAvatar(p2id, p2avatar);
+
+		const QSize avatarSize(128, 128);
+		auto setPeerAvatar = [&avatarSize](QLabel *label, const QPixmap &avatar) {
+			label->setFixedSize(avatarSize);
+			label->setAlignment(Qt::AlignCenter);
+			label->setScaledContents(false);
+			if (!avatar.isNull())
+				label->setPixmap(avatar.scaled(
+				        avatarSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+		};
+		setPeerAvatar(m_ui->m_player1_avatar, p1avatar);
+		setPeerAvatar(m_ui->m_player2_avatar, p2avatar);
 	} else {
 		// GXS mode: retrieve avatars via the GXS identity service.
 		// Determine which slot is "us" and which is the remote peer,
@@ -378,6 +448,24 @@ void RetroChessWindow::initChessBoard()
 			hor+=64;
 		}
 		ver+=64;
+	}
+
+	// Board coordinates use the existing 20-pixel border, so they do not
+	// increase the board or window dimensions.
+	for (i = 0; i < 8; ++i) {
+		QLabel *rankLabel = new QLabel(QString::number(8 - i), baseWidget);
+		rankLabel->setGeometry(0, 20 + i * 64, 20, 64);
+		rankLabel->setAlignment(Qt::AlignCenter);
+		rankLabel->setStyleSheet(
+		        "QLabel { color: #353525; background: transparent; font-weight: bold; }");
+		rankLabel->raise();
+
+		QLabel *fileLabel = new QLabel(QString(QChar('a' + i)), baseWidget);
+		fileLabel->setGeometry(20 + i * 64, 532, 64, 20);
+		fileLabel->setAlignment(Qt::AlignCenter);
+		fileLabel->setStyleSheet(
+		        "QLabel { color: #353525; background: transparent; font-weight: bold; }");
+		fileLabel->raise();
 	}
 
 	//white pawns
@@ -1120,7 +1208,7 @@ void RetroChessWindow::closeForRematch()
     close();
 }
 
-void RetroChessWindow::showGameResultDialog(bool localWon)
+void RetroChessWindow::showGameResultDialog(bool localWon, bool draw)
 {
     if (m_resultPopupShown)
         return;
@@ -1144,11 +1232,12 @@ void RetroChessWindow::showGameResultDialog(bool localWon)
     layout->setContentsMargins(24, 20, 24, 20);
     layout->setSpacing(14);
 
-    QLabel *title = new QLabel(localWon ? tr("You won!") : tr("You lost"), dialog);
+    QLabel *title = new QLabel(draw ? tr("Draw") : (localWon ? tr("You won!") : tr("You lost")), dialog);
     title->setObjectName("resultTitle");
     title->setAlignment(Qt::AlignCenter);
-    QLabel *message = new QLabel(localWon ? tr("Congratulations — the game is over.")
-                                          : tr("The game is over. Ready for another one?"), dialog);
+    QLabel *message = new QLabel(draw ? tr("The game ended in a draw.")
+                                      : (localWon ? tr("Congratulations — the game is over.")
+                                                  : tr("The game is over. Ready for another one?")), dialog);
     message->setObjectName("resultText");
     message->setAlignment(Qt::AlignCenter);
     layout->addWidget(title);
@@ -1256,6 +1345,66 @@ void RetroChessWindow::playMoveSound(bool capture)
 	player->stop();
 	player->setPosition(0);
 	player->play();
+}
+
+void RetroChessWindow::sendGameAction(const QString &action)
+{
+	if (mIsGxs) {
+		rsRetroChess->sendGameActionGxs(mGxsId, action.toStdString());
+	} else {
+		QVariantMap map;
+		map.insert("type", "game_action");
+		map.insert("action", action);
+		rsRetroChess->qvm_msg_peer(RsPeerId(mPeerId), map);
+	}
+}
+
+void RetroChessWindow::showGameStatus(const QString &status)
+{
+	m_ui->m_status_bar->setText(status);
+	m_ui->m_status_bar->show();
+}
+
+void RetroChessWindow::applyGameAction(const QString &action, bool remote)
+{
+	if (action == "draw_offer" && remote) {
+		const bool accepted = QMessageBox::question(
+		        this, tr("Draw offer"), tr("Your opponent offers a draw. Accept?"),
+		        QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
+		sendGameAction(accepted ? "draw_accept" : "draw_decline");
+		if (accepted) applyGameAction("draw_accept", false);
+		return;
+	}
+	if (action == "draw_decline") {
+		m_ui->m_status_bar->setText(tr("Draw offer declined"));
+		m_ui->m_status_bar->show();
+		return;
+	}
+	if (action == "rematch_decline") {
+		m_rematchRequested = false;
+		m_ui->m_status_bar->setText(tr("Rematch request declined"));
+		m_ui->m_status_bar->show();
+		return;
+	}
+	if (m_flag_finished) return;
+
+	if (action == "abort") {
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		m_ui->m_status_bar->setText(remote ? tr("Opponent aborted the game") : tr("Game aborted"));
+		m_ui->m_status_bar->show();
+		emit gameEnded(QString::fromStdString(mPeerId));
+	} else if (action == "resign") {
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		showGameResultDialog(remote);
+		emit gameEnded(QString::fromStdString(mPeerId));
+	} else if (action == "draw_accept") {
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		showGameResultDialog(false, true);
+		emit gameEnded(QString::fromStdString(mPeerId));
+	}
 }
 
 void RetroChessWindow::drawLastMove()

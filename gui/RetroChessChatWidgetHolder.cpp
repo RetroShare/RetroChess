@@ -125,6 +125,10 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 
 void RetroChessChatWidgetHolder::chessnotifyGxs(const RsGxsId &from_gxs_id)
 {
+    // This signal represents a newly received invite. The same identity may
+    // legitimately invite us again after the previous game, so clear only its
+    // old de-duplication marker before rendering the new invitation.
+    displayedGxsInvites.erase(from_gxs_id);
     showGxsInviteIfMatching(from_gxs_id, 10);
 }
 
@@ -299,6 +303,7 @@ void RetroChessChatWidgetHolder::chessStart()
 		RsGxsId remoteGxsId = dcpinfo.to_id;
 
 		rsRetroChess->acceptedInviteGxs(remoteGxsId);
+		displayedGxsInvites.erase(remoteGxsId);
 
 		// Open the chess window immediately — we're the server side, tunnel is already up
 		mRetroChessNotify->notifyChessStartGxs(remoteGxsId);
@@ -364,6 +369,8 @@ void RetroChessChatWidgetHolder::handleChessPlayerLeftGxs(const RsGxsId &gxs_id)
 	if (!rsChats->getDistantChatStatus(chatId.toDistantChatId(), info)
 	    || info.to_id != gxs_id)
 		return;
+	displayedGxsInvites.erase(gxs_id);
+	if (playChessButton) playChessButton->show();
 
 	QString playerName = QString::fromStdString(gxs_id.toStdString()).left(8);
 	RsIdentityDetails details;

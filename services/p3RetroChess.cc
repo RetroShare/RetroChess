@@ -188,6 +188,12 @@ void p3RetroChess::acceptedInvite(RsPeerId peerID)
 	raw_msg_peer(peerID, "{\"type\":\"chess_accept\"}");
 }
 
+void p3RetroChess::clearInvite(RsPeerId peerID)
+{
+	invitesTo.erase(peerID);
+	invitesFrom.erase(peerID);
+}
+
 void p3RetroChess::gotInvite(RsPeerId peerID)
 {
 
@@ -504,6 +510,25 @@ bool p3RetroChess::sendRematchGxs(const RsGxsId &gxsId, int localColor)
             reinterpret_cast<const uint8_t*>(message.data()), message.size());
 }
 
+bool p3RetroChess::sendGameActionGxs(const RsGxsId &gxsId, const std::string &action)
+{
+    RsGxsTunnelId tunnelId;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto it = mActiveTunnels.find(gxsId);
+        if (it == mActiveTunnels.end() || !mGxsTunnels)
+            return false;
+        tunnelId = it->second;
+    }
+    QVariantMap map;
+    map.insert("type", "game_action");
+    map.insert("action", QString::fromStdString(action));
+    const QByteArray message = QJsonDocument::fromVariant(map).toJson(QJsonDocument::Compact);
+    return mGxsTunnels->sendData(
+            tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+            reinterpret_cast<const uint8_t*>(message.constData()), message.size());
+}
+
 bool p3RetroChess::hasInviteFromGxs(const RsGxsId &gxsId)
 {
     RsStackMutex stack(mRetroChessMtx);
@@ -719,6 +744,9 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         const int remoteColor = map.value("color").toInt();
         std::cout << "Chess: Remote GXS player requested a rematch " << sender_id << std::endl;
         mNotify->notifyChessRematchGxs(sender_id, remoteColor);
+
+    } else if (type == "game_action") {
+        mNotify->notifyChessGameActionGxs(sender_id, map.value("action").toString());
 
     } else {
         // Chess move: format "col,row,count"

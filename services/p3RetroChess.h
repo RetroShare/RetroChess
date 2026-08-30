@@ -105,6 +105,7 @@ public:
 	bool hasInviteTo(RsPeerId peerID);
 	void gotInvite(RsPeerId peerID);
 	void acceptedInvite(RsPeerId peerID);
+	void clearInvite(RsPeerId peerID) override;
 	void sendInvite(RsPeerId peerID);
 
 	void player_leave_gxs(const RsGxsId &gxs_id);
@@ -114,6 +115,7 @@ public:
 	bool hasInviteFromGxs(const RsGxsId &gxsId) override;
 	RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) override;
 	bool sendRematchGxs(const RsGxsId &gxsId, int localColor) override;
+	bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) override;
 	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) override;
 
