@@ -199,6 +199,12 @@ void RetroChessChatWidgetHolder::showGxsInviteIfMatching(const RsGxsId &from_gxs
 
     RSButtonOnText *button = mChatWidget->getNewButtonOnTextBrowser(tr("Accept chess invite"));
     button->setToolTip(tr("Accept chess invite"));
+	QPointer<QTextEdit> chatTextEdit(qobject_cast<QTextEdit*>(button->parentWidget()));
+	// ChatWidget inserts RSButtonOnText immediately, before our stylesheet is
+	// applied. Remove that initial small image and append it again after styling,
+	// so the document's image rectangle and clickable hit area have the same size.
+	if (chatTextEdit)
+		button->clear();
 
     button->setStyleSheet(QString("border: 1px solid #199909;")
                           .append("font-size: 12pt; color: white; padding-left: 10px; padding-right: 10px;")
@@ -207,13 +213,15 @@ void RetroChessChatWidgetHolder::showGxsInviteIfMatching(const RsGxsId &from_gxs
                           .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
                                   "stop: 0 #22c70d, stop: 1 #116a06);"));
 
-    button->updateImage();
+	if (chatTextEdit)
+		button->appendToText(chatTextEdit);
+	else
+		button->updateImage();
 
 	// RSButtonOnText is rendered as an image inside the chat QTextEdit. Force a
 	// second layout pass after insertion; otherwise Qt may keep the old image
 	// geometry until the user manually resizes the chat window.
 	QPointer<RSButtonOnText> guardedButton(button);
-	QPointer<QTextEdit> chatTextEdit(qobject_cast<QTextEdit*>(button->parentWidget()));
 	if (chatTextEdit) {
 		QTimer::singleShot(0, chatTextEdit.data(), [guardedButton, chatTextEdit]() {
 			if (!guardedButton || !chatTextEdit) return;

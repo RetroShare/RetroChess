@@ -24,10 +24,8 @@
 #include "services/p3RetroChess.h"
 #include "interface/rsRetroChess.h"
 #include "services/rsRetroChessItems.h"
-#include "retroshare/rsservicecontrol.h"
 //#include "gui/notifyqt.h"
 #include <qjsondocument.h>
-#include <qtreewidget.h>
 
 #include <iostream>
 #include <string>
@@ -40,9 +38,6 @@
 
 #include "gui/chat/ChatDialog.h"
 
-#include "gui/common/AvatarDefs.h"
-// COLUMN_NAME_INDEX shoule equal to FriendSelectionWidget.cpp's COLUMN_NAME
-#define COLUMN_NAME_INDEX 0
 
 NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	MainPage(parent),
@@ -61,17 +56,6 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	connect(mNotify, SIGNAL(chessPlayerLeftGxs(RsGxsId)), this, SLOT(chessPlayerLeftGxs(RsGxsId)));
 	connect(mNotify, SIGNAL(chessRematchGxs(RsGxsId,int)), this, SLOT(chessRematchGxs(RsGxsId,int)));
 	connect(mNotify, SIGNAL(chessGameActionGxs(RsGxsId,QString)), this, SLOT(chessGameActionGxs(RsGxsId,QString)));
-	connect(ui->friendSelectionWidget, SIGNAL(itemSelectionChanged()), this, SLOT(friendSelectionChanged()));
-
-    // enable/disable the invite button
-    connect(ui->friendSelectionWidget, SIGNAL(itemSelectionChanged()), this, SLOT(enable_inviteButton()));
-
-	ui->friendSelectionWidget->start();
-	ui->friendSelectionWidget->setModus(FriendSelectionWidget::MODUS_SINGLE);
-	ui->friendSelectionWidget->setShowType(FriendSelectionWidget::SHOW_SSL);
-
-	connect(ui->friendSelectionWidget, SIGNAL(contentChanged()), this, SLOT(on_filterPeersButton_clicked()));
-	//connect(NotifyQt::getInstance(), SIGNAL(peerStatusChanged(const QString&,int)), this, SLOT(on_filterPeersButton_clicked()));
 
 	QString welcomemessage = QTime::currentTime().toString() +" ";
 	welcomemessage+= tr("Welcome to RetroChess lobby");
@@ -227,17 +211,9 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
     }
 	else if (type == "chess_invite")
 	{
-		// enable to be invite
-		if( this->ui->check_enableBeInvited->isChecked() )
-		{
-			ChatDialog::chatFriend(ChatId(peer_id));
-			rsRetroChess->gotInvite(peer_id);
-			mNotify->notifyChessInvite(peer_id);
-		}
-		else	// refuse all invites
-		{
-			//mNotify->notifyChessInvite(peer_id);
-		}
+		ChatDialog::chatFriend(ChatId(peer_id));
+		rsRetroChess->gotInvite(peer_id);
+		mNotify->notifyChessInvite(peer_id);
 	}
 	else if (type == "chess_accept")
 	{
@@ -355,114 +331,8 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
     ui->active_games->addItem(QString::fromStdString(key));
 }
 
-// enable the invite button when selected a friend
-void NEMainpage::enable_inviteButton()
-{
-    // get peer
-    FriendSelectionWidget::IdType idType;
-    std::string fid = ui->friendSelectionWidget->selectedId(idType);
-
-    if( fid == "")	// haven't selected any friend, disable the invite button
-        ui->inviteButton->setEnabled(false);
-    else
-        ui->inviteButton->setEnabled(true);
-}
-
-void NEMainpage::on_inviteButton_clicked()
-{
-	//get peer
-	FriendSelectionWidget::IdType idType;
-	std::string fid = ui->friendSelectionWidget->selectedId(idType);
-
-    if( fid != "")	// selected a friend
-    {
-		QVariantMap map;
-		map.insert("type", "chess_invite");
-
-        rsRetroChess->qvm_msg_peer(RsPeerId(fid),map);
-
-        std::cout << fid;
-    }
-    else
-    {
-        std::cout << "please select a friend";
-    }
-}
-
-void NEMainpage::on_filterPeersButton_clicked()
-{
-	std::cout << "\n\n filter peers \n";
-
-	std::list<RsPeerId> ssllist ;
-	rsPeers->getFriendList(ssllist);
-
-
-	RsPeerServiceInfo ownServices;
-	rsServiceControl->getOwnServices(ownServices);
-
-	std::vector<RsPeerId> peer_ids ;
-	std::vector<uint32_t> service_ids ;
-
-	for(std::list<RsPeerId>::const_iterator it(ssllist.begin()); it!=ssllist.end(); ++it)
-		peer_ids.push_back(*it) ;
-	service_ids.clear() ;
-	uint32_t service_id;
-	for(std::map<uint32_t, RsServiceInfo>::const_iterator sit(ownServices.mServiceList.begin()); sit!=ownServices.mServiceList.end(); ++sit)
-	{
-		RsServiceInfo rsi = sit->second;
-		service_ids.push_back(sit->first) ;
-		std::cout << rsi.mServiceName << rsi.mServiceType << "\n";
-		if (strcmp(rsi.mServiceName.c_str(), "RetroChess") == 0)
-		{
-			service_id = rsi.mServiceType;
-			std::cout << "setting service ID\n";
-		}
-	}
-
-	for(std::list<RsPeerId>::const_iterator it(ssllist.begin()); it!=ssllist.end(); ++it)
-	{
-		RsPeerServiceInfo local_service_perms ;
-		RsPeerServiceInfo remote_service_perms ;
-		RsPeerId id = *it;
-
-        // get friend 's avatar
-        QPixmap friend_avatar;
-        AvatarDefs::getAvatarFromSslId( id, friend_avatar);
-
-		rsServiceControl->getServicesAllowed (*it, local_service_perms) ;
-		rsServiceControl->getServicesProvided(*it,remote_service_perms) ;
-
-		bool  local_allowed =  local_service_perms.mServiceList.find(service_id) !=  local_service_perms.mServiceList.end() ;
-		bool remote_allowed = remote_service_perms.mServiceList.find(service_id) != remote_service_perms.mServiceList.end() ;
-		bool allowed = (local_allowed && remote_allowed);
-		//QString la =
-		QString serviceinfos = QString("peerlocal: ") + QString(local_allowed?"yes":"no") + QString(" remote: ") + QString(remote_allowed?"yes":"no");
-		ui->netLogWidget->addItem(serviceinfos);
-		std::cout << serviceinfos.toStdString() << "\n";
-		//if (allowed){
-		QList<QTreeWidgetItem*> items;
-
-		ui->friendSelectionWidget->itemsFromId(FriendSelectionWidget::IDTYPE_SSL,id.toStdString(),items);
-
-		std::cout << items.size() << "\n";
-		if (items.size())
-		{
-            // setup ICON COLUMN_NAME=0 (add avatar)
-            items.first()->setIcon( COLUMN_NAME_INDEX, QIcon(friend_avatar));
-
-			QTreeWidgetItem* item = items.first();
-			item->setHidden(!allowed);
-		}
-	}
-}
-
 void NEMainpage::setupMenuActions()
 {
-	mActionPlayChess = new QAction(QIcon(), tr("Play Chess"), this);
-	connect(mActionPlayChess, SIGNAL(triggered(bool)), this, SLOT(on_playButton_clicked()));
-
-	ui->friendSelectionWidget->addContextMenuAction(mActionPlayChess);
-
 	QToolButton *settingsButton = new QToolButton(this);
 	settingsButton->setIcon(QIcon(":/icons/png/settings.png"));
 	settingsButton->setToolTip(tr("RetroChess settings"));
@@ -481,19 +351,3 @@ void NEMainpage::setupMenuActions()
 
 }
 
-void NEMainpage::friendSelectionChanged()
-{
-	std::set<RsPeerId> peerIds;
-	ui->friendSelectionWidget->selectedIds<RsPeerId,FriendSelectionWidget::IDTYPE_SSL>(peerIds, false);
-
-	std::set<RsGxsId> gxsIds;
-	ui->friendSelectionWidget->selectedIds<RsGxsId,FriendSelectionWidget::IDTYPE_GXS>(gxsIds, false);
-
-	int selectedCount = peerIds.size() + gxsIds.size();
-
-	mActionPlayChess->setEnabled(selectedCount);
-
-	FriendSelectionWidget::IdType idType;
-	ui->friendSelectionWidget->selectedId(idType);
-
-}
