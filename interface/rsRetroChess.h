@@ -65,8 +65,13 @@ class RsRetroChess
 	virtual void acceptedInviteGxs(const RsGxsId &gxsId) = 0;
 	virtual bool hasInviteFromGxs(const RsGxsId &gxsId) = 0;
 	virtual RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) = 0;
+	virtual QString gameIdForPeer(const RsGxsId &gxsId) = 0;
+	virtual void startNewGameIdForPeer(const RsGxsId &gxsId) = 0;
 	virtual bool sendRematchGxs(const RsGxsId &gxsId, int localColor) = 0;
 	virtual bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) = 0;
+	virtual bool sendRatedResultGxs(const RsGxsId &gxsId, const QString &gameId,
+	                                const RsGxsId &white, const RsGxsId &black,
+	                                const QString &result, qint64 finishedAt) = 0;
 
 	// Send invite via an *existing* distant chat tunnel (the right approach for distant chat)
 	virtual bool sendInvite_chat(const ChatId &chatId) = 0;

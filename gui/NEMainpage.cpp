@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <string>
 #include <QTime>
+#include <QDateTime>
 #include <QMenu>
 #include <QMessageBox>
 #include <QToolButton>
@@ -39,9 +40,12 @@
 
 #include "gui/RetroChessSettings.h"
 #include "gui/RetroChessUserNotify.h"
+#include "gui/RetroChessLeaderboard.h"
 
 #include "gui/chat/ChatDialog.h"
 #include <retroshare/rsidentity.h>
+#include <QTableWidget>
+#include <QVBoxLayout>
 
 
 NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
@@ -50,9 +54,22 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	mNotify(notify),
 	mOfficialLobbyTimer(new QTimer(this)),
 	mOfficialLobbyDialog(nullptr),
-	mLobbyUnreadCount(0)
+	mLobbyUnreadCount(0),
+	mLeaderboard(new RetroChessLeaderboard(this)),
+	mLeaderboardTable(new QTableWidget(this))
 {
 	ui->setupUi(this);
+	QWidget *leaderboardPage = new QWidget(ui->tabWidget);
+	QVBoxLayout *leaderboardLayout = new QVBoxLayout(leaderboardPage);
+	QLabel *leaderboardInfo = new QLabel(
+	        tr("Standard Glicko-2 rating. A game is counted after both players publish the same signed result."),
+	        leaderboardPage);
+	leaderboardInfo->setWordWrap(true);
+	leaderboardLayout->addWidget(leaderboardInfo);
+	leaderboardLayout->addWidget(mLeaderboardTable);
+	ui->tabWidget->insertTab(1, leaderboardPage, tr("Leaderboard"));
+	connect(mLeaderboard, SIGNAL(changed()), this, SLOT(refreshLeaderboard()));
+	refreshLeaderboard();
 	setupMenuActions();
 
 	connect(mNotify, SIGNAL(NeMsgArrived(RsPeerId,QString)), this, SLOT(NeMsgArrived(RsPeerId,QString)));
@@ -64,6 +81,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	connect(mNotify, SIGNAL(chessPlayerLeftGxs(RsGxsId)), this, SLOT(chessPlayerLeftGxs(RsGxsId)));
 	connect(mNotify, SIGNAL(chessRematchGxs(RsGxsId,int)), this, SLOT(chessRematchGxs(RsGxsId,int)));
 	connect(mNotify, SIGNAL(chessGameActionGxs(RsGxsId,QString)), this, SLOT(chessGameActionGxs(RsGxsId,QString)));
+	connect(mNotify, SIGNAL(ratedResultGxs(RsGxsId,QString,RsGxsId,RsGxsId,QString,qint64)),
+	        this, SLOT(ratedResultGxs(RsGxsId,QString,RsGxsId,RsGxsId,QString,qint64)));
 
 	connect(mOfficialLobbyTimer, SIGNAL(timeout()), this, SLOT(autoJoinOfficialLobby()));
 	mOfficialLobbyTimer->setInterval(15000);
@@ -179,6 +198,11 @@ void NEMainpage::officialLobbyNewMessage(ChatWidget *)
 	emit lobbyUnreadCountChanged();
 }
 
+void NEMainpage::refreshLeaderboard()
+{
+	mLeaderboard->populate(mLeaderboardTable);
+}
+
 void NEMainpage::showEvent(QShowEvent *event)
 {
 	if (mLobbyUnreadCount) {
@@ -245,6 +269,7 @@ void NEMainpage::removeActiveGameListing(QString gameId)
 
 void NEMainpage::requestRematchGxs(const RsGxsId &gxs_id, int localColor)
 {
+	rsRetroChess->startNewGameIdForPeer(gxs_id);
 	if (!rsRetroChess->sendRematchGxs(gxs_id, localColor))
 		return;
 
@@ -282,6 +307,12 @@ void NEMainpage::chessGameActionGxs(const RsGxsId &gxs_id, QString action)
 	const std::string key = gxs_id.toStdString();
 	if (activeGames.contains(key))
 		activeGames.value(key)->applyGameAction(action, true);
+}
+
+void NEMainpage::ratedResultGxs(RsGxsId signer, QString gameId, RsGxsId white,
+	                            RsGxsId black, QString result, qint64 finishedAt)
+{
+	mLeaderboard->receiveResult(signer, gameId, white, black, result, finishedAt);
 }
 
 // decode received message here
@@ -428,6 +459,13 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
             this, SLOT(requestRematchGxs(RsGxsId,int)));
     connect(win, SIGNAL(gameClosed(QString)), this, SLOT(removeActiveGame(QString)));
     connect(win, SIGNAL(gameEnded(QString)), this, SLOT(removeActiveGameListing(QString)));
+    connect(win, &RetroChessWindow::ratedResult, this,
+            [this, gxs_id](const QString &gameId, const RsGxsId &white,
+                   const RsGxsId &black, const QString &result) {
+        mLeaderboard->submitResult(gameId, white, black, result);
+        rsRetroChess->sendRatedResultGxs(gxs_id, gameId, white, black, result,
+                                        QDateTime::currentSecsSinceEpoch());
+    });
     win->show();
 
     // Track the game so GXS moves can be routed to it

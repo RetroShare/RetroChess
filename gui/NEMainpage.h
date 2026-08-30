@@ -43,6 +43,8 @@ class ChatDialog;
 class ChatWidget;
 class UserNotify;
 class QShowEvent;
+class QTableWidget;
+class RetroChessLeaderboard;
 
 namespace Ui
 {
@@ -72,18 +74,23 @@ private slots:
 	void chessPlayerLeftGxs(const RsGxsId &gxs_id);
 	void chessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
 	void chessGameActionGxs(const RsGxsId &gxs_id, QString action);
+	void ratedResultGxs(RsGxsId signer, QString gameId, RsGxsId white,
+	                    RsGxsId black, QString result, qint64 finishedAt);
 	void requestRematchGxs(const RsGxsId &gxs_id, int localColor);
 	void requestRematchPeer(QString peerId, int localColor);
 	void removeActiveGame(QString gameId);
 	void removeActiveGameListing(QString gameId);
 	void autoJoinOfficialLobby();
 	void officialLobbyNewMessage(ChatWidget *chatWidget);
+	void refreshLeaderboard();
 private:
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
 	QTimer *mOfficialLobbyTimer;
 	ChatDialog *mOfficialLobbyDialog;
 	unsigned int mLobbyUnreadCount;
+	RetroChessLeaderboard *mLeaderboard;
+	QTableWidget *mLeaderboardTable;
 
 	QMap<std::string, RetroChessWindow*> activeGames;
 	void create_chess_window(std::string peer_id, int player_id);

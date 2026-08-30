@@ -47,6 +47,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_suppressLeave(false),
     m_resultPopupShown(false),
     m_rematchRequested(false),
+    m_resultSubmitted(false),
     m_capturedBlackLabel(nullptr),
     m_capturedWhiteLabel(nullptr),
     m_moveTable(nullptr),
@@ -65,6 +66,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     setAttribute(Qt::WA_DeleteOnClose);
     mPeerId = gxsId.toStdString(); // Use string representation for internal tracking
 	mOwnGxsId = rsRetroChess->ownGxsIdForPeer(gxsId);
+	mGameId = rsRetroChess->gameIdForPeer(gxsId);
 
     m_ui->m_player1_result->hide();
     m_ui->m_player2_result->hide();
@@ -128,6 +130,7 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_suppressLeave(false),
 	m_resultPopupShown(false),
 	m_rematchRequested(false),
+	m_resultSubmitted(false),
 	m_capturedBlackLabel(nullptr),
 	m_capturedWhiteLabel(nullptr),
 	m_moveTable(nullptr),
@@ -392,6 +395,7 @@ void RetroChessWindow::closeEvent(QCloseEvent *event)
 {
     // send leave message
     if (!m_suppressLeave && mIsGxs) {
+        submitRatedResult(false);
         rsRetroChess->player_leave_gxs(this->mGxsId);
     } else if (!m_suppressLeave) {
         rsRetroChess->player_leave(mPeerId);
@@ -1437,11 +1441,13 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		m_flag_finished = 1;
 		m_suppressLeave = true;
 		showGameResultDialog(remote);
+		submitRatedResult(remote);
 		emit gameEnded(QString::fromStdString(mPeerId));
 	} else if (action == "draw_accept") {
 		m_flag_finished = 1;
 		m_suppressLeave = true;
 		showGameResultDialog(false, true);
+		submitRatedResult(false, true);
 		emit gameEnded(QString::fromStdString(mPeerId));
 	}
 }
@@ -1505,6 +1511,7 @@ int RetroChessWindow::resultJudge()
         m_ui->m_player1_result->setVisible(true);
         m_ui->m_player2_result->setVisible(true);
         showGameResultDialog(m_localplayer_turn == 0);
+        submitRatedResult(m_localplayer_turn == 0);
         return 1;
     }
     else if( flag_black_king_alive == false)
@@ -1518,6 +1525,7 @@ int RetroChessWindow::resultJudge()
         m_ui->m_player1_result->setVisible(true);
         m_ui->m_player2_result->setVisible(true);
         showGameResultDialog(m_localplayer_turn == 1);
+        submitRatedResult(m_localplayer_turn == 1);
         return 2;
     }
     else
@@ -1528,6 +1536,7 @@ void RetroChessWindow::showPlayerLeaveMsg()
 {
 	// Stop all local interaction as soon as the opponent leaves.
 	m_flag_finished = 1;
+	submitRatedResult(true);
     QString name;
     if (mIsGxs) {
         // Resolve GXS nickname
@@ -1545,6 +1554,18 @@ void RetroChessWindow::showPlayerLeaveMsg()
     QString status_msg = name + tr(" has left");
     m_ui->m_status_bar->setText(status_msg);
     m_ui->m_status_bar->setVisible(true);
+}
+
+void RetroChessWindow::submitRatedResult(bool localWon, bool draw)
+{
+	if (!mIsGxs || m_resultSubmitted || mGameId.isEmpty() || mOwnGxsId.isNull()) return;
+	m_resultSubmitted = true;
+	const bool localIsWhite = m_localplayer_turn == 1;
+	const RsGxsId white = localIsWhite ? mOwnGxsId : mGxsId;
+	const RsGxsId black = localIsWhite ? mGxsId : mOwnGxsId;
+	QString result = "1/2-1/2";
+	if (!draw) result = (localWon == localIsWhite) ? "1-0" : "0-1";
+	emit ratedResult(mGameId, white, black, result);
 }
 
 void RetroChessWindow::playerTurnNotice()

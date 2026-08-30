@@ -56,6 +56,9 @@ public:
 	void notifyChessPlayerLeftGxs(const RsGxsId &gxs_id);
 	void notifyChessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
 	void notifyChessGameActionGxs(const RsGxsId &gxs_id, QString action);
+	void notifyRatedResultGxs(const RsGxsId &signer, QString gameId,
+	                          RsGxsId white, RsGxsId black, QString result,
+	                          qint64 finishedAt);
 
 	void notifyChessStartGxs(const RsGxsId &gxs_id); 
 
@@ -72,6 +75,8 @@ signals:
 	void chessPlayerLeftGxs(const RsGxsId &gxs_id);
 	void chessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
 	void chessGameActionGxs(const RsGxsId &gxs_id, QString action);
+	void ratedResultGxs(RsGxsId signer, QString gameId, RsGxsId white,
+	                    RsGxsId black, QString result, qint64 finishedAt);
 
 	void chessInvitedGxs(const RsGxsId &gxs_id);
 	void chessStartGxs(const RsGxsId &gxs_id);

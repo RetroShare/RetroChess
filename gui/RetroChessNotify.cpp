@@ -92,6 +92,13 @@ void RetroChessNotify::notifyChessGameActionGxs(const RsGxsId &gxs_id, QString a
 	emit chessGameActionGxs(gxs_id, action);
 }
 
+void RetroChessNotify::notifyRatedResultGxs(const RsGxsId &signer, QString gameId,
+	                                         RsGxsId white, RsGxsId black,
+	                                         QString result, qint64 finishedAt)
+{
+	emit ratedResultGxs(signer, gameId, white, black, result, finishedAt);
+}
+
 void RetroChessNotify::notifyChessStartGxs(const RsGxsId &gxs_id)
 {
 	emit chessStartGxs(gxs_id);

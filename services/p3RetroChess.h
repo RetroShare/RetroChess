@@ -114,8 +114,13 @@ public:
 	void acceptedInviteGxs(const RsGxsId &gxsId);
 	bool hasInviteFromGxs(const RsGxsId &gxsId) override;
 	RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) override;
+	QString gameIdForPeer(const RsGxsId &gxsId) override;
+	void startNewGameIdForPeer(const RsGxsId &gxsId) override;
 	bool sendRematchGxs(const RsGxsId &gxsId, int localColor) override;
 	bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) override;
+	bool sendRatedResultGxs(const RsGxsId &gxsId, const QString &gameId,
+	                        const RsGxsId &white, const RsGxsId &black,
+	                        const QString &result, qint64 finishedAt) override;
 	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) override;
 
@@ -160,6 +165,7 @@ private:
 	std::map<RsGxsTunnelId, RsGxsId> mTunnelToGxsIdMap;
 	// Exact local identity used to communicate with each remote GXS identity.
 	std::map<RsGxsId, RsGxsId> mOwnGxsIdByPeer;
+	std::map<RsGxsId, QString> mGameIdByPeer;
 	// Leave messages get a short delivery window before their tunnel is closed.
 	std::map<RsGxsId, time_t> mPendingGxsCloses;
 	// DistantChatIds for which sendInvite_chat() was called but getDistantChatStatus()
