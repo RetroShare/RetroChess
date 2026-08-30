@@ -48,9 +48,13 @@ public:
 
 	/** Notify the UI that a GXS tunnel is now ready for use */
 	void notifyGxsTunnelReady(const RsGxsId &gxs_id);
+	/** Notify the inviter that the remote player explicitly accepted */
+	void notifyChessAcceptedGxs(const RsGxsId &gxs_id);
 
 	/** Notify the UI that a GXS tunnel has been closed/lost */
 	void notifyGxsTunnelClosed(const RsGxsId &gxs_id);
+	void notifyChessPlayerLeftGxs(const RsGxsId &gxs_id);
+	void notifyChessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
 
 	void notifyChessStartGxs(const RsGxsId &gxs_id); 
 
@@ -62,7 +66,10 @@ signals:
 
 	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
 	void gxsTunnelReady(const RsGxsId &gxs_id);
+	void chessAcceptedGxs(const RsGxsId &gxs_id);
 	void gxsTunnelClosed(const RsGxsId &gxs_id);
+	void chessPlayerLeftGxs(const RsGxsId &gxs_id);
+	void chessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
 
 	void chessInvitedGxs(const RsGxsId &gxs_id);
 	void chessStartGxs(const RsGxsId &gxs_id);

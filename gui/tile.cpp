@@ -173,6 +173,11 @@ void Tile::validate(int c)
             // next postion is valiad, then move
             if(tile_p->tileNum==(chess_window_p)->texp[i])
             {
+				const int fromTile = (chess_window_p)->click1->tileNum;
+				const char movedPiece = (chess_window_p)->click1->pieceName;
+				const bool wasCapture = tile_p->piece;
+				const char capturedPiece = tile_p->pieceName;
+				const int capturedColor = tile_p->pieceColor;
                 (chess_window_p)->click1->piece=0;
                 tile_p->piece=1;
 
@@ -206,6 +211,10 @@ void Tile::validate(int c)
 
                 (chess_window_p)->recordLastMove((chess_window_p)->click1->tileNum);
                 (chess_window_p)->recordLastMove(tile_p->tileNum);
+				(chess_window_p)->recordMove(fromTile, tile_p->tileNum, movedPiece, wasCapture);
+				if (wasCapture)
+					(chess_window_p)->recordCapturedPiece(capturedPiece, capturedColor);
+				(chess_window_p)->playMoveSound(wasCapture);
 
                 (chess_window_p)->playerTurnNotice();
                 // ----

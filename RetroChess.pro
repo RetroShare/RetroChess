@@ -35,6 +35,12 @@ win32 {
 
 	QMAKE_CXXFLAGS *= -Wall
 
+# RapidJSON 1.1.0 contains an assignment operator that modifies const members.
+# GCC 15 checks this eagerly in template bodies, even when it is never used.
+greaterThan(QMAKE_GCC_MAJOR_VERSION, 14) {
+	QMAKE_CXXFLAGS += -Wno-template-body
+}
+
 ################################### HEADERS & SOURCES #############################
 
 SOURCES = RetroChessPlugin.cpp               \

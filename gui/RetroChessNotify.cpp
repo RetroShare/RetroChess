@@ -67,9 +67,24 @@ void RetroChessNotify::notifyGxsTunnelReady(const RsGxsId &gxs_id)
 	emit gxsTunnelReady(gxs_id);
 }
 
+void RetroChessNotify::notifyChessAcceptedGxs(const RsGxsId &gxs_id)
+{
+	emit chessAcceptedGxs(gxs_id);
+}
+
 void RetroChessNotify::notifyGxsTunnelClosed(const RsGxsId &gxs_id)
 {
 	emit gxsTunnelClosed(gxs_id);
+}
+
+void RetroChessNotify::notifyChessPlayerLeftGxs(const RsGxsId &gxs_id)
+{
+	emit chessPlayerLeftGxs(gxs_id);
+}
+
+void RetroChessNotify::notifyChessRematchGxs(const RsGxsId &gxs_id, int remoteColor)
+{
+	emit chessRematchGxs(gxs_id, remoteColor);
 }
 
 void RetroChessNotify::notifyChessStartGxs(const RsGxsId &gxs_id)

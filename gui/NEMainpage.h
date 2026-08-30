@@ -59,7 +59,13 @@ private slots:
 	void NeMsgArrived(const RsPeerId &peer_id, QString str);
 	void chessStart(const RsPeerId &peer_id);
 	void chessStartGxs(const RsGxsId &gxs_id);
+	void chessStartGxsAsBlack(const RsGxsId &gxs_id);
 	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
+	void chessPlayerLeftGxs(const RsGxsId &gxs_id);
+	void chessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
+	void requestRematchGxs(const RsGxsId &gxs_id, int localColor);
+	void requestRematchPeer(QString peerId, int localColor);
+	void removeActiveGame(QString gameId);
 
 	void on_broadcastButton_clicked();
 

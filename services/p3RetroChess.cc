@@ -114,6 +114,7 @@ int	p3RetroChess::tick()
 	std::cerr << "ticking p3RetroChess" << std::endl;
 #endif
 	handleGxsTick();
+	closePendingGxsTunnels();
 	retryPendingDistantChatInvites();
 	return 0;
 }
@@ -468,6 +469,7 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
     std::cout << "Chess: acceptedInviteGxs from " << gxsId << std::endl;
 
     RsStackMutex stack(mRetroChessMtx);
+    mInvitesFromGxs.erase(gxsId);
     auto it = mActiveTunnels.find(gxsId);
     if (it != mActiveTunnels.end()) {
         // Tunnel already active (server side — invite arrived over it).
@@ -484,18 +486,48 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
     }
 }
 
+bool p3RetroChess::sendRematchGxs(const RsGxsId &gxsId, int localColor)
+{
+    RsGxsTunnelId tunnelId;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto it = mActiveTunnels.find(gxsId);
+        if (it == mActiveTunnels.end() || !mGxsTunnels)
+            return false;
+        tunnelId = it->second;
+    }
 
-void p3RetroChess::sendInvite_chat(const ChatId &chatId)
+    const std::string message = QString("{\"type\":\"rematch\",\"color\":%1}")
+            .arg(localColor).toStdString();
+    return mGxsTunnels->sendData(
+            tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+            reinterpret_cast<const uint8_t*>(message.data()), message.size());
+}
+
+bool p3RetroChess::hasInviteFromGxs(const RsGxsId &gxsId)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    return mInvitesFromGxs.find(gxsId) != mInvitesFromGxs.end();
+}
+
+RsGxsId p3RetroChess::ownGxsIdForPeer(const RsGxsId &gxsId)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    auto it = mOwnGxsIdByPeer.find(gxsId);
+    return it == mOwnGxsIdByPeer.end() ? RsGxsId() : it->second;
+}
+
+bool p3RetroChess::sendInvite_chat(const ChatId &chatId)
 {
     // For a peer (non-GXS) chat: use the legacy sendInvite path
     if (chatId.isPeerId()) {
         sendInvite(chatId.toPeerId());
-        return;
+        return true;
     }
 
     if (!chatId.isDistantChatId()) {
         std::cerr << "Chess: sendInvite_chat: unknown ChatId type" << std::endl;
-        return;
+        return false;
     }
 
     DistantChatPeerInfo info;
@@ -511,19 +543,30 @@ void p3RetroChess::sendInvite_chat(const ChatId &chatId)
         if (mPendingDistantChatInvites.find(chatId.toDistantChatId()) == mPendingDistantChatInvites.end()) {
             mPendingDistantChatInvites[chatId.toDistantChatId()] = time(NULL);
         }
-        return;
+        return true;
     }
 
-    doSendInviteOverGxs(info.to_id, info.own_id);
+    return doSendInviteOverGxs(info.to_id, info.own_id);
 }
 
-void p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId)
+bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId)
 {
     std::cout << "Chess: doSendInviteOverGxs: to=" << toId << " from=" << ownId << std::endl;
 
     if (!mGxsTunnels) {
         std::cerr << "Chess: doSendInviteOverGxs: mGxsTunnels is NULL!" << std::endl;
-        return;
+        return false;
+    }
+
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        mOwnGxsIdByPeer[toId] = ownId;
+        auto activeIt = mActiveTunnels.find(toId);
+        if (activeIt != mActiveTunnels.end()) {
+            const std::string invite = "{\"type\":\"chess_invite\"}";
+            return mGxsTunnels->sendData(activeIt->second, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                                         (const uint8_t*)invite.c_str(), invite.size());
+        }
     }
 
     {
@@ -540,8 +583,10 @@ void p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         mPendingTunnels[toId] = tunnelId;
         mPendingGxsInvites[toId] = "{\"type\":\"chess_invite\"}";
         std::cout << "Chess: Tunnel requested (id=" << tunnelId << "), invite queued for " << toId << std::endl;
+        return true;
     } else {
         std::cerr << "Chess: doSendInviteOverGxs: requestSecuredTunnel failed, error=" << error_code << std::endl;
+        return false;
     }
 }
 
@@ -571,7 +616,9 @@ void p3RetroChess::retryPendingDistantChatInvites()
                 mPendingDistantChatInvites.erase(it->first);
             }
             // Now we have valid GXS IDs — send the invite
-            doSendInviteOverGxs(info.to_id, info.own_id);
+            if (!doSendInviteOverGxs(info.to_id, info.own_id)) {
+                std::cerr << "Chess: retry resolved the distant chat but failed to queue the invite" << std::endl;
+            }
         } else {
             // Still not ready — update timestamp so we wait another 2 seconds
             RsStackMutex stack(mRetroChessMtx);
@@ -656,12 +703,22 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             RsStackMutex stack(mRetroChessMtx);
             // Remember this tunnel is active for the sender (server-side)
             mActiveTunnels[sender_id] = tunnel_id;
+            mInvitesFromGxs.insert(sender_id);
         }
         mNotify->notifyChessInviteGxs(sender_id);
 
     } else if (type == "chess_accept") {
         std::cout << "Chess: Received accept from GXS " << sender_id << std::endl;
-        mNotify->notifyGxsTunnelReady(sender_id); // reuse: means game can start
+        mNotify->notifyChessAcceptedGxs(sender_id);
+
+    } else if (type == "player_leave") {
+        std::cout << "Chess: Remote GXS player left " << sender_id << std::endl;
+        mNotify->notifyChessPlayerLeftGxs(sender_id);
+
+    } else if (type == "rematch") {
+        const int remoteColor = map.value("color").toInt();
+        std::cout << "Chess: Remote GXS player requested a rematch " << sender_id << std::endl;
+        mNotify->notifyChessRematchGxs(sender_id, remoteColor);
 
     } else {
         // Chess move: format "col,row,count"
@@ -678,11 +735,34 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
 }
 
 void p3RetroChess::player_leave_gxs(const RsGxsId &gxs_id) {
-    // Logic to close tunnel
-    if(mActiveTunnels.count(gxs_id)) {
-        mGxsTunnels->closeExistingTunnel(mActiveTunnels[gxs_id], RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
-        mActiveTunnels.erase(gxs_id);
+    RsStackMutex stack(mRetroChessMtx);
+    auto it = mActiveTunnels.find(gxs_id);
+    if (it == mActiveTunnels.end() || !mGxsTunnels) return;
+
+    const std::string leave = "{\"type\":\"player_leave\"}";
+    if (mGxsTunnels->sendData(it->second, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                              (const uint8_t*)leave.c_str(), leave.size()))
+        mPendingGxsCloses[gxs_id] = time(NULL) + 2;
+}
+
+void p3RetroChess::closePendingGxsTunnels()
+{
+    std::vector<RsGxsTunnelId> tunnelsToClose;
+    const time_t now = time(NULL);
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        for (auto it = mPendingGxsCloses.begin(); it != mPendingGxsCloses.end();) {
+            if (it->second > now) { ++it; continue; }
+            auto activeIt = mActiveTunnels.find(it->first);
+            if (activeIt != mActiveTunnels.end()) {
+                tunnelsToClose.push_back(activeIt->second);
+                mActiveTunnels.erase(activeIt);
+            }
+            it = mPendingGxsCloses.erase(it);
+        }
     }
+    for (const RsGxsTunnelId &tunnelId : tunnelsToClose)
+        mGxsTunnels->closeExistingTunnel(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
 }
 
 RsGxsId p3RetroChess::findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id)
@@ -753,10 +833,14 @@ bool p3RetroChess::acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId
     std::cout << "Chess: acceptDataFromPeer: gxs=" << gxs_id
               << " tunnel=" << tunnel_id
               << " side=" << (am_I_client_side ? "client" : "server") << std::endl;
+    RsGxsTunnelService::GxsTunnelInfo tunnelInfo;
+    const bool haveTunnelInfo = mGxsTunnels && mGxsTunnels->getTunnelInfo(tunnel_id, tunnelInfo);
     {
         RsStackMutex stack(mRetroChessMtx);
         // Store the mapping so receiveData / handleRawData can identify the sender
         mTunnelToGxsIdMap[tunnel_id] = gxs_id;
+        if (haveTunnelInfo && !tunnelInfo.source_gxs_id.isNull())
+            mOwnGxsIdByPeer[gxs_id] = tunnelInfo.source_gxs_id;
     }
     return true;
 }

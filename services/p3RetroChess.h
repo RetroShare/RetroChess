@@ -111,16 +111,20 @@ public:
 	//void addChessFriend(const RsGxsId &gxsId);
 	void sendGxsInvite(const RsGxsId &toGxsId);
 	void acceptedInviteGxs(const RsGxsId &gxsId);
+	bool hasInviteFromGxs(const RsGxsId &gxsId) override;
+	RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) override;
+	bool sendRematchGxs(const RsGxsId &gxsId, int localColor) override;
 	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) override;
 
 	// Send invite via existing distant chat tunnel (correct approach)
-	virtual void sendInvite_chat(const ChatId &chatId) override;
+	virtual bool sendInvite_chat(const ChatId &chatId) override;
 
 	// Async tunnel management
 	void handleGxsTick(); // Called periodically by the core
+	void closePendingGxsTunnels();
 	void retryPendingDistantChatInvites(); // Retry invites queued before the tunnel was ready
-	void doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId); // Actually request tunnel + queue invite
+	bool doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId); // Actually request tunnel + queue invite
 
 	virtual uint32_t getGxsTunnelServiceId() const { 
 			return RETRO_CHESS_GXS_TUNNEL_SERVICE_ID; 
@@ -140,6 +144,7 @@ private:
 
 	std::set<RsPeerId> invitesTo;
 	std::set<RsPeerId> invitesFrom;
+	std::set<RsGxsId> mInvitesFromGxs;
 
 	void handleData(RsRetroChessDataItem*) ;
 
@@ -151,6 +156,10 @@ private:
 	std::map<RsGxsId, std::string> mPendingGxsInvites;
 	// Maps tunnel ID → remote GXS ID (populated by acceptDataFromPeer, server-side)
 	std::map<RsGxsTunnelId, RsGxsId> mTunnelToGxsIdMap;
+	// Exact local identity used to communicate with each remote GXS identity.
+	std::map<RsGxsId, RsGxsId> mOwnGxsIdByPeer;
+	// Leave messages get a short delivery window before their tunnel is closed.
+	std::map<RsGxsId, time_t> mPendingGxsCloses;
 	// DistantChatIds for which sendInvite_chat() was called but getDistantChatStatus()
 	// failed (tunnel not established yet). Retried every tick() until it succeeds.
 	std::map<DistantChatPeerId, time_t> mPendingDistantChatInvites;
