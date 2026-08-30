@@ -34,6 +34,9 @@
 #include <QTime>
 #include <QMenu>
 #include <QMessageBox>
+#include <QToolButton>
+
+#include "gui/RetroChessSettings.h"
 
 #include "gui/chat/ChatDialog.h"
 
@@ -459,6 +462,22 @@ void NEMainpage::setupMenuActions()
 	connect(mActionPlayChess, SIGNAL(triggered(bool)), this, SLOT(on_playButton_clicked()));
 
 	ui->friendSelectionWidget->addContextMenuAction(mActionPlayChess);
+
+	QToolButton *settingsButton = new QToolButton(this);
+	settingsButton->setIcon(QIcon(":/icons/png/settings.png"));
+	settingsButton->setToolTip(tr("RetroChess settings"));
+	settingsButton->setAutoRaise(true);
+	settingsButton->setFocusPolicy(Qt::NoFocus);
+	ui->horizontalLayout_2->insertWidget(ui->horizontalLayout_2->count() - 1, settingsButton);
+	connect(settingsButton, &QToolButton::clicked, this, [this]() {
+		RetroChessSettingsDialog dialog(this);
+		if (dialog.exec() != QDialog::Accepted)
+			return;
+
+		for (RetroChessWindow *window : activeGames)
+			if (window)
+				window->refreshBoardTheme();
+	});
 
 }
 

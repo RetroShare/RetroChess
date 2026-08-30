@@ -125,10 +125,9 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 
 void RetroChessChatWidgetHolder::chessnotifyGxs(const RsGxsId &from_gxs_id)
 {
-    // This signal represents a newly received invite. The same identity may
-    // legitimately invite us again after the previous game, so clear only its
-    // old de-duplication marker before rendering the new invitation.
-    displayedGxsInvites.erase(from_gxs_id);
+    // A tunnel can deliver the first invite more than once while it is being
+    // established. Keep the marker until the invite is accepted or the game
+    // ends, otherwise every duplicate signal creates another chat button.
     showGxsInviteIfMatching(from_gxs_id, 10);
 }
 

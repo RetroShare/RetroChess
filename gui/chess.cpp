@@ -32,6 +32,7 @@
 
 #include "chess.h"
 #include "ui_chess.h"
+#include "RetroChessSettings.h"
 
 #include "gui/common/AvatarDefs.h"
 #include "../services/p3RetroChess.h"
@@ -193,6 +194,7 @@ public:
 	void outline(QWidget *baseWidget, int xPos, int yPos, int Pos)
 	{
 		QLabel *outLabel = new QLabel(baseWidget);
+		outLabel->setProperty("retroChessBoardBorder", true);
 
 		if(!Pos)
 			outLabel->setGeometry(xPos,yPos,552,20);        //Horizontal Borders
@@ -200,7 +202,9 @@ public:
 		else
 			outLabel->setGeometry(xPos,yPos,20,512);        //Vertical Borders
 
-		outLabel->setStyleSheet("QLabel { background-color :rgb(170, 170, 127); color : black; }");
+		const QColor borderColor = RetroChessSettings::boardTheme().dark.lighter(135);
+		outLabel->setStyleSheet(QString("QLabel { background-color: %1; color: black; }")
+		                            .arg(borderColor.name()));
 	}
 };
 
@@ -1202,6 +1206,25 @@ void RetroChessWindow::recordLastMove(int tile_num)
     this->m_last_move_que.push_back(tile_num);
 }
 
+void RetroChessWindow::refreshBoardTheme()
+{
+	const QColor borderColor = RetroChessSettings::boardTheme().dark.lighter(135);
+	const QString borderStyle = QString(
+	        "QLabel { background-color: %1; color: black; }")
+	        .arg(borderColor.name());
+	const QList<QLabel*> labels = findChildren<QLabel*>();
+	for (QLabel *label : labels)
+		if (label->property("retroChessBoardBorder").toBool())
+			label->setStyleSheet(borderStyle);
+
+	for (int row = 0; row < 8; ++row)
+		for (int column = 0; column < 8; ++column)
+			if (tile[row][column])
+				tile[row][column]->tileDisplay();
+
+	drawLastMove();
+}
+
 void RetroChessWindow::closeForRematch()
 {
     m_suppressLeave = true;
@@ -1409,13 +1432,15 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 
 void RetroChessWindow::drawLastMove()
 {
+    const QString highlightStyle = QString("QLabel { background-color: %1; }")
+            .arg(RetroChessSettings::boardTheme().lastMove.name());
     // draw last move
     for( QQueue<int>::iterator it = this->m_last_move_que.begin();
          it != this->m_last_move_que.end();
          ++it)
     {
         int tile_num = *it;
-        tile[ tile_num / 8][ tile_num % 8]->setStyleSheet("QLabel {background-color: lightGray;}");
+        tile[ tile_num / 8][ tile_num % 8]->setStyleSheet(highlightStyle);
     }
 }
 

@@ -20,6 +20,7 @@
 
 #include "tile.h"
 #include "chess.h"
+#include "RetroChessSettings.h"
 #include "../interface/rsRetroChess.h"
 
 /*extern int count,turn;
@@ -233,11 +234,12 @@ void Tile::validate(int c)
 
 void Tile::tileDisplay()
 {
-
-    if(this->tileColor)
-        this->setStyleSheet("QLabel {background-color: rgb(120, 120, 90);}:hover{background-color: rgb(170,85,127);}");
-    else
-        this->setStyleSheet("QLabel {background-color: rgb(211, 211, 158);}:hover{background-color: rgb(170,95,127);}");
+	const RetroChessBoardTheme theme = RetroChessSettings::boardTheme();
+	const QColor color = this->tileColor ? theme.dark : theme.light;
+	const QColor hover = color.lighter(120);
+	this->setStyleSheet(QString(
+	        "QLabel { background-color: %1; } QLabel:hover { background-color: %2; }")
+	        .arg(color.name(), hover.name()));
 }
 
 void Tile::pawnLevelupCheck()

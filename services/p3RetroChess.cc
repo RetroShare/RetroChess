@@ -724,13 +724,18 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
 
     if (type == "chess_invite") {
         std::cout << "Chess: Received invite from GXS " << sender_id << std::endl;
+        bool isNewInvite = false;
         {
             RsStackMutex stack(mRetroChessMtx);
             // Remember this tunnel is active for the sender (server-side)
             mActiveTunnels[sender_id] = tunnel_id;
-            mInvitesFromGxs.insert(sender_id);
+            isNewInvite = mInvitesFromGxs.insert(sender_id).second;
         }
-        mNotify->notifyChessInviteGxs(sender_id);
+        if (isNewInvite)
+            mNotify->notifyChessInviteGxs(sender_id);
+        else
+            std::cout << "Chess: Ignoring duplicate pending invite from GXS "
+                      << sender_id << std::endl;
 
     } else if (type == "chess_accept") {
         std::cout << "Chess: Received accept from GXS " << sender_id << std::endl;

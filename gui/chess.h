@@ -118,6 +118,7 @@ public:
 	void sendGameAction(const QString &action);
 	void applyGameAction(const QString &action, bool remote);
 	void showGameStatus(const QString &status);
+	void refreshBoardTheme();
     void drawLastMove();
     void clearLastMove();
 
