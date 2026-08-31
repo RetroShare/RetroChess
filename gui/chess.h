@@ -111,6 +111,7 @@ public:
 	QTableWidget *m_moveTable;
 	QMediaPlayer *m_moveSound;
 	QMediaPlayer *m_captureSound;
+	QMediaPlayer *m_victorySound;
     void recordLastMove( int tile_num );
 	void recordMove(int fromTile, int toTile, char pieceName, bool capture);
 	void recordCapturedPiece(char pieceName, int pieceColor);

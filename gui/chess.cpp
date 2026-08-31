@@ -51,7 +51,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_capturedWhiteLabel(nullptr),
     m_moveTable(nullptr),
     m_moveSound(nullptr),
-    m_captureSound(nullptr)
+    m_captureSound(nullptr),
+    m_victorySound(nullptr)
 {
     QString player_str; 
     if (player == 1) {
@@ -131,7 +132,8 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_capturedWhiteLabel(nullptr),
 	m_moveTable(nullptr),
 	m_moveSound(nullptr),
-	m_captureSound(nullptr)
+	m_captureSound(nullptr),
+	m_victorySound(nullptr)
 	//ui(new Ui::RetroChessWindow)
 {
 	m_ui->setupUi( this );
@@ -288,10 +290,13 @@ void RetroChessWindow::initAccessories()
 
 	m_moveSound = new QMediaPlayer(this);
 	m_captureSound = new QMediaPlayer(this);
+	m_victorySound = new QMediaPlayer(this);
 	m_moveSound->setMedia(QUrl("qrc:/sound/Move.mp3"));
 	m_captureSound->setMedia(QUrl("qrc:/sound/Capture.mp3"));
+	m_victorySound->setMedia(QUrl("qrc:/sound/victory.mp3"));
 	m_moveSound->setVolume(70);
 	m_captureSound->setVolume(70);
+	m_victorySound->setVolume(80);
 
 	// Keep game notifications out of the sidebar layout. This compact overlay
 	// behaves like a status bar and never changes the window's size hint.
@@ -1237,6 +1242,11 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw)
     if (m_resultPopupShown)
         return;
     m_resultPopupShown = true;
+	if (!draw && m_victorySound) {
+		m_victorySound->stop();
+		m_victorySound->setPosition(0);
+		m_victorySound->play();
+	}
 
     QDialog *dialog = new QDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
