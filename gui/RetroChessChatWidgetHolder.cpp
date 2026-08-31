@@ -194,7 +194,7 @@ void RetroChessChatWidgetHolder::showGxsInviteIfMatching(const RsGxsId &from_gxs
 
     // Add the system message and the "Accept" button to the chat history
     mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime(),
-                            tr("%1 is inviting you to play chess. Do you want to accept?").arg(buttonName),
+                            tr("%1 is inviting you to play chess. Do you want to accept?\n").arg(buttonName),
                             ChatWidget::MSGTYPE_SYSTEM);
 
     RSButtonOnText *button = mChatWidget->getNewButtonOnTextBrowser(tr("Accept chess invite"));
