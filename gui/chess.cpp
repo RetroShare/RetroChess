@@ -29,6 +29,7 @@
 #include <QMessageBox>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QTimer>
 
 #include "chess.h"
 #include "ui_chess.h"
