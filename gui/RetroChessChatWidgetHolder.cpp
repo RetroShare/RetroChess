@@ -203,9 +203,15 @@ void RetroChessChatWidgetHolder::showGxsInviteIfMatching(const RsGxsId &from_gxs
 	// ChatWidget inserts RSButtonOnText immediately, before our stylesheet is
 	// applied. Remove that initial small image and append it again after styling,
 	// so the document's image rectangle and clickable hit area have the same size.
-	if (chatTextEdit)
+	if (chatTextEdit) {
 		button->clear();
+		QTextCursor cursor(chatTextEdit->document());
+		cursor.movePosition(QTextCursor::End);
+		cursor.insertBlock();
+		chatTextEdit->setTextCursor(cursor);
+	}
 
+	button->setEnabled(true);
     button->setStyleSheet(QString("border: 1px solid #199909;")
                           .append("font-size: 12pt; color: white; padding-left: 10px; padding-right: 10px;")
                           .append("min-width: 128px; min-height: 24px;")
@@ -404,7 +410,12 @@ void RetroChessChatWidgetHolder::botMouseEnter()
 		                      .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
 		                              "stop: 0 #444444, stop: 1 #222222);")
 
-		                     );
+			                     );
+		source->updateImage();
+		if (QTextEdit *textEdit = qobject_cast<QTextEdit*>(source->parentWidget())) {
+			textEdit->document()->markContentsDirty(0, textEdit->document()->characterCount());
+			textEdit->viewport()->update();
+		}
 		//source->setDown(true);
 	}
 }
@@ -421,7 +432,12 @@ void RetroChessChatWidgetHolder::botMouseLeave()
 		                      .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
 		                              "stop: 0 #22c70d, stop: 1 #116a06);")
 
-		                     );
+			                     );
+		source->updateImage();
+		if (QTextEdit *textEdit = qobject_cast<QTextEdit*>(source->parentWidget())) {
+			textEdit->document()->markContentsDirty(0, textEdit->document()->characterCount());
+			textEdit->viewport()->update();
+		}
 		//source->setDown(false);
 	}
 }
