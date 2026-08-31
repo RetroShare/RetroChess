@@ -71,6 +71,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_ui->m_status_bar->hide();
 
     m_flag_finished = 0;	// set as unfinish
+	m_checkedKingTile = -1;
 
     //tile = { { NULL } };
     count=0;
@@ -143,6 +144,7 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
     m_ui->m_status_bar->hide();
 
     m_flag_finished = 0;	// set as unfinish
+	m_checkedKingTile = -1;
 
 	//tile = { { NULL } };
 	count=0;
@@ -1369,7 +1371,7 @@ bool RetroChessWindow::hasAnyLegalMove(int color)
 	return false;
 }
 
-void RetroChessWindow::highlightCheckmatedKing(int color)
+void RetroChessWindow::highlightCheckedKing(int color)
 {
 	for (int row = 0; row < 8; ++row)
 		for (int col = 0; col < 8; ++col)
@@ -1377,6 +1379,11 @@ void RetroChessWindow::highlightCheckmatedKing(int color)
 			Tile *king = tile[row][col];
 			if (!king->piece || king->pieceColor != color || king->pieceName != 'K')
 				continue;
+
+			const int kingTile = king->tileNum;
+			if (m_checkedKingTile >= 0 && m_checkedKingTile != kingTile)
+				tile[m_checkedKingTile / 8][m_checkedKingTile % 8]->tileDisplay();
+			m_checkedKingTile = kingTile;
 
 			const RetroChessBoardTheme theme = RetroChessSettings::boardTheme();
 			const QColor squareColor = king->tileColor ? theme.dark : theme.light;
@@ -1389,6 +1396,16 @@ void RetroChessWindow::highlightCheckmatedKing(int color)
 			        "stop:1 %1); }").arg(squareColor.name()));
 			return;
 		}
+}
+
+void RetroChessWindow::clearKingCheckHighlight()
+{
+	if (m_checkedKingTile < 0) return;
+	tile[m_checkedKingTile / 8][m_checkedKingTile % 8]->tileDisplay();
+	m_checkedKingTile = -1;
+	// If the restored king square is part of the latest move, preserve that
+	// theme-specific last-move highlight.
+	drawLastMove();
 }
 
 void RetroChessWindow::orange()
@@ -1567,18 +1584,19 @@ void RetroChessWindow::recordCapturedPiece(char pieceName, int pieceColor)
 			if (rendered.contains(piece) || !pieces.contains(piece))
 				continue;
 			rendered += piece;
-			QString name;
+			QChar pieceCode;
 			switch (piece.toLatin1()) {
-			case 'K': name = "king"; break;
-			case 'Q': name = "queen"; break;
-			case 'R': name = "rook"; break;
-			case 'B': name = "bishop"; break;
-			case 'H': name = "knight"; break;
-			default: name = "pawn"; break;
+			case 'K': pieceCode = 'K'; break;
+			case 'Q': pieceCode = 'Q'; break;
+			case 'R': pieceCode = 'R'; break;
+			case 'B': pieceCode = 'B'; break;
+			case 'H': pieceCode = 'N'; break;
+			default: pieceCode = 'P'; break;
 			}
 			const int amount = pieces.count(piece);
-			result += QString("<img src=\":/images/%1_%2.svg\" width=\"20\" height=\"20\">")
-			        .arg(name, color);
+			const QChar colorCode = color == "black" ? 'b' : 'w';
+			result += QString("<img src=\":/piece/%1%2.svg\" width=\"20\" height=\"20\">")
+			        .arg(colorCode).arg(pieceCode);
 			if (amount > 1)
 				result += QString("×%1").arg(amount);
 			result += "&nbsp;";
@@ -1693,8 +1711,13 @@ void RetroChessWindow::clearLastMove()
 int RetroChessWindow::resultJudge()
 {
 	if (hasAnyLegalMove(turn)) {
-		if (isKingInCheck(turn)) showGameStatus(tr("Check"));
-		else if (m_ui->m_status_bar->text() == tr("Check")) m_ui->m_status_bar->hide();
+		if (isKingInCheck(turn)) {
+			highlightCheckedKing(turn);
+			showGameStatus(tr("Check"));
+		} else {
+			clearKingCheckHighlight();
+			if (m_ui->m_status_bar->text() == tr("Check")) m_ui->m_status_bar->hide();
+		}
 		return 0;
 	}
 
@@ -1704,7 +1727,7 @@ int RetroChessWindow::resultJudge()
 	}
 
 	const int winningColor = 1 - turn;
-	highlightCheckmatedKing(turn);
+	highlightCheckedKing(turn);
 	QLabel *blackResult = m_ui->m_player1_result;
 	QLabel *whiteResult = m_ui->m_player2_result;
 	blackResult->setText(winningColor == 0 ? tr("Win") : tr("Defeat"));

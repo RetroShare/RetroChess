@@ -23,6 +23,8 @@
 #include "RetroChessSettings.h"
 #include "../interface/rsRetroChess.h"
 
+#include <QIcon>
+
 /*extern int count,turn;
 extern QWidget *myWidget;
 extern Tile *click1;
@@ -64,58 +66,29 @@ void Tile::mousePressEvent(QMouseEvent *event)
 void Tile::display(char elem)
 {
     this->pieceName=elem;
+	if (!this->piece) {
+		this->clear();
+		return;
+	}
 
-    if(this->pieceColor && this->piece)
-    {
-        switch(elem)
-        {
-        case 'P':
-            this->setPixmap(QPixmap(":/images/pawn_white.svg"));
-            break;
-        case 'R':
-            this->setPixmap(QPixmap(":/images/rook_white.svg"));
-            break;
-        case 'H':
-            this->setPixmap(QPixmap(":/images/knight_white.svg"));
-            break;
-        case 'K':
-            this->setPixmap(QPixmap(":/images/king_white.svg"));
-            break;
-        case 'Q':
-            this->setPixmap(QPixmap(":/images/queen_white.svg"));
-            break;
-        case 'B':
-            this->setPixmap(QPixmap(":/images/bishop_white.svg"));
-            break;
-        }
-    }
+	QChar pieceCode;
+	switch (elem) {
+	case 'P': pieceCode = 'P'; break;
+	case 'R': pieceCode = 'R'; break;
+	case 'H': pieceCode = 'N'; break;
+	case 'K': pieceCode = 'K'; break;
+	case 'Q': pieceCode = 'Q'; break;
+	case 'B': pieceCode = 'B'; break;
+	default: this->clear(); return;
+	}
 
-    else if(this->piece)
-    {
-        switch(elem)
-        {
-        case 'P':
-            this->setPixmap(QPixmap(":/images/pawn_black.svg"));
-            break;
-        case 'R':
-            this->setPixmap(QPixmap(":/images/rook_black.svg"));
-            break;
-        case 'H':
-            this->setPixmap(QPixmap(":/images/knight_black.svg"));
-            break;
-        case 'K':
-            this->setPixmap(QPixmap(":/images/king_black.svg"));
-            break;
-        case 'Q':
-            this->setPixmap(QPixmap(":/images/queen_black.svg"));
-            break;
-        case 'B':
-            this->setPixmap(QPixmap(":/images/bishop_black.svg"));
-            break;
-        }
-    }
-    else
-        this->clear();
+	const QChar colorCode = this->pieceColor ? 'w' : 'b';
+	const QString resource = QString(":/piece/%1%2.svg").arg(colorCode).arg(pieceCode);
+	this->setAlignment(Qt::AlignCenter);
+	// QPixmap loads an SVG at its intrinsic 45x45 size. QIcon asks the SVG
+	// engine to render directly at the 64x64 tile size, producing a larger,
+	// sharper piece without bitmap upscaling.
+	this->setPixmap(QIcon(resource).pixmap(this->size()));
 }
 
 // check click
