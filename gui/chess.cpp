@@ -250,6 +250,25 @@ void RetroChessWindow::initAccessories()
 	m_ui->moveHistoryLayout->insertWidget(0, m_capturedBlackLabel);
 	m_ui->moveHistoryLayout->addWidget(m_capturedWhiteLabel);
 
+	// Keep turn information beside the moves. The upper label belongs to the
+	// opponent and the lower label belongs to the local player, regardless of
+	// which colour each player has in this game.
+	QLabel *opponentStatus = m_localplayer_turn == 0
+	        ? m_ui->m_player2_result : m_ui->m_player1_result;
+	QLabel *localStatus = m_localplayer_turn == 0
+	        ? m_ui->m_player1_result : m_ui->m_player2_result;
+	m_ui->gridLayout_2->removeWidget(m_ui->m_player1_result);
+	m_ui->gridLayout_3->removeWidget(m_ui->m_player2_result);
+	opponentStatus->setParent(m_ui->moveHistoryFrame);
+	localStatus->setParent(m_ui->moveHistoryFrame);
+	for (QLabel *label : {opponentStatus, localStatus}) {
+		label->setMinimumHeight(25);
+		label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+		label->setContentsMargins(4, 0, 4, 0);
+	}
+	m_ui->moveHistoryLayout->insertWidget(0, opponentStatus);
+	m_ui->moveHistoryLayout->addWidget(localStatus);
+
 	QHBoxLayout *gameControls = new QHBoxLayout;
 	gameControls->setContentsMargins(2, 2, 2, 2);
 	gameControls->setSpacing(2);
@@ -1374,8 +1393,36 @@ void RetroChessWindow::highlightCheckmatedKing(int color)
 
 void RetroChessWindow::orange()
 {
-    for(int i = 0; i < max; ++i)
-		tile[texp[i]/8][texp[i]%8]->setStyleSheet("QLabel {background-color: orange;}");
+	const RetroChessBoardTheme theme = RetroChessSettings::boardTheme();
+	for (int i = 0; i < max; ++i)
+	{
+		Tile *destination = tile[texp[i] / 8][texp[i] % 8];
+		const QColor square = destination->tileColor ? theme.dark : theme.light;
+		QColor marker("#3f8148");
+		marker.setAlpha(180);
+
+		QString gradient;
+		if (destination->piece)
+		{
+			// A broad, soft outer ring keeps the captured piece fully visible.
+			QColor captureMarker("#7aaa62");
+			captureMarker.setAlpha(120);
+			gradient = QString(
+			        "qradialgradient(cx:0.5, cy:0.5, radius:0.80, fx:0.5, fy:0.5, "
+			        "stop:0 %1, stop:0.62 %1, stop:0.64 %2, "
+			        "stop:0.95 %2, stop:0.97 %1, stop:1 %1)")
+			        .arg(square.name(), captureMarker.name(QColor::HexArgb));
+		}
+		else
+		{
+			// Empty legal squares use a small translucent destination dot.
+			gradient = QString(
+			        "qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, "
+			        "stop:0 %1, stop:0.36 %1, stop:0.38 %2, stop:1 %2)")
+			        .arg(marker.name(QColor::HexArgb), square.name());
+		}
+		destination->setStyleSheet(QString("QLabel { background: %1; }").arg(gradient));
+	}
 }
 
 void RetroChessWindow::recordLastMove(int tile_num)
@@ -1695,26 +1742,18 @@ void RetroChessWindow::showPlayerLeaveMsg()
 
 void RetroChessWindow::playerTurnNotice()
 {
-    if( this->turn )
-    {
-        m_ui->m_player1_result->setText("Waiting");
-        m_ui->m_player1_result->setStyleSheet("QLabel {font: 14pt; color: gray;}");
+	QLabel *opponentStatus = m_localplayer_turn == 0
+	        ? m_ui->m_player2_result : m_ui->m_player1_result;
+	QLabel *localStatus = m_localplayer_turn == 0
+	        ? m_ui->m_player1_result : m_ui->m_player2_result;
+	const bool localTurn = turn == m_localplayer_turn;
 
-        m_ui->m_player2_result->setText("Turn");
-        m_ui->m_player2_result->setStyleSheet("QLabel {font: 14pt; color: green; text:bold;}");
-
-        m_ui->m_player1_result->setVisible(true);
-        m_ui->m_player2_result->setVisible(true);
-    }
-    else
-    {
-        m_ui->m_player1_result->setText("Turn");
-        m_ui->m_player1_result->setStyleSheet("QLabel {font: 14pt;color: green;}");
-
-        m_ui->m_player2_result->setText("Waiting");
-        m_ui->m_player2_result->setStyleSheet("QLabel {font: 14pt;color: gray; text:bold;}");
-
-        m_ui->m_player1_result->setVisible(true);
-        m_ui->m_player2_result->setVisible(true);
-    }
+	opponentStatus->setText(tr("Opponent's turn"));
+	localStatus->setText(localTurn ? tr("Your turn") : tr("Waiting for opponent"));
+	opponentStatus->setStyleSheet("QLabel { font-size: 13px; color: #555; }");
+	localStatus->setStyleSheet(localTurn
+	        ? "QLabel { font-size: 13px; color: green; font-weight: bold; }"
+	        : "QLabel { font-size: 13px; color: #777; }");
+	opponentStatus->setVisible(!localTurn);
+	localStatus->show();
 }
