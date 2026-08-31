@@ -3,10 +3,12 @@
 #include <QObject>
 #include <QDateTime>
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <retroshare/rstypes.h>
 
 class QTableWidget;
+class QTimer;
 struct ChatMessage;
 
 class RetroChessLeaderboard : public QObject
@@ -33,6 +35,7 @@ public:
 	                   const RsGxsId &white, const RsGxsId &black,
 	                   const QString &result, qint64 finishedAt);
 	void populate(QTableWidget *table) const;
+	RsGxsGroupId ledgerGroupId() const { return mLedgerGroupId; }
 
 signals:
 	void changed();
@@ -46,9 +49,18 @@ private:
 	void recompute();
 	void load();
 	void save() const;
+	void synchronizeGxsLedger();
+	void selectOrCreateLedgerGroup();
+	void readLedgerPosts();
+	void publishPendingReceipts();
+	bool publishReceipt(const Receipt &receipt);
 	static QString canonicalKey(const Receipt &r);
 	static bool validResult(const QString &result);
 
 	QMap<QString, Receipt> mReceipts;
 	QMap<QString, Player> mPlayers;
+	RsGxsGroupId mLedgerGroupId;
+	QSet<QString> mPublishedReceipts;
+	QTimer *mSyncTimer;
+	int mDiscoveryAttempts = 0;
 };

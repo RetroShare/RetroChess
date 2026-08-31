@@ -7,12 +7,17 @@
 #include <QJsonObject>
 #include <QTableWidget>
 #include <QHeaderView>
+#include <QTimer>
+#include <QSet>
 #include <retroshare/rsidentity.h>
+#include <retroshare/rsgxsforums.h>
 #include "gui/settings/rsharesettings.h"
 
 namespace {
 constexpr double kScale = 173.7178;
 constexpr double kTau = 0.5;
+const char kLedgerName[] = "RetroChess Leaderboard";
+const char kLedgerMarker[] = "Official distributed RetroChess rating ledger | retrochess:leaderboard:v1";
 
 QString displayName(const RsGxsId &id)
 {
@@ -77,9 +82,13 @@ void updatePair(RetroChessLeaderboard::Player &a,
 }
 }
 
-RetroChessLeaderboard::RetroChessLeaderboard(QObject *parent) : QObject(parent)
+RetroChessLeaderboard::RetroChessLeaderboard(QObject *parent) : QObject(parent), mSyncTimer(new QTimer(this))
 {
 	load();
+	connect(mSyncTimer, &QTimer::timeout, this, &RetroChessLeaderboard::synchronizeGxsLedger);
+	mSyncTimer->setInterval(15000);
+	mSyncTimer->start();
+	QTimer::singleShot(0, this, &RetroChessLeaderboard::synchronizeGxsLedger);
 }
 
 RetroChessLeaderboard::~RetroChessLeaderboard() = default;
@@ -101,6 +110,10 @@ void RetroChessLeaderboard::submitResult(const QString &gameId, const RsGxsId &w
 	          QDateTime::currentSecsSinceEpoch()};
 	if (r.signer.isEmpty()) return;
 	consumeReceipt(r);
+	if (!mLedgerGroupId.isNull() && publishReceipt(r)) {
+		mPublishedReceipts.insert(canonicalKey(r) + '|' + r.signer);
+		save();
+	}
 }
 
 void RetroChessLeaderboard::receiveResult(const RsGxsId &signer, const QString &gameId,
@@ -177,6 +190,11 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 
 void RetroChessLeaderboard::load()
 {
+	mLedgerGroupId = RsGxsGroupId(Settings->valueFromGroup(
+	        "RetroChess", "LeaderboardGxsGroup").toString().toStdString());
+	const QStringList published = Settings->valueFromGroup(
+	        "RetroChess", "LeaderboardPublishedReceipts").toStringList();
+	mPublishedReceipts = QSet<QString>(published.cbegin(), published.cend());
 	const QByteArray raw = Settings->valueFromGroup("RetroChess", "LeaderboardReceipts").toByteArray();
 	const QJsonArray array = QJsonDocument::fromJson(raw).array();
 	for (const QJsonValue &v : array) {
@@ -194,5 +212,120 @@ void RetroChessLeaderboard::save() const
 	for (const Receipt &r : mReceipts) array.append(QJsonObject{{"game_id",r.gameId},{"white",r.white},
 		{"black",r.black},{"result",r.result},{"signer",r.signer},{"finished_at",static_cast<double>(r.finishedAt)}});
 	Settings->setValueToGroup("RetroChess", "LeaderboardReceipts", QJsonDocument(array).toJson(QJsonDocument::Compact));
+	Settings->setValueToGroup("RetroChess", "LeaderboardGxsGroup",
+	        QString::fromStdString(mLedgerGroupId.toStdString()));
+	Settings->setValueToGroup("RetroChess", "LeaderboardPublishedReceipts",
+	        QStringList(mPublishedReceipts.values()));
 	Settings->sync();
+}
+
+void RetroChessLeaderboard::synchronizeGxsLedger()
+{
+	if (!rsGxsForums || !rsIdentity) return;
+	// Keep discovering even after creation so independently created bootstrap
+	// groups converge on the lexicographically smallest valid protocol group.
+	selectOrCreateLedgerGroup();
+	if (mLedgerGroupId.isNull()) return;
+	rsGxsForums->subscribeToForum(mLedgerGroupId, true);
+	readLedgerPosts();
+	publishPendingReceipts();
+}
+
+void RetroChessLeaderboard::selectOrCreateLedgerGroup()
+{
+	std::list<RsGroupMetaData> summaries;
+	if (!rsGxsForums->getForumsSummaries(summaries)) return;
+	QList<RsGxsGroupId> candidates;
+	for (const RsGroupMetaData &meta : summaries)
+		if (meta.mGroupName == kLedgerName) candidates.append(meta.mGroupId);
+	if (!candidates.isEmpty()) {
+		std::sort(candidates.begin(), candidates.end(), [](const RsGxsGroupId &a, const RsGxsGroupId &b) {
+			return a.toStdString() < b.toStdString();
+		});
+		RsGxsGroupId selected;
+		for (const RsGxsGroupId &id : candidates) {
+			std::vector<RsGxsForumGroup> groups;
+			if (rsGxsForums->getForumsInfo({id}, groups) && !groups.empty()
+			    && groups.front().mDescription == kLedgerMarker) {
+				selected = id; break;
+			}
+		}
+		if (!selected.isNull()) {
+			if (selected != mLedgerGroupId) {
+				mLedgerGroupId = selected;
+				mPublishedReceipts.clear();
+				save();
+				emit changed();
+			}
+			return;
+		}
+	}
+	if (!mLedgerGroupId.isNull()) return;
+	// Wait for normal GXS discovery before creating, which avoids most duplicate groups.
+	if (++mDiscoveryAttempts < 3) return;
+	std::list<RsGxsId> ownIds;
+	rsIdentity->getOwnIds(ownIds);
+	RsGxsId author;
+	for (const RsGxsId &id : ownIds) {
+		RsIdentityDetails details;
+		if (rsIdentity->getIdDetails(id, details) && (details.mFlags & RS_IDENTITY_FLAGS_PGP_LINKED)) {
+			author = id; break;
+		}
+	}
+	if (author.isNull()) return;
+	RsGxsGroupId created;
+	std::string error;
+	if (rsGxsForums->createForumV2(kLedgerName, kLedgerMarker, author, {},
+	        RsGxsCircleType::PUBLIC, RsGxsCircleId(), created, error)) {
+		mLedgerGroupId = created;
+		rsGxsForums->subscribeToForum(created, true);
+		save();
+		emit changed();
+	}
+}
+
+void RetroChessLeaderboard::readLedgerPosts()
+{
+	std::vector<RsMsgMetaData> metas;
+	if (!rsGxsForums->getForumMsgMetaData(mLedgerGroupId, metas)) return;
+	std::set<RsGxsMessageId> ids;
+	for (const RsMsgMetaData &meta : metas) ids.insert(meta.mMsgId);
+	if (ids.empty()) return;
+	std::vector<RsGxsForumMsg> posts;
+	if (!rsGxsForums->getForumContent(mLedgerGroupId, ids, posts)) return;
+	for (const RsGxsForumMsg &post : posts) {
+		const QJsonObject o = QJsonDocument::fromJson(QByteArray::fromStdString(post.mMsg)).object();
+		if (o.value("type").toString() != "retrochess_result_v1") continue;
+		receiveResult(post.mMeta.mAuthorId, o.value("game_id").toString(),
+		        RsGxsId(o.value("white").toString().toStdString()),
+		        RsGxsId(o.value("black").toString().toStdString()),
+		        o.value("result").toString(), static_cast<qint64>(o.value("finished_at").toDouble()));
+	}
+	std::vector<RsGxsMessageId> readIds(ids.begin(), ids.end());
+	rsGxsForums->markRead(mLedgerGroupId, readIds, true);
+}
+
+bool RetroChessLeaderboard::publishReceipt(const Receipt &r)
+{
+	if (mLedgerGroupId.isNull()) return false;
+	QJsonObject o{{"type","retrochess_result_v1"},{"version",1},{"game_id",r.gameId},
+	              {"white",r.white},{"black",r.black},{"result",r.result},
+	              {"finished_at",static_cast<double>(r.finishedAt)}};
+	RsGxsMessageId postId;
+	std::string error;
+	return rsGxsForums->createPost(mLedgerGroupId, "RetroChess result " + r.gameId.toStdString(),
+	        QJsonDocument(o).toJson(QJsonDocument::Compact).toStdString(),
+	        RsGxsId(r.signer.toStdString()), RsGxsMessageId(), RsGxsMessageId(), postId, error);
+}
+
+void RetroChessLeaderboard::publishPendingReceipts()
+{
+	for (const Receipt &r : mReceipts) {
+		const QString key = canonicalKey(r) + '|' + r.signer;
+		if (mPublishedReceipts.contains(key)) continue;
+		const RsGxsId signer(r.signer.toStdString());
+		if (!rsIdentity->isOwnId(signer)) continue;
+		if (publishReceipt(r)) mPublishedReceipts.insert(key);
+	}
+	save();
 }

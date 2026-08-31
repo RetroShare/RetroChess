@@ -44,6 +44,7 @@ class ChatWidget;
 class UserNotify;
 class QShowEvent;
 class QTableWidget;
+class QLabel;
 class RetroChessLeaderboard;
 
 namespace Ui
@@ -91,6 +92,7 @@ private:
 	unsigned int mLobbyUnreadCount;
 	RetroChessLeaderboard *mLeaderboard;
 	QTableWidget *mLeaderboardTable;
+	QLabel *mLeaderboardInfo;
 
 	QMap<std::string, RetroChessWindow*> activeGames;
 	void create_chess_window(std::string peer_id, int player_id);

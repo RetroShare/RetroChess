@@ -56,16 +56,17 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	mOfficialLobbyDialog(nullptr),
 	mLobbyUnreadCount(0),
 	mLeaderboard(new RetroChessLeaderboard(this)),
-	mLeaderboardTable(new QTableWidget(this))
+	mLeaderboardTable(new QTableWidget(this)),
+	mLeaderboardInfo(nullptr)
 {
 	ui->setupUi(this);
 	QWidget *leaderboardPage = new QWidget(ui->tabWidget);
 	QVBoxLayout *leaderboardLayout = new QVBoxLayout(leaderboardPage);
-	QLabel *leaderboardInfo = new QLabel(
+	mLeaderboardInfo = new QLabel(
 	        tr("Standard Glicko-2 rating. A game is counted after both players publish the same signed result."),
 	        leaderboardPage);
-	leaderboardInfo->setWordWrap(true);
-	leaderboardLayout->addWidget(leaderboardInfo);
+	mLeaderboardInfo->setWordWrap(true);
+	leaderboardLayout->addWidget(mLeaderboardInfo);
 	leaderboardLayout->addWidget(mLeaderboardTable);
 	ui->tabWidget->insertTab(1, leaderboardPage, tr("Leaderboard"));
 	connect(mLeaderboard, SIGNAL(changed()), this, SLOT(refreshLeaderboard()));
@@ -201,6 +202,11 @@ void NEMainpage::officialLobbyNewMessage(ChatWidget *)
 void NEMainpage::refreshLeaderboard()
 {
 	mLeaderboard->populate(mLeaderboardTable);
+	const RsGxsGroupId groupId = mLeaderboard->ledgerGroupId();
+	mLeaderboardInfo->setText(groupId.isNull()
+	        ? tr("Searching for the distributed RetroChess leaderboard GXS group…")
+	        : tr("Synchronized GXS ledger: %1 — games count after both signed results match.")
+	          .arg(QString::fromStdString(groupId.toStdString())));
 }
 
 void NEMainpage::showEvent(QShowEvent *event)
