@@ -1244,8 +1244,8 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw)
     dialog->setMinimumWidth(390);
     dialog->setStyleSheet(
         "QDialog { background: #282725; color: white; }"
-        "QLabel#resultTitle { font-size: 25px; font-weight: bold; color: white; }"
-        "QLabel#resultText { font-size: 15px; color: #d6d6d6; }"
+        "QLabel#resultTitle { font-size: 25px; font-weight: bold; color: white; background: transparent; }"
+        "QLabel#resultText { font-size: 15px; color: #d6d6d6; background: transparent; }"
         "QPushButton { min-height: 38px; padding: 4px 22px; font-size: 15px; "
         "background: #3a3937; color: white; border: 1px solid #555; border-radius: 5px; }"
         "QPushButton:hover { background: #4b7f2b; }"
@@ -1399,8 +1399,13 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		return;
 	}
 	if (action == "draw_decline") {
-		m_ui->m_status_bar->setText(tr("Draw offer declined"));
+		const QString declinedText = tr("Draw offer declined");
+		m_ui->m_status_bar->setText(declinedText);
 		m_ui->m_status_bar->show();
+		QTimer::singleShot(3500, this, [this, declinedText]() {
+			if (m_ui->m_status_bar->text() == declinedText)
+				m_ui->m_status_bar->hide();
+		});
 		return;
 	}
 	if (action == "rematch_decline") {
