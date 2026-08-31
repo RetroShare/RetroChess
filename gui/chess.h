@@ -98,6 +98,12 @@ public:
 	int validateHorse(Tile *temp);
 	int validateRook(Tile *temp);
 	int validatePawn(Tile *temp);
+	bool isSquareAttacked(int row, int col, int attackingColor) const;
+	bool isKingInCheck(int color) const;
+	bool isPseudoLegalMove(int fromRow, int fromCol, int toRow, int toCol, int color) const;
+	bool isLegalMove(int fromRow, int fromCol, int toRow, int toCol, int color);
+	bool hasAnyLegalMove(int color);
+	void highlightCheckmatedKing(int color);
 
 	void orange();	// draw orange background represent avaiable movement of tiles
 	int check(Tile *temp);
@@ -127,7 +133,7 @@ public:
     void showPlayerLeaveMsg();	// show player leave message
     void playerTurnNotice();
 	void closeForRematch();
-	void showGameResultDialog(bool localWon, bool draw = false);
+	void showGameResultDialog(bool localWon, bool draw = false, const QString &reason = QString());
 
 signals:
 	void rematchRequested(const RsGxsId &gxsId, int localColor);

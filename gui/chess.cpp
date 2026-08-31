@@ -564,6 +564,19 @@ int RetroChessWindow::chooser(Tile *tile_p)
 
 	}
 
+	// Piece validators above generate geometric moves. Remove moves which
+	// would leave this player's king in check (including unsafe king moves).
+	int legalCount = 0;
+	for (int i = 0; i < max; ++i)
+	{
+		const int toRow = texp[i] / 8;
+		const int toCol = texp[i] % 8;
+		if (isLegalMove(tile_p->row, tile_p->col, toRow, toCol, tile_p->pieceColor))
+			texp[legalCount++] = texp[i];
+	}
+	max = legalCount;
+	flag = max > 0;
+
 	orange();
 
 	return flag;
@@ -1195,10 +1208,168 @@ int RetroChessWindow::validateBishop(Tile *tile_p)
 // for help player to make decition to keep "King" alive.
 int RetroChessWindow::check(Tile *tile_p)
 {
-	int r,c,flag;
-	retVal=0;
+	Q_UNUSED(tile_p)
+	return isKingInCheck(turn) ? 1 : 0;
+}
 
-	return retVal;
+bool RetroChessWindow::isSquareAttacked(int row, int col, int attackingColor) const
+{
+	auto clearPath = [this](int fromRow, int fromCol, int toRow, int toCol) {
+		const int rowStep = (toRow > fromRow) - (toRow < fromRow);
+		const int colStep = (toCol > fromCol) - (toCol < fromCol);
+		for (int r = fromRow + rowStep, c = fromCol + colStep;
+		     r != toRow || c != toCol; r += rowStep, c += colStep)
+			if (tile[r][c]->piece) return false;
+		return true;
+	};
+
+	for (int r = 0; r < 8; ++r)
+		for (int c = 0; c < 8; ++c)
+		{
+			const Tile *source = tile[r][c];
+			if (!source->piece || source->pieceColor != attackingColor) continue;
+			const int dr = row - r;
+			const int dc = col - c;
+			const int adr = qAbs(dr);
+			const int adc = qAbs(dc);
+			switch (source->pieceName)
+			{
+			case 'P':
+				if (dr == (attackingColor ? -1 : 1) && adc == 1) return true;
+				break;
+			case 'H':
+				if ((adr == 2 && adc == 1) || (adr == 1 && adc == 2)) return true;
+				break;
+			case 'K':
+				if (qMax(adr, adc) == 1) return true;
+				break;
+			case 'B':
+				if (adr == adc && adr && clearPath(r, c, row, col)) return true;
+				break;
+			case 'R':
+				if (((dr == 0) != (dc == 0)) && clearPath(r, c, row, col)) return true;
+				break;
+			case 'Q':
+				if (((adr == adc && adr) || ((dr == 0) != (dc == 0)))
+				        && clearPath(r, c, row, col)) return true;
+				break;
+			}
+		}
+	return false;
+}
+
+bool RetroChessWindow::isKingInCheck(int color) const
+{
+	for (int r = 0; r < 8; ++r)
+		for (int c = 0; c < 8; ++c)
+			if (tile[r][c]->piece && tile[r][c]->pieceColor == color
+			        && tile[r][c]->pieceName == 'K')
+				return isSquareAttacked(r, c, 1 - color);
+	return true; // A malformed position without a king cannot continue.
+}
+
+bool RetroChessWindow::isPseudoLegalMove(
+		int fromRow, int fromCol, int toRow, int toCol, int color) const
+{
+	if (fromRow < 0 || fromRow > 7 || fromCol < 0 || fromCol > 7
+	        || toRow < 0 || toRow > 7 || toCol < 0 || toCol > 7
+	        || (fromRow == toRow && fromCol == toCol)) return false;
+	const Tile *source = tile[fromRow][fromCol];
+	const Tile *target = tile[toRow][toCol];
+	if (!source->piece || source->pieceColor != color
+	        || (target->piece && target->pieceColor == color)
+	        || (target->piece && target->pieceName == 'K')) return false;
+
+	const int dr = toRow - fromRow;
+	const int dc = toCol - fromCol;
+	const int adr = qAbs(dr);
+	const int adc = qAbs(dc);
+	auto clearPath = [this](int fr, int fc, int tr, int tc) {
+		const int rs = (tr > fr) - (tr < fr);
+		const int cs = (tc > fc) - (tc < fc);
+		for (int r = fr + rs, c = fc + cs; r != tr || c != tc; r += rs, c += cs)
+			if (tile[r][c]->piece) return false;
+		return true;
+	};
+
+	switch (source->pieceName)
+	{
+	case 'P': {
+		const int direction = color ? -1 : 1;
+		const int startRow = color ? 6 : 1;
+		if (dc == 0 && !target->piece && dr == direction) return true;
+		if (dc == 0 && !target->piece && fromRow == startRow && dr == 2 * direction
+		        && !tile[fromRow + direction][fromCol]->piece) return true;
+		return adc == 1 && dr == direction && target->piece;
+	}
+	case 'H': return (adr == 2 && adc == 1) || (adr == 1 && adc == 2);
+	case 'K': return qMax(adr, adc) == 1;
+	case 'B': return adr == adc && adr && clearPath(fromRow, fromCol, toRow, toCol);
+	case 'R': return ((dr == 0) != (dc == 0)) && clearPath(fromRow, fromCol, toRow, toCol);
+	case 'Q': return ((adr == adc && adr) || ((dr == 0) != (dc == 0)))
+	                 && clearPath(fromRow, fromCol, toRow, toCol);
+	default: return false;
+	}
+}
+
+bool RetroChessWindow::isLegalMove(
+		int fromRow, int fromCol, int toRow, int toCol, int color)
+{
+	if (!isPseudoLegalMove(fromRow, fromCol, toRow, toCol, color)) return false;
+	Tile *source = tile[fromRow][fromCol];
+	Tile *target = tile[toRow][toCol];
+	const int targetPiece = target->piece;
+	const int targetColor = target->pieceColor;
+	const char targetName = target->pieceName;
+	const int sourcePiece = source->piece;
+	const int sourceColor = source->pieceColor;
+	const char sourceName = source->pieceName;
+
+	source->piece = 0;
+	target->piece = 1;
+	target->pieceColor = sourceColor;
+	target->pieceName = sourceName;
+	const bool legal = !isKingInCheck(color);
+	source->piece = sourcePiece;
+	source->pieceColor = sourceColor;
+	source->pieceName = sourceName;
+	target->piece = targetPiece;
+	target->pieceColor = targetColor;
+	target->pieceName = targetName;
+	return legal;
+}
+
+bool RetroChessWindow::hasAnyLegalMove(int color)
+{
+	for (int fromRow = 0; fromRow < 8; ++fromRow)
+		for (int fromCol = 0; fromCol < 8; ++fromCol)
+			if (tile[fromRow][fromCol]->piece && tile[fromRow][fromCol]->pieceColor == color)
+				for (int toRow = 0; toRow < 8; ++toRow)
+					for (int toCol = 0; toCol < 8; ++toCol)
+						if (isLegalMove(fromRow, fromCol, toRow, toCol, color)) return true;
+	return false;
+}
+
+void RetroChessWindow::highlightCheckmatedKing(int color)
+{
+	for (int row = 0; row < 8; ++row)
+		for (int col = 0; col < 8; ++col)
+		{
+			Tile *king = tile[row][col];
+			if (!king->piece || king->pieceColor != color || king->pieceName != 'K')
+				continue;
+
+			const RetroChessBoardTheme theme = RetroChessSettings::boardTheme();
+			const QColor squareColor = king->tileColor ? theme.dark : theme.light;
+			king->setStyleSheet(QString(
+			        "QLabel { background: qradialgradient("
+			        "cx:0.5, cy:0.5, radius:0.68, fx:0.5, fy:0.5, "
+			        "stop:0 rgba(255, 30, 30, 245), "
+			        "stop:0.42 rgba(238, 45, 45, 220), "
+			        "stop:0.72 rgba(220, 65, 65, 105), "
+			        "stop:1 %1); }").arg(squareColor.name()));
+			return;
+		}
 }
 
 void RetroChessWindow::orange()
@@ -1237,7 +1408,7 @@ void RetroChessWindow::closeForRematch()
     close();
 }
 
-void RetroChessWindow::showGameResultDialog(bool localWon, bool draw)
+void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QString &reason)
 {
     if (m_resultPopupShown)
         return;
@@ -1269,9 +1440,9 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw)
     QLabel *title = new QLabel(draw ? tr("Draw") : (localWon ? tr("You won!") : tr("You lost")), dialog);
     title->setObjectName("resultTitle");
     title->setAlignment(Qt::AlignCenter);
-    QLabel *message = new QLabel(draw ? tr("The game ended in a draw.")
+    QLabel *message = new QLabel(!reason.isEmpty() ? reason : (draw ? tr("The game ended in a draw.")
                                       : (localWon ? tr("Congratulations — the game is over.")
-                                                  : tr("The game is over. Ready for another one?")), dialog);
+                                                  : tr("The game is over. Ready for another one?"))), dialog);
     message->setObjectName("resultText");
     message->setAlignment(Qt::AlignCenter);
     layout->addWidget(title);
@@ -1471,57 +1642,32 @@ void RetroChessWindow::clearLastMove()
     }	// clear the last move queue
 }
 
-// judge result (slow method)
-// 0: not finish yet
-// 1: black win
-// 2: white win
+// 0: ongoing, 1: black win, 2: white win, 3: stalemate
 int RetroChessWindow::resultJudge()
 {
-    bool flag_white_king_alive = false;
-    bool flag_black_king_alive = false;
-    for(int i = 0; i < 8; ++i)
-    {
-        for(int j = 0; j < 8; ++j)
-        {
-            if( tile[i][j]->piece)
-            {
-                if( tile[i][j]->pieceName == 'K' && tile[i][j]->pieceColor == 0)
-                    flag_black_king_alive = true;
-                else if( tile[i][j]->pieceName == 'K' && tile[i][j]->pieceColor == 1)
-                    flag_white_king_alive = true;
-            }
-        }
-    }
+	if (hasAnyLegalMove(turn)) {
+		if (isKingInCheck(turn)) showGameStatus(tr("Check"));
+		else if (m_ui->m_status_bar->text() == tr("Check")) m_ui->m_status_bar->hide();
+		return 0;
+	}
 
+	if (!isKingInCheck(turn)) {
+		showGameResultDialog(false, true, tr("Draw by stalemate"));
+		return 3;
+	}
 
-    if ( flag_white_king_alive == false)
-    {
-        m_ui->m_player1_result->setText("Win");
-        m_ui->m_player1_result->setStyleSheet("QLabel {color: green;}");
-
-        m_ui->m_player2_result->setText("Defeat");
-        m_ui->m_player2_result->setStyleSheet("QLabel {color: red;}");
-
-        m_ui->m_player1_result->setVisible(true);
-        m_ui->m_player2_result->setVisible(true);
-        showGameResultDialog(m_localplayer_turn == 0);
-        return 1;
-    }
-    else if( flag_black_king_alive == false)
-    {
-        m_ui->m_player1_result->setText("Defeat");
-        m_ui->m_player1_result->setStyleSheet("QLabel {color: red;}");
-
-        m_ui->m_player2_result->setText("Win");
-        m_ui->m_player2_result->setStyleSheet("QLabel {color: green;}");
-
-        m_ui->m_player1_result->setVisible(true);
-        m_ui->m_player2_result->setVisible(true);
-        showGameResultDialog(m_localplayer_turn == 1);
-        return 2;
-    }
-    else
-        return 0;
+	const int winningColor = 1 - turn;
+	highlightCheckmatedKing(turn);
+	QLabel *blackResult = m_ui->m_player1_result;
+	QLabel *whiteResult = m_ui->m_player2_result;
+	blackResult->setText(winningColor == 0 ? tr("Win") : tr("Defeat"));
+	whiteResult->setText(winningColor == 1 ? tr("Win") : tr("Defeat"));
+	blackResult->setStyleSheet(winningColor == 0 ? "QLabel {color: green;}" : "QLabel {color: red;}");
+	whiteResult->setStyleSheet(winningColor == 1 ? "QLabel {color: green;}" : "QLabel {color: red;}");
+	blackResult->setVisible(true);
+	whiteResult->setVisible(true);
+	showGameResultDialog(m_localplayer_turn == winningColor, false, tr("by checkmate"));
+	return winningColor == 0 ? 1 : 2;
 }
 
 void RetroChessWindow::showPlayerLeaveMsg()
