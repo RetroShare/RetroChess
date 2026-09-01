@@ -22,7 +22,7 @@ QIcon RetroChessUserNotify::getMainIcon(bool hasNew)
 
 unsigned int RetroChessUserNotify::getNewCount()
 {
-	return mPage->lobbyUnreadCount();
+	return mPage->notificationCount();
 }
 
 void RetroChessUserNotify::iconClicked()

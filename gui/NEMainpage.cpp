@@ -36,9 +36,15 @@
 #include <QToolButton>
 #include <QTimer>
 #include <QShowEvent>
+#include <QDateTime>
+#include <QHeaderView>
+#include <QHBoxLayout>
+#include <QPushButton>
+#include <QTreeWidgetItem>
 
 #include "gui/RetroChessSettings.h"
 #include "gui/RetroChessUserNotify.h"
+#include "gui/gxs/GxsIdTreeWidgetItem.h"
 
 #include "gui/chat/ChatDialog.h"
 #include <retroshare/rsidentity.h>
@@ -57,6 +63,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 
 	connect(mNotify, SIGNAL(NeMsgArrived(RsPeerId,QString)), this, SLOT(NeMsgArrived(RsPeerId,QString)));
 	connect(mNotify, SIGNAL(chessStart(RsPeerId)), this, SLOT(chessStart(RsPeerId)));
+	connect(mNotify, SIGNAL(chessInvitedGxs(RsGxsId)), this, SLOT(chessInviteReceivedGxs(RsGxsId)));
+	connect(mNotify, SIGNAL(gxsTunnelClosed(RsGxsId)), this, SLOT(chessTunnelClosed(RsGxsId)));
 	// The inviter is White; the participant who accepts is Black.
 	connect(mNotify, SIGNAL(chessStartGxs(RsGxsId)), this, SLOT(chessStartGxsAsBlack(RsGxsId)));
 	connect(mNotify, SIGNAL(chessAcceptedGxs(RsGxsId)), this, SLOT(chessStartGxs(RsGxsId)));
@@ -69,6 +77,10 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	mOfficialLobbyTimer->setInterval(15000);
 	mOfficialLobbyTimer->start();
 	QTimer::singleShot(0, this, SLOT(autoJoinOfficialLobby()));
+	ui->pendingInvites->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+	ui->pendingInvites->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+	ui->pendingInvites->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+	ui->pendingInvites->setIconSize(QSize(40, 40));
 
 }
 
@@ -181,8 +193,9 @@ void NEMainpage::officialLobbyNewMessage(ChatWidget *)
 
 void NEMainpage::showEvent(QShowEvent *event)
 {
-	if (mLobbyUnreadCount) {
+	if (mLobbyUnreadCount || !mUnreadInviteKeys.isEmpty()) {
 		mLobbyUnreadCount = 0;
+		mUnreadInviteKeys.clear();
 		emit lobbyUnreadCountChanged();
 	}
 	MainPage::showEvent(event);
@@ -203,8 +216,90 @@ void NEMainpage::chessStartGxs(const RsGxsId &gxs_id)
 
 void NEMainpage::chessStartGxsAsBlack(const RsGxsId &gxs_id)
 {
+	removePendingInvitation("gxs:" + QString::fromStdString(gxs_id.toStdString()));
 	// We accepted the remote participant's invitation: we are Black.
 	create_chess_window_gxs(gxs_id, 1);
+}
+
+namespace
+{
+QString invitationButtonStyle()
+{
+	return "QPushButton { border: 1px solid #199909; font-size: 11pt;"
+	       " color: white; padding: 3px 12px; min-height: 22px;"
+	       " border-radius: 6px; background-color: qlineargradient("
+	       " x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #22c70d,"
+	       " stop: 1 #116a06); }"
+	       " QPushButton:hover { border-color: #35d51f; }"
+	       " QPushButton:pressed { background-color: #116a06; }";
+}
+}
+
+void NEMainpage::chessInviteReceivedGxs(const RsGxsId &gxs_id)
+{
+	addGxsInvitation(gxs_id);
+}
+
+void NEMainpage::chessTunnelClosed(const RsGxsId &gxs_id)
+{
+	removePendingInvitation("gxs:" + QString::fromStdString(gxs_id.toStdString()));
+}
+
+void NEMainpage::addGxsInvitation(const RsGxsId &gxs_id)
+{
+	if (!rsRetroChess || !rsRetroChess->hasInviteFromGxs(gxs_id)) return;
+	const QString key = "gxs:" + QString::fromStdString(gxs_id.toStdString());
+
+	removePendingInvitation(key);
+	GxsIdRSTreeWidgetItem *item = new GxsIdRSTreeWidgetItem(
+	        nullptr, GxsIdDetails::ICON_TYPE_AVATAR, true, ui->pendingInvites);
+	QFont identityFont = item->font(0);
+	identityFont.setPointSize(qMax(identityFont.pointSize() + 4, 18));
+	item->setFont(0, identityFont);
+	item->setId(gxs_id, 0, true);
+	item->setText(1, QDateTime::currentDateTime().toString(Qt::DefaultLocaleShortDate));
+	item->setSizeHint(0, QSize(44, 48));
+
+	QWidget *actions = new QWidget(ui->pendingInvites);
+	QHBoxLayout *actionsLayout = new QHBoxLayout(actions);
+	actionsLayout->setContentsMargins(2, 0, 2, 0);
+	actionsLayout->setSpacing(5);
+	QPushButton *accept = new QPushButton(tr("Accept"), actions);
+	accept->setStyleSheet(invitationButtonStyle());
+	accept->setFixedHeight(28);
+	QPushButton *ignore = new QPushButton(tr("Ignore"), actions);
+	ignore->setFixedHeight(28);
+	actionsLayout->addWidget(accept);
+	actionsLayout->addWidget(ignore);
+	ui->pendingInvites->setItemWidget(item, 2, actions);
+	mPendingInvites.insert(key, item);
+	ui->pendingInvitesBox->show();
+	if (!isVisible()) mUnreadInviteKeys.insert(key);
+	emit lobbyUnreadCountChanged();
+	connect(accept, &QPushButton::clicked, this, [this, gxs_id, key]() {
+		if (!rsRetroChess->hasInviteFromGxs(gxs_id)) {
+			removePendingInvitation(key);
+			return;
+		}
+		rsRetroChess->acceptedInviteGxs(gxs_id);
+		removePendingInvitation(key);
+		mNotify->notifyChessStartGxs(gxs_id);
+	});
+	connect(ignore, &QPushButton::clicked, this, [this, gxs_id, key]() {
+		rsRetroChess->clearInviteGxs(gxs_id);
+		removePendingInvitation(key);
+		mNotify->notifyChessInviteClearedGxs(gxs_id);
+	});
+}
+
+void NEMainpage::removePendingInvitation(const QString &key)
+{
+	QTreeWidgetItem *item = mPendingInvites.take(key);
+	const bool wasUnread = mUnreadInviteKeys.remove(key) > 0;
+	if (item) {
+		delete item;
+		emit lobbyUnreadCountChanged();
+	} else if (wasUnread) emit lobbyUnreadCountChanged();
 }
 
 void NEMainpage::chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count)

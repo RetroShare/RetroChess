@@ -63,6 +63,7 @@ class RsRetroChess
 	virtual void sendGxsInvite(const RsGxsId &gxsId) = 0;
 	//virtual void addChessFriend(const RsGxsId &gxsId) = 0;
 	virtual void acceptedInviteGxs(const RsGxsId &gxsId) = 0;
+	virtual void clearInviteGxs(const RsGxsId &gxsId) = 0;
 	virtual bool hasInviteFromGxs(const RsGxsId &gxsId) = 0;
 	virtual RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) = 0;
 	virtual bool sendRematchGxs(const RsGxsId &gxsId, int localColor) = 0;

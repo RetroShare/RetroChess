@@ -112,6 +112,7 @@ public:
 	//void addChessFriend(const RsGxsId &gxsId);
 	void sendGxsInvite(const RsGxsId &toGxsId);
 	void acceptedInviteGxs(const RsGxsId &gxsId);
+	void clearInviteGxs(const RsGxsId &gxsId) override;
 	bool hasInviteFromGxs(const RsGxsId &gxsId) override;
 	RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) override;
 	bool sendRematchGxs(const RsGxsId &gxsId, int localColor) override;

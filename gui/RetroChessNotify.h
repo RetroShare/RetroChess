@@ -45,6 +45,7 @@ public:
 
 	/** Notify the UI that a GXS chess invite was received */
 	void notifyChessInviteGxs(const RsGxsId &gxs_id);
+	void notifyChessInviteClearedGxs(const RsGxsId &gxs_id);
 
 	/** Notify the UI that a GXS tunnel is now ready for use */
 	void notifyGxsTunnelReady(const RsGxsId &gxs_id);
@@ -74,6 +75,7 @@ signals:
 	void chessGameActionGxs(const RsGxsId &gxs_id, QString action);
 
 	void chessInvitedGxs(const RsGxsId &gxs_id);
+	void chessInviteClearedGxs(const RsGxsId &gxs_id);
 	void chessStartGxs(const RsGxsId &gxs_id);
 
 public slots:

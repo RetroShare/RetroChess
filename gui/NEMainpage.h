@@ -37,12 +37,14 @@
 #include "gui/chess.h"
 
 #include <QWidget>
+#include <QSet>
 
 class QTimer;
 class ChatDialog;
 class ChatWidget;
 class UserNotify;
 class QShowEvent;
+class QTreeWidgetItem;
 
 namespace Ui
 {
@@ -58,6 +60,11 @@ public:
 	~NEMainpage();
 	UserNotify *createUserNotify(QObject *parent) override;
 	unsigned int lobbyUnreadCount() const { return mLobbyUnreadCount; }
+	unsigned int notificationCount() const
+	{
+		return mLobbyUnreadCount
+		        + static_cast<unsigned int>(mUnreadInviteKeys.size());
+	}
 
 signals:
 	void lobbyUnreadCountChanged();
@@ -68,6 +75,8 @@ private slots:
 	void chessStart(const RsPeerId &peer_id);
 	void chessStartGxs(const RsGxsId &gxs_id);
 	void chessStartGxsAsBlack(const RsGxsId &gxs_id);
+	void chessInviteReceivedGxs(const RsGxsId &gxs_id);
+	void chessTunnelClosed(const RsGxsId &gxs_id);
 	void chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count);
 	void chessPlayerLeftGxs(const RsGxsId &gxs_id);
 	void chessRematchGxs(const RsGxsId &gxs_id, int remoteColor);
@@ -86,8 +95,12 @@ private:
 	unsigned int mLobbyUnreadCount;
 
 	QMap<std::string, RetroChessWindow*> activeGames;
+	QMap<QString, QTreeWidgetItem*> mPendingInvites;
+	QSet<QString> mUnreadInviteKeys;
 	void create_chess_window(std::string peer_id, int player_id);
     void create_chess_window_gxs(const RsGxsId &gxs_id, int player_id);
+	void addGxsInvitation(const RsGxsId &gxs_id);
+	void removePendingInvitation(const QString &key);
 	void showOfficialLobby();
 	void showEvent(QShowEvent *event) override;
 };

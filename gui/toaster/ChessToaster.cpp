@@ -90,7 +90,10 @@ void ChessToaster::acceptInvite()
 		rsRetroChess->acceptedInvite(mPeerId);
 		mNotify->notifyChessStart(mPeerId);
 	} else if (!mGxsId.isNull()) {
-		if (!rsRetroChess->hasInviteFromGxs(mGxsId)) return;
+		if (!rsRetroChess->hasInviteFromGxs(mGxsId)) {
+			hide();
+			return;
+		}
 		rsRetroChess->acceptedInviteGxs(mGxsId);
 		mNotify->notifyChessStartGxs(mGxsId);
 	} else return;

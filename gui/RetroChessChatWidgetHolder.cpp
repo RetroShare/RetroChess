@@ -63,6 +63,7 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 	connect(notify, SIGNAL(chessPlayerLeftGxs(RsGxsId)), this, SLOT(handleChessPlayerLeftGxs(RsGxsId)));
 	connect(notify, SIGNAL(chessStart(RsPeerId)), this, SLOT(inviteAccepted(RsPeerId)));
 	connect(notify, SIGNAL(chessStartGxs(RsGxsId)), this, SLOT(inviteAcceptedGxs(RsGxsId)));
+	connect(notify, SIGNAL(chessInviteClearedGxs(RsGxsId)), this, SLOT(inviteClearedGxs(RsGxsId)));
 
 	// A GXS invite can arrive before this holder is constructed. Recover it from
 	// the service's persistent invite state once the chat metadata is available.
@@ -99,6 +100,18 @@ void RetroChessChatWidgetHolder::inviteAcceptedGxs(const RsGxsId &gxs_id)
 	displayedGxsInvites.erase(gxs_id);
 	clearInviteButtons();
 	if (playChessButton) playChessButton->hide();
+}
+
+void RetroChessChatWidgetHolder::inviteClearedGxs(const RsGxsId &gxs_id)
+{
+	ChatId chatId = mChatWidget->getChatId();
+	if (!chatId.isDistantChatId()) return;
+	DistantChatPeerInfo info;
+	if (!rsChats->getDistantChatStatus(chatId.toDistantChatId(), info)
+	    || info.to_id != gxs_id) return;
+	displayedGxsInvites.erase(gxs_id);
+	clearInviteButtons();
+	if (playChessButton) playChessButton->show();
 }
 
 void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)

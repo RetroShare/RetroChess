@@ -46,6 +46,7 @@ public slots:
 	void handleChessPlayerLeftGxs(const RsGxsId &gxs_id);
 	void inviteAccepted(const RsPeerId &peer_id);
 	void inviteAcceptedGxs(const RsGxsId &gxs_id);
+	void inviteClearedGxs(const RsGxsId &gxs_id);
 
 private slots:
 	void botMouseEnter();

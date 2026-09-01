@@ -492,6 +492,12 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
     }
 }
 
+void p3RetroChess::clearInviteGxs(const RsGxsId &gxsId)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    mInvitesFromGxs.erase(gxsId);
+}
+
 bool p3RetroChess::sendRematchGxs(const RsGxsId &gxsId, int localColor)
 {
     RsGxsTunnelId tunnelId;
