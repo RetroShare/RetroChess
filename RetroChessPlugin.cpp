@@ -30,6 +30,7 @@
 #include "gui/NEMainpage.h"
 #include "gui/RetroChessNotify.h"
 #include "gui/RetroChessChatWidgetHolder.h"
+#include "gui/toaster/RetroChessToasterNotify.h"
 #include <retroshare-gui/RsAutoUpdatePage.h>
 
 #include <retroshare/rsgxstunnel.h>
@@ -88,6 +89,7 @@ RetroChessPlugin::RetroChessPlugin()
 	mGxsTunnels = NULL;
 	mIdentity = NULL;
 	mChats = NULL;
+	mRetroChessToasterNotify = NULL;
 
 	mRetroChessNotify = new RetroChessNotify;
 }
@@ -213,9 +215,9 @@ void RetroChessPlugin::qt_sound_events(SoundEvents &/*events*/) const
 //	events.addEvent(QApplication::translate("RetroChess", "RetroChess"), QApplication::translate("RetroChess", "Incoming call"), RetroChess_SOUND_INCOMING_CALL);
 }
 
-/*ToasterNotify *RetroChessPlugin::qt_toasterNotify(){
+ToasterNotify *RetroChessPlugin::qt_toasterNotify(){
 	if (!mRetroChessToasterNotify) {
-		mRetroChessToasterNotify = new RetroChessToasterNotify(mRetroChess, mRetroChessNotify);
+		mRetroChessToasterNotify = new RetroChessToasterNotify(mRetroChessNotify);
 	}
 	return mRetroChessToasterNotify;
-}*/
+}

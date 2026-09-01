@@ -583,20 +583,40 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         return false;
     }
 
+    RsGxsTunnelId activeTunnel;
     {
         RsStackMutex stack(mRetroChessMtx);
         mOwnGxsIdByPeer[toId] = ownId;
         auto activeIt = mActiveTunnels.find(toId);
-        if (activeIt != mActiveTunnels.end()) {
-            const std::string invite = "{\"type\":\"chess_invite\"}";
-            return mGxsTunnels->sendData(activeIt->second, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                                         (const uint8_t*)invite.c_str(), invite.size());
-        }
+        if (activeIt != mActiveTunnels.end()) activeTunnel = activeIt->second;
+    }
+
+    const std::string invite = "{\"type\":\"chess_invite\"}";
+    if (!activeTunnel.isNull()) {
+        if (mGxsTunnels->sendData(
+                    activeTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                    reinterpret_cast<const uint8_t*>(invite.data()), invite.size()))
+            return true;
+
+        // A game may have closed before the tunnel-status callback reaches us.
+        // Never lose a new invitation by continuing to trust that stale entry.
+        std::cerr << "Chess: active tunnel is stale; opening a new tunnel for "
+                  << toId << std::endl;
+        RsStackMutex stack(mRetroChessMtx);
+        auto activeIt = mActiveTunnels.find(toId);
+        if (activeIt != mActiveTunnels.end() && activeIt->second == activeTunnel)
+            mActiveTunnels.erase(activeIt);
+        mTunnelToGxsIdMap.erase(activeTunnel);
     }
 
     {
         RsStackMutex stack(mRetroChessMtx);
-        mPendingTunnels.erase(toId); // clear any stale pending entry
+        // A tunnel request is already progressing. Keep it and its queued
+        // invitation instead of replacing the tunnel ID on every button click.
+        if (mPendingTunnels.find(toId) != mPendingTunnels.end()) {
+            mPendingGxsInvites[toId] = invite;
+            return true;
+        }
     }
 
     RsGxsTunnelId tunnelId;
@@ -724,18 +744,15 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
 
     if (type == "chess_invite") {
         std::cout << "Chess: Received invite from GXS " << sender_id << std::endl;
-        bool isNewInvite = false;
         {
             RsStackMutex stack(mRetroChessMtx);
             // Remember this tunnel is active for the sender (server-side)
             mActiveTunnels[sender_id] = tunnel_id;
-            isNewInvite = mInvitesFromGxs.insert(sender_id).second;
+            mInvitesFromGxs.insert(sender_id);
         }
-        if (isNewInvite)
-            mNotify->notifyChessInviteGxs(sender_id);
-        else
-            std::cout << "Chess: Ignoring duplicate pending invite from GXS "
-                      << sender_id << std::endl;
+        // A new invite packet is also a refresh of an existing pending invite.
+        // Always notify the UI so the toaster and chat action reappear.
+        mNotify->notifyChessInviteGxs(sender_id);
 
     } else if (type == "chess_accept") {
         std::cout << "Chess: Received accept from GXS " << sender_id << std::endl;
@@ -743,6 +760,10 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
 
     } else if (type == "player_leave") {
         std::cout << "Chess: Remote GXS player left " << sender_id << std::endl;
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            mInvitesFromGxs.erase(sender_id);
+        }
         mNotify->notifyChessPlayerLeftGxs(sender_id);
 
     } else if (type == "rematch") {
@@ -828,6 +849,11 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
             }
             // Also clean up mapping
             mTunnelToGxsIdMap.erase(tunnel_id);
+            if (!gxs_id.isNull()) {
+                mInvitesFromGxs.erase(gxs_id);
+                mPendingGxsInvites.erase(gxs_id);
+                mPendingGxsCloses.erase(gxs_id);
+            }
         }
         if (!gxs_id.isNull()) {
             std::cout << "Chess: Tunnel closed for GXS " << gxs_id << std::endl;

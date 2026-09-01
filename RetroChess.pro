@@ -53,7 +53,9 @@ SOURCES = RetroChessPlugin.cpp               \
           gui/validation.cpp \
           gui/RetroChessChatWidgetHolder.cpp \
           gui/RetroChessSettings.cpp \
-          gui/RetroChessUserNotify.cpp
+          gui/RetroChessUserNotify.cpp \
+          gui/toaster/ChessToaster.cpp \
+          gui/toaster/RetroChessToasterNotify.cpp
 
 HEADERS = RetroChessPlugin.h                 \
           services/p3RetroChess.h            \
@@ -66,10 +68,13 @@ HEADERS = RetroChessPlugin.h                 \
           gui/chess.h \
           gui/RetroChessChatWidgetHolder.h \
           gui/RetroChessSettings.h \
-          gui/RetroChessUserNotify.h
+          gui/RetroChessUserNotify.h \
+          gui/toaster/ChessToaster.h \
+          gui/toaster/RetroChessToasterNotify.h
 
 FORMS += \
           gui/NEMainpage.ui \
-          gui/chess.ui
+          gui/chess.ui \
+          gui/toaster/ChessToaster.ui
 
 RESOURCES = gui/RetroChess_images.qrc

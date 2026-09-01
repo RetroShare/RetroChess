@@ -44,6 +44,8 @@ public slots:
 	void handleGxsTunnelReady(const RsGxsId &gxs_id);
 	void handleGxsTunnelClosed(const RsGxsId &gxs_id);
 	void handleChessPlayerLeftGxs(const RsGxsId &gxs_id);
+	void inviteAccepted(const RsPeerId &peer_id);
+	void inviteAcceptedGxs(const RsGxsId &gxs_id);
 
 private slots:
 	void botMouseEnter();
@@ -58,6 +60,7 @@ protected:
 	std::set<RsGxsId> displayedGxsInvites;
 	void showGxsInviteIfMatching(const RsGxsId &from_gxs_id, int retriesLeft);
 	void recoverPendingGxsInvite(int retriesLeft);
+	void clearInviteButtons();
 };
 
 #endif // RETROCHESSCHATWIDGETHOLDER_H

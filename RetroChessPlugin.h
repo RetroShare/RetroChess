@@ -34,6 +34,7 @@
 
 class RetroChessGUIHandler ;
 class RetroChessNotify ;
+class RetroChessToasterNotify;
 
 class RetroChessPlugin: public RsPlugin
 {
@@ -67,7 +68,7 @@ public:
 	virtual void setInterfaces(RsPlugInInterfaces& interfaces);
 
 	//================================== RsPlugin Notify ==================================//
-	//virtual ToasterNotify *qt_toasterNotify();
+	virtual ToasterNotify *qt_toasterNotify();
 
 	virtual MainPage       *qt_page()       			const	;
 
@@ -85,5 +86,6 @@ private:
 	RsGxsTunnelService::RsGxsTunnelClientService *mGxsTunnelClient;
 	RetroChessNotify *mRetroChessNotify ;
 	RetroChessGUIHandler *mRetroChessGUIHandler ;
+	RetroChessToasterNotify *mRetroChessToasterNotify;
 };
 

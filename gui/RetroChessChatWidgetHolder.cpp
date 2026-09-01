@@ -61,6 +61,8 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 	connect(notify, SIGNAL(gxsTunnelReady(RsGxsId)), this, SLOT(handleGxsTunnelReady(RsGxsId)));
 	connect(notify, SIGNAL(gxsTunnelClosed(RsGxsId)), this, SLOT(handleGxsTunnelClosed(RsGxsId)));
 	connect(notify, SIGNAL(chessPlayerLeftGxs(RsGxsId)), this, SLOT(handleChessPlayerLeftGxs(RsGxsId)));
+	connect(notify, SIGNAL(chessStart(RsPeerId)), this, SLOT(inviteAccepted(RsPeerId)));
+	connect(notify, SIGNAL(chessStartGxs(RsGxsId)), this, SLOT(inviteAcceptedGxs(RsGxsId)));
 
 	// A GXS invite can arrive before this holder is constructed. Recover it from
 	// the service's persistent invite state once the chat metadata is available.
@@ -70,12 +72,33 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 
 RetroChessChatWidgetHolder::~RetroChessChatWidgetHolder()
 {
+	clearInviteButtons();
+}
 
-	button_map::iterator it = buttonMapTakeChess.begin();
-	while (it != buttonMapTakeChess.end())
-	{
-		it = buttonMapTakeChess.erase(it);
-	}
+void RetroChessChatWidgetHolder::clearInviteButtons()
+{
+	for (RSButtonOnText *button : buttonMapTakeChess)
+		if (button) button->clear();
+	buttonMapTakeChess.clear();
+}
+
+void RetroChessChatWidgetHolder::inviteAccepted(const RsPeerId &peer_id)
+{
+	if (mChatWidget->getChatId().isPeerId()
+	    && mChatWidget->getChatId().toPeerId() == peer_id)
+		clearInviteButtons();
+}
+
+void RetroChessChatWidgetHolder::inviteAcceptedGxs(const RsGxsId &gxs_id)
+{
+	ChatId chatId = mChatWidget->getChatId();
+	if (!chatId.isDistantChatId()) return;
+	DistantChatPeerInfo info;
+	if (!rsChats->getDistantChatStatus(chatId.toDistantChatId(), info)
+	    || info.to_id != gxs_id) return;
+	displayedGxsInvites.erase(gxs_id);
+	clearInviteButtons();
+	if (playChessButton) playChessButton->hide();
 }
 
 void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
@@ -89,11 +112,7 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 			QString buttonName = QString::fromUtf8(rsPeers->getPeerName(peer_id).c_str());
 			if (buttonName.isEmpty()) buttonName = "Chess";//TODO maybe change all with GxsId
 			//disable old buttons
-			button_map::iterator it = buttonMapTakeChess.begin();
-			while (it != buttonMapTakeChess.end())
-			{
-				it = buttonMapTakeChess.erase(it);
-			}
+			clearInviteButtons();
 			//button_map::iterator it = buttonMapTakeChess.find(buttonName);
 			//if (it == buttonMapTakeChess.end()){
 			mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
@@ -177,20 +196,20 @@ void RetroChessChatWidgetHolder::showGxsInviteIfMatching(const RsGxsId &from_gxs
     if (!mChatWidget) {
         return;
     }
-    if (!rsRetroChess->hasInviteFromGxs(from_gxs_id)
-        || displayedGxsInvites.find(from_gxs_id) != displayedGxsInvites.end()) {
+    if (!rsRetroChess->hasInviteFromGxs(from_gxs_id)) {
         return;
     }
+    // A repeated packet refreshes the invitation. Remove the previous inline
+    // action and create a current one instead of suppressing all later invites.
+    if (displayedGxsInvites.find(from_gxs_id) != displayedGxsInvites.end())
+        clearInviteButtons();
     displayedGxsInvites.insert(from_gxs_id);
 
     // Get a display name for the button
     QString buttonName = QString::fromStdString(from_gxs_id.toStdString()).left(8);
 
     // Clear any old accept buttons to avoid duplicates
-    button_map::iterator it = buttonMapTakeChess.begin();
-    while (it != buttonMapTakeChess.end()) {
-        it = buttonMapTakeChess.erase(it);
-    }
+    clearInviteButtons();
 
     // Add the system message and the "Accept" button to the chat history
     mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime(),

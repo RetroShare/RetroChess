@@ -21,5 +21,6 @@
 		<file>sound/Move.mp3</file>
 		<file>sound/Capture.mp3</file>
 		<file>sound/victory.mp3</file>
+		<file>sound/ping.mp3</file>
     </qresource>
 </RCC>
