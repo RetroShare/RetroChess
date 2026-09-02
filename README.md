@@ -1,6 +1,6 @@
 # RetroShare 0.6 Chess Plugin
 
-This is a Chess plugin, to play with your RetroShare Friends
+This is a Chess plugin, to play with your RetroShare Friends & Contacts
 
 # build & install:
 
@@ -17,7 +17,7 @@ Then restart your RetroShare. You'll see a chess logo in your chat dialog's tool
 
 # Usage:
 
-Send a invite in chat dialog with your friend (peer mode only )
+Send a invite via chat.
 
 # Screenshot:
 
