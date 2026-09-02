@@ -25,6 +25,7 @@
 #include <QTimer>
 #include <QPointer>
 #include <QTextEdit>
+#include <QImage>
 
 
 #include "interface/rsRetroChess.h"
@@ -40,19 +41,50 @@
 
 #define IMAGE_RetroChess ":/images/chess.png"
 
+namespace
+{
+QPixmap cropTransparentPadding(const QPixmap &source)
+{
+	const QImage image = source.toImage().convertToFormat(QImage::Format_ARGB32);
+	int left = image.width();
+	int top = image.height();
+	int right = -1;
+	int bottom = -1;
+	for (int y = 0; y < image.height(); ++y) {
+		const QRgb *line = reinterpret_cast<const QRgb *>(image.constScanLine(y));
+		for (int x = 0; x < image.width(); ++x) {
+			if (qAlpha(line[x]) == 0) continue;
+			left = qMin(left, x);
+			top = qMin(top, y);
+			right = qMax(right, x);
+			bottom = qMax(bottom, y);
+		}
+	}
+	if (right < left || bottom < top) return source;
+	return source.copy(QRect(left, top, right - left + 1, bottom - top + 1));
+}
+}
+
 RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, RetroChessNotify *notify)
 	: QObject(), ChatWidgetHolder(chatWidget), mRetroChessNotify(notify)
 {
-	QIcon icon ;
-	icon.addPixmap(QPixmap(IMAGE_RetroChess)) ;
+	QIcon icon(cropTransparentPadding(QPixmap(IMAGE_RetroChess)));
 
 	playChessButton = new QToolButton ;
 	playChessButton->setIcon(icon) ;
-	playChessButton->setToolTip(tr("Invite Friend to Chess"));
-	playChessButton->setIconSize(QSize(28,28)) ;
+	playChessButton->setToolTip(tr("Invite to Chess"));
 	playChessButton->setAutoRaise(true) ;
 
 	mChatWidget->addChatBarWidget(playChessButton);
+	// addChatBarWidget() assigns the final font-dependent toolbar button size.
+	// Set the icon afterwards so it fills the same area as the built-in buttons.
+	const int iconExtent = qMax(
+	        16, qMin(playChessButton->width(), playChessButton->height()) - 2);
+	playChessButton->setIconSize(QSize(iconExtent, iconExtent));
+	// ChatWidget gives plugin widgets a tighter fixed square than its built-in
+	// QToolButtons. Reapply the native tool-button size hint after setting the
+	// icon so the hover/click frame has the same dimensions as its neighbours.
+	playChessButton->setFixedSize(playChessButton->sizeHint());
 	connect(playChessButton, SIGNAL(clicked()), this, SLOT(chessPressed()));
 	connect(notify, SIGNAL(chessInvited(RsPeerId)), this, SLOT(chessnotify(RsPeerId)));
 	connect(notify, SIGNAL(chessInvitedGxs(RsGxsId)), this, SLOT(chessnotifyGxs(RsGxsId)));
@@ -305,7 +337,7 @@ void RetroChessChatWidgetHolder::chessPressed()
 			// Tunnel not up yet — service will retry automatically
 			mChatWidget->addChatMsg(true, tr("RetroChess"), QDateTime::currentDateTime(),
 			                        QDateTime::currentDateTime(),
-			                        tr("Chess invite queued — connecting to friend, will send automatically..."),
+			                        tr("Chess invite queued — connecting to contact, will send automatically..."),
 			                        ChatWidget::MSGTYPE_SYSTEM);
 		}
 		return;
