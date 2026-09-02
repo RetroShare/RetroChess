@@ -76,6 +76,9 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
 	m_checkedKingTile = -1;
 	m_enPassantPawnTile = -1;
 	m_pendingPromotionChoice = 0;
+	m_kingMoved[0] = m_kingMoved[1] = false;
+	m_rookMoved[0][0] = m_rookMoved[0][1] = false;
+	m_rookMoved[1][0] = m_rookMoved[1][1] = false;
 
     //tile = { { NULL } };
     count=0;
@@ -151,6 +154,9 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_checkedKingTile = -1;
 	m_enPassantPawnTile = -1;
 	m_pendingPromotionChoice = 0;
+	m_kingMoved[0] = m_kingMoved[1] = false;
+	m_rookMoved[0][0] = m_rookMoved[0][1] = false;
+	m_rookMoved[1][0] = m_rookMoved[1][1] = false;
 
 	//tile = { { NULL } };
 	count=0;
@@ -975,6 +981,17 @@ int RetroChessWindow::validateKing(Tile *tile_p)
 		}
 	}
 
+	if (canCastle(tile_p->pieceColor, false))
+	{
+		texp[max++] = tile[r][2]->tileNum;
+		retVal = 1;
+	}
+	if (canCastle(tile_p->pieceColor, true))
+	{
+		texp[max++] = tile[r][6]->tileNum;
+		retVal = 1;
+	}
+
 	return retVal;
 }
 
@@ -1338,6 +1355,76 @@ void RetroChessWindow::updateEnPassantTarget(int fromTile, int toTile, char move
 	        ? toTile : -1;
 }
 
+bool RetroChessWindow::canCastle(int color, bool kingSide) const
+{
+	const int row = color ? 7 : 0;
+	const int side = kingSide ? 1 : 0;
+	const int rookCol = kingSide ? 7 : 0;
+	const int step = kingSide ? 1 : -1;
+	const int throughCol = 4 + step;
+	const int destinationCol = 4 + 2 * step;
+
+	if (m_kingMoved[color] || m_rookMoved[color][side]) return false;
+	const Tile *king = tile[row][4];
+	const Tile *rook = tile[row][rookCol];
+	if (!king->piece || king->pieceName != 'K' || king->pieceColor != color
+	        || !rook->piece || rook->pieceName != 'R' || rook->pieceColor != color)
+		return false;
+
+	for (int col = 4 + step; col != rookCol; col += step)
+		if (tile[row][col]->piece) return false;
+
+	const int opponent = 1 - color;
+	return !isSquareAttacked(row, 4, opponent)
+	        && !isSquareAttacked(row, throughCol, opponent)
+	        && !isSquareAttacked(row, destinationCol, opponent);
+}
+
+bool RetroChessWindow::isCastlingMove(
+		int fromRow, int fromCol, int toRow, int toCol, int color) const
+{
+	return fromRow == (color ? 7 : 0) && toRow == fromRow && fromCol == 4
+	        && (toCol == 2 || toCol == 6) && canCastle(color, toCol == 6);
+}
+
+void RetroChessWindow::performCastlingRookMove(int row, bool kingSide)
+{
+	Tile *rookFrom = tile[row][kingSide ? 7 : 0];
+	Tile *rookTo = tile[row][kingSide ? 5 : 3];
+	rookTo->piece = 1;
+	rookTo->pieceColor = rookFrom->pieceColor;
+	rookTo->pieceName = 'R';
+	rookFrom->piece = 0;
+	rookFrom->display('R');
+	rookFrom->tileDisplay();
+	rookTo->display('R');
+	rookTo->tileDisplay();
+}
+
+void RetroChessWindow::updateCastlingRights(
+		int fromTile, int toTile, char movedPiece,
+		char capturedPiece, int capturedColor)
+{
+	const int fromRow = fromTile / 8;
+	const int fromCol = fromTile % 8;
+	const int movedColor = tile[toTile / 8][toTile % 8]->pieceColor;
+	if (movedPiece == 'K')
+		m_kingMoved[movedColor] = true;
+	else if (movedPiece == 'R') {
+		if (fromRow == 0 && (fromCol == 0 || fromCol == 7))
+			m_rookMoved[0][fromCol == 7 ? 1 : 0] = true;
+		else if (fromRow == 7 && (fromCol == 0 || fromCol == 7))
+			m_rookMoved[1][fromCol == 7 ? 1 : 0] = true;
+	}
+
+	if (capturedPiece == 'R') {
+		const int toRow = toTile / 8;
+		const int toCol = toTile % 8;
+		if (toRow == (capturedColor ? 7 : 0) && (toCol == 0 || toCol == 7))
+			m_rookMoved[capturedColor][toCol == 7 ? 1 : 0] = true;
+	}
+}
+
 char RetroChessWindow::promotionChoiceForPawn(int color)
 {
 	if (color != m_localplayer_turn) {
@@ -1415,7 +1502,8 @@ bool RetroChessWindow::isPseudoLegalMove(
 		        && (target->piece || isEnPassantMove(fromRow, fromCol, toRow, toCol, color));
 	}
 	case 'H': return (adr == 2 && adc == 1) || (adr == 1 && adc == 2);
-	case 'K': return qMax(adr, adc) == 1;
+	case 'K': return qMax(adr, adc) == 1
+	        || isCastlingMove(fromRow, fromCol, toRow, toCol, color);
 	case 'B': return adr == adc && adr && clearPath(fromRow, fromCol, toRow, toCol);
 	case 'R': return ((dr == 0) != (dc == 0)) && clearPath(fromRow, fromCol, toRow, toCol);
 	case 'Q': return ((adr == adc && adr) || ((dr == 0) != (dc == 0)))
@@ -1659,12 +1747,16 @@ void RetroChessWindow::recordMove(
 	};
 
 	QString notation;
-	if (pieceName != 'P') notation += QChar(pieceName);
-	notation += squareName(fromTile);
-	notation += capture ? "x" : "-";
-	notation += squareName(toTile);
-	if (promotion)
-		notation += QString("=%1").arg(QChar(promotion == 'H' ? 'N' : promotion));
+	if (pieceName == 'K' && qAbs(toTile % 8 - fromTile % 8) == 2) {
+		notation = toTile % 8 == 6 ? "O-O" : "O-O-O";
+	} else {
+		if (pieceName != 'P') notation += QChar(pieceName == 'H' ? 'N' : pieceName);
+		notation += squareName(fromTile);
+		notation += capture ? "x" : "-";
+		notation += squareName(toTile);
+		if (promotion)
+			notation += QString("=%1").arg(QChar(promotion == 'H' ? 'N' : promotion));
+	}
 	m_move_history.push_back(notation);
 
 	const int row = (m_move_history.size() - 1) / 2;

@@ -149,6 +149,8 @@ void Tile::validate(int c)
 			{
 				const int fromTile = (chess_window_p)->click1->tileNum;
 				const char movedPiece = (chess_window_p)->click1->pieceName;
+				const bool wasCastling = movedPiece == 'K'
+				        && qAbs(tile_p->col - (chess_window_p)->click1->col) == 2;
 				const bool wasEnPassant = movedPiece == 'P'
 				        && (chess_window_p)->isEnPassantMove(
 				                (chess_window_p)->click1->row, (chess_window_p)->click1->col,
@@ -169,6 +171,9 @@ void Tile::validate(int c)
 
                 tile_p->pieceColor=(chess_window_p)->click1->pieceColor;
                 tile_p->pieceName=(chess_window_p)->click1->pieceName;
+				if (wasCastling)
+					(chess_window_p)->performCastlingRookMove(
+					        tile_p->row, tile_p->col == 6);
 
                 (chess_window_p)->click1->display((chess_window_p)->click1->pieceName);
                 tile_p->display((chess_window_p)->click1->pieceName);
@@ -203,6 +208,9 @@ void Tile::validate(int c)
 				        fromTile, tile_p->tileNum, movedPiece, wasCapture, promotedPiece);
 				if (wasCapture)
 					(chess_window_p)->recordCapturedPiece(capturedPiece, capturedColor);
+				(chess_window_p)->updateCastlingRights(
+				        fromTile, tile_p->tileNum, movedPiece,
+				        wasCapture ? capturedPiece : 0, capturedColor);
 				(chess_window_p)->updateEnPassantTarget(fromTile, tile_p->tileNum, movedPiece);
 				(chess_window_p)->playMoveSound(wasCapture);
 

@@ -105,12 +105,20 @@ public:
 	bool hasAnyLegalMove(int color);
 	bool isEnPassantMove(int fromRow, int fromCol, int toRow, int toCol, int color) const;
 	void updateEnPassantTarget(int fromTile, int toTile, char movedPiece);
+	bool canCastle(int color, bool kingSide) const;
+	bool isCastlingMove(int fromRow, int fromCol, int toRow, int toCol, int color) const;
+	void performCastlingRookMove(int row, bool kingSide);
+	void updateCastlingRights(
+	        int fromTile, int toTile, char movedPiece,
+	        char capturedPiece, int capturedColor);
 	char promotionChoiceForPawn(int color);
 	void highlightCheckedKing(int color);
 	void clearKingCheckHighlight();
 	int m_checkedKingTile;
 	int m_enPassantPawnTile;
 	char m_pendingPromotionChoice;
+	bool m_kingMoved[2];
+	bool m_rookMoved[2][2]; // [color][0 queenside, 1 kingside]
 
 	void orange();	// draw orange background represent avaiable movement of tiles
 	int check(Tile *temp);
