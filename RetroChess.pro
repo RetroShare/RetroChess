@@ -50,7 +50,6 @@ SOURCES = RetroChessPlugin.cpp               \
           gui/RetroChessNotify.cpp \
           gui/chess.cpp \
           gui/tile.cpp \
-          gui/validation.cpp \
           gui/RetroChessChatWidgetHolder.cpp \
           gui/RetroChessSettings.cpp \
           gui/RetroChessUserNotify.cpp \
@@ -64,7 +63,6 @@ HEADERS = RetroChessPlugin.h                 \
           gui/NEMainpage.h \
           gui/RetroChessNotify.h \
           gui/tile.h \
-          gui/validation.h \
           gui/chess.h \
           gui/RetroChessChatWidgetHolder.h \
           gui/RetroChessSettings.h \

@@ -65,6 +65,24 @@ QPixmap cropTransparentPadding(const QPixmap &source)
 }
 }
 
+static QString chessButtonStyle(bool hovered) {
+    if (hovered) {
+        return QString("border: 1px solid #333333;")
+               .append("font-size: 12pt; color: white; padding-left: 10px; padding-right: 10px;")
+               .append("min-width: 128px; min-height: 24px;")
+               .append("border-radius: 6px;")
+               .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
+                       "stop: 0 #444444, stop: 1 #222222);");
+    } else {
+        return QString("border: 1px solid #199909;")
+               .append("font-size: 12pt; color: white; padding-left: 10px; padding-right: 10px;")
+               .append("min-width: 128px; min-height: 24px;")
+               .append("border-radius: 6px;")
+               .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
+                       "stop: 0 #22c70d, stop: 1 #116a06);");
+    }
+}
+
 RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, RetroChessNotify *notify)
 	: QObject(), ChatWidgetHolder(chatWidget), mRetroChessNotify(notify)
 {
@@ -158,20 +176,11 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 			if (buttonName.isEmpty()) buttonName = "Chess";//TODO maybe change all with GxsId
 			//disable old buttons
 			clearInviteButtons();
-			//button_map::iterator it = buttonMapTakeChess.find(buttonName);
-			//if (it == buttonMapTakeChess.end()){
 			mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
 			                        , tr("%1 inviting you to start Chess. Do you want to accept or decline the invitation?").arg(buttonName), ChatWidget::MSGTYPE_SYSTEM);
 			RSButtonOnText *button = mChatWidget->getNewButtonOnTextBrowser(tr("Accept"));
 			button->setToolTip(tr("Accept"));
-			button->setStyleSheet(QString("border: 1px solid #199909;")
-			                      .append("font-size: 12pt;  color: white;")
-			                      .append("min-width: 128px; min-height: 24px;")
-			                      .append("border-radius: 6px;")
-			                      .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
-			                              "stop: 0 #22c70d, stop: 1 #116a06);")
-
-			                     );
+			button->setStyleSheet(chessButtonStyle(false));
 
 			button->updateImage();
 
@@ -180,7 +189,6 @@ void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 			connect(button,SIGNAL(mouseLeave()),this,SLOT(botMouseLeave()));
 
 			buttonMapTakeChess.insert(buttonName, button);
-			//}
 		}
 
 
@@ -270,12 +278,7 @@ void RetroChessChatWidgetHolder::showGxsInviteIfMatching(const RsGxsId &from_gxs
 	if (chatTextEdit)
 		button->clear();
 
-    button->setStyleSheet(QString("border: 1px solid #199909;")
-                          .append("font-size: 12pt; color: white; padding-left: 10px; padding-right: 10px;")
-                          .append("min-width: 128px; min-height: 24px;")
-                          .append("border-radius: 6px;")
-                          .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
-                                  "stop: 0 #22c70d, stop: 1 #116a06);"));
+    button->setStyleSheet(chessButtonStyle(false));
 
 	if (chatTextEdit)
 		button->appendToText(chatTextEdit);
@@ -341,7 +344,7 @@ void RetroChessChatWidgetHolder::chessPressed()
 			                        ChatWidget::MSGTYPE_SYSTEM);
 		}
 		return;
-	} else {
+	} else if (chatId.isPeerId()) {
 		RsPeerId peer_id = chatId.toPeerId();
 
 		if (rsRetroChess->hasInviteFrom(peer_id)){
@@ -380,7 +383,7 @@ void RetroChessChatWidgetHolder::chessStart()
 		mRetroChessNotify->notifyChessStartGxs(remoteGxsId);
 		if (playChessButton) playChessButton->hide();
 
-	} else {
+	} else if (chatId.isPeerId()) {
 		RsPeerId peer_id = chatId.toPeerId();
 		rsRetroChess->acceptedInvite(peer_id);
 		mRetroChessNotify->notifyChessStart(peer_id);
@@ -461,15 +464,7 @@ void RetroChessChatWidgetHolder::botMouseEnter()
 	RSButtonOnText *source = qobject_cast<RSButtonOnText *>(QObject::sender());
 	if (source)
 	{
-		source->setStyleSheet(QString("border: 1px solid #333333;")
-		                      .append("font-size: 12pt; color: white; padding-left: 10px; padding-right: 10px;")
-		                      .append("min-width: 128px; min-height: 24px;")
-		                      .append("border-radius: 6px;")
-		                      .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
-		                              "stop: 0 #444444, stop: 1 #222222);")
-
-		                     );
-		//source->setDown(true);
+		source->setStyleSheet(chessButtonStyle(true));
 	}
 }
 
@@ -478,14 +473,6 @@ void RetroChessChatWidgetHolder::botMouseLeave()
 	RSButtonOnText *source = qobject_cast<RSButtonOnText *>(QObject::sender());
 	if (source)
 	{
-		source->setStyleSheet(QString("border: 1px solid #199909;")
-		                      .append("font-size: 12pt; color: white; padding-left: 10px; padding-right: 10px;")
-		                      .append("min-width: 128px; min-height: 24px;")
-		                      .append("border-radius: 6px;")
-		                      .append("background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, "
-		                              "stop: 0 #22c70d, stop: 1 #116a06);")
-
-		                     );
-		//source->setDown(false);
+		source->setStyleSheet(chessButtonStyle(false));
 	}
 }

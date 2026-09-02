@@ -24,7 +24,7 @@
 #include "services/p3RetroChess.h"
 #include "interface/rsRetroChess.h"
 #include "services/rsRetroChessItems.h"
-//#include "gui/notifyqt.h"
+
 #include <qjsondocument.h>
 
 #include <iostream>
@@ -81,11 +81,16 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui->pendingInvites->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 	ui->pendingInvites->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
 	ui->pendingInvites->setIconSize(QSize(40, 40));
-
 }
 
 NEMainpage::~NEMainpage()
 {
+	for (auto it = activeGames.begin(); it != activeGames.end(); ++it) {
+		if (it.value()) {
+			it.value()->deleteLater();
+		}
+	}
+	activeGames.clear();
 	delete ui;
 }
 
@@ -383,6 +388,10 @@ void NEMainpage::chessGameActionGxs(const RsGxsId &gxs_id, QString action)
 void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 {
 	QJsonDocument jdoc = QJsonDocument::fromJson(str.toUtf8());
+	if (jdoc.isNull() || !jdoc.isObject()) {
+		std::cerr << "RetroChess: Invalid JSON received" << std::endl;
+		return;
+	}
 	QVariantMap vmap = jdoc.toVariant().toMap();
 	std::cout << "GUI got Packet from: " << peer_id;
 	std::cout << " saying " << str.toStdString();
@@ -476,16 +485,6 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		output+=str;
 		ui->netLogWidget->addItem(output);
 	}
-
-	/*
-	{
-		QString output = QTime::currentTime().toString() +" ";
-		output+= QString::fromStdString(rsPeers->getPeerName(peer_id));
-		output+=": ";
-		output+=str;
-		ui->netLogWidget->addItem(output);
-	}
-	*/
 }
 
 void NEMainpage::create_chess_window(std::string peer_id, int player_id)
@@ -550,4 +549,3 @@ void NEMainpage::setupMenuActions()
 	});
 
 }
-

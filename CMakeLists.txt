@@ -25,7 +25,7 @@ set(RETROCHESS_SOURCES
     gui/RetroChessNotify.cpp
     gui/chess.cpp
     gui/tile.cpp
-    gui/validation.cpp
+
     gui/RetroChessChatWidgetHolder.cpp
     gui/RetroChessSettings.cpp
     gui/RetroChessUserNotify.cpp
@@ -42,7 +42,7 @@ set(RETROCHESS_HEADERS
     gui/RetroChessNotify.h
     gui/chess.h
     gui/tile.h
-    gui/validation.h
+
     gui/RetroChessChatWidgetHolder.h
     gui/RetroChessSettings.h
     gui/RetroChessUserNotify.h

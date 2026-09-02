@@ -39,7 +39,7 @@
 
 #define IMAGE_RetroChess ":/images/chess.png"
 
-static void *inited = new RetroChessPlugin() ;
+
 
 extern "C" {
 
