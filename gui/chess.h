@@ -103,9 +103,14 @@ public:
 	bool isPseudoLegalMove(int fromRow, int fromCol, int toRow, int toCol, int color) const;
 	bool isLegalMove(int fromRow, int fromCol, int toRow, int toCol, int color);
 	bool hasAnyLegalMove(int color);
+	bool isEnPassantMove(int fromRow, int fromCol, int toRow, int toCol, int color) const;
+	void updateEnPassantTarget(int fromTile, int toTile, char movedPiece);
+	char promotionChoiceForPawn(int color);
 	void highlightCheckedKing(int color);
 	void clearKingCheckHighlight();
 	int m_checkedKingTile;
+	int m_enPassantPawnTile;
+	char m_pendingPromotionChoice;
 
 	void orange();	// draw orange background represent avaiable movement of tiles
 	int check(Tile *temp);
@@ -121,7 +126,7 @@ public:
 	QMediaPlayer *m_captureSound;
 	QMediaPlayer *m_victorySound;
     void recordLastMove( int tile_num );
-	void recordMove(int fromTile, int toTile, char pieceName, bool capture);
+	void recordMove(int fromTile, int toTile, char pieceName, bool capture, char promotion = 0);
 	void recordCapturedPiece(char pieceName, int pieceColor);
 	void playMoveSound(bool capture);
 	void sendGameAction(const QString &action);

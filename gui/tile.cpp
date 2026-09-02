@@ -145,13 +145,25 @@ void Tile::validate(int c)
         for(i=0; i<(chess_window_p)->max; i++)
         {
             // next postion is valiad, then move
-            if(tile_p->tileNum==(chess_window_p)->texp[i])
-            {
+			if(tile_p->tileNum==(chess_window_p)->texp[i])
+			{
 				const int fromTile = (chess_window_p)->click1->tileNum;
 				const char movedPiece = (chess_window_p)->click1->pieceName;
-				const bool wasCapture = tile_p->piece;
-				const char capturedPiece = tile_p->pieceName;
-				const int capturedColor = tile_p->pieceColor;
+				const bool wasEnPassant = movedPiece == 'P'
+				        && (chess_window_p)->isEnPassantMove(
+				                (chess_window_p)->click1->row, (chess_window_p)->click1->col,
+				                tile_p->row, tile_p->col, (chess_window_p)->click1->pieceColor);
+				Tile *capturedTile = wasEnPassant
+				        ? (chess_window_p)->tile[(chess_window_p)->click1->row][tile_p->col]
+				        : tile_p;
+				const bool wasCapture = capturedTile->piece;
+				const char capturedPiece = capturedTile->pieceName;
+				const int capturedColor = capturedTile->pieceColor;
+				if (wasEnPassant) {
+					capturedTile->piece = 0;
+					capturedTile->display(capturedTile->pieceName);
+					capturedTile->tileDisplay();
+				}
                 (chess_window_p)->click1->piece=0;
                 tile_p->piece=1;
 
@@ -164,6 +176,8 @@ void Tile::validate(int c)
                 (chess_window_p)->click1->tileDisplay();
                 tile_p->pawnLevelupCheck();
                 tile_p->tileDisplay();
+				const char promotedPiece = movedPiece == 'P' && tile_p->pieceName != 'P'
+				        ? tile_p->pieceName : 0;
 
                 retValue=(chess_window_p)->check((chess_window_p)->click1);
                 /*
@@ -185,9 +199,11 @@ void Tile::validate(int c)
 
                 (chess_window_p)->recordLastMove((chess_window_p)->click1->tileNum);
                 (chess_window_p)->recordLastMove(tile_p->tileNum);
-				(chess_window_p)->recordMove(fromTile, tile_p->tileNum, movedPiece, wasCapture);
+				(chess_window_p)->recordMove(
+				        fromTile, tile_p->tileNum, movedPiece, wasCapture, promotedPiece);
 				if (wasCapture)
 					(chess_window_p)->recordCapturedPiece(capturedPiece, capturedColor);
+				(chess_window_p)->updateEnPassantTarget(fromTile, tile_p->tileNum, movedPiece);
 				(chess_window_p)->playMoveSound(wasCapture);
 
                 (chess_window_p)->playerTurnNotice();
@@ -221,10 +237,12 @@ void Tile::pawnLevelupCheck()
     {
         // white
         if( this->pieceColor && this->row == 0)
-            this->display( 'Q' );
+			this->display(dynamic_cast<RetroChessWindow*>(m_chess_window_p)
+			        ->promotionChoiceForPawn(this->pieceColor));
         // black
         else if( this->pieceColor == 0 && this->row == 7)
-            this->display( 'Q' );
+			this->display(dynamic_cast<RetroChessWindow*>(m_chess_window_p)
+			        ->promotionChoiceForPawn(this->pieceColor));
     }
 }
 

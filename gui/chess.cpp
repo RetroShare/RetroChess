@@ -27,6 +27,8 @@
 #include <QTableWidget>
 #include <QMediaPlayer>
 #include <QMessageBox>
+#include <QComboBox>
+#include <QDialogButtonBox>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QTimer>
@@ -72,6 +74,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
 
     m_flag_finished = 0;	// set as unfinish
 	m_checkedKingTile = -1;
+	m_enPassantPawnTile = -1;
+	m_pendingPromotionChoice = 0;
 
     //tile = { { NULL } };
     count=0;
@@ -145,6 +149,8 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 
     m_flag_finished = 0;	// set as unfinish
 	m_checkedKingTile = -1;
+	m_enPassantPawnTile = -1;
+	m_pendingPromotionChoice = 0;
 
 	//tile = { { NULL } };
 	count=0;
@@ -639,11 +645,21 @@ int RetroChessWindow::validatePawn(Tile *tile_p)
 				texp[max++]=tile[row-1][col-1]->tileNum;
 				retVal=1;
 			}
+			else if (isEnPassantMove(row, col, row - 1, col - 1, tile_p->pieceColor))
+			{
+				texp[max++]=tile[row-1][col-1]->tileNum;
+				retVal=1;
+			}
 		}
 
 		if(row-1>=0 && col+1<=7)
 		{
 			if(tile[row-1][col+1]->pieceColor!=tile_p->pieceColor && tile[row-1][col+1]->piece)
+			{
+				texp[max++]=tile[row-1][col+1]->tileNum;
+				retVal=1;
+			}
+			else if (isEnPassantMove(row, col, row - 1, col + 1, tile_p->pieceColor))
 			{
 				texp[max++]=tile[row-1][col+1]->tileNum;
 				retVal=1;
@@ -671,11 +687,21 @@ int RetroChessWindow::validatePawn(Tile *tile_p)
 				texp[max++]=tile[row+1][col-1]->tileNum;
 				retVal=1;
 			}
+			else if (isEnPassantMove(row, col, row + 1, col - 1, tile_p->pieceColor))
+			{
+				texp[max++]=tile[row+1][col-1]->tileNum;
+				retVal=1;
+			}
 		}
 
 		if(row+1<=7 && col+1<=7)
 		{
 			if(tile[row+1][col+1]->pieceColor!=tile_p->pieceColor && tile[row+1][col+1]->piece)
+			{
+				texp[max++]=tile[row+1][col+1]->tileNum;
+				retVal=1;
+			}
+			else if (isEnPassantMove(row, col, row + 1, col + 1, tile_p->pieceColor))
 			{
 				texp[max++]=tile[row+1][col+1]->tileNum;
 				retVal=1;
@@ -1289,6 +1315,70 @@ bool RetroChessWindow::isKingInCheck(int color) const
 	return true; // A malformed position without a king cannot continue.
 }
 
+bool RetroChessWindow::isEnPassantMove(
+		int fromRow, int fromCol, int toRow, int toCol, int color) const
+{
+	if (m_enPassantPawnTile < 0 || toRow < 0 || toRow > 7 || toCol < 0 || toCol > 7)
+		return false;
+	const int direction = color ? -1 : 1;
+	if (toRow - fromRow != direction || qAbs(toCol - fromCol) != 1
+	        || tile[toRow][toCol]->piece)
+		return false;
+	const Tile *vulnerablePawn = tile[fromRow][toCol];
+	return vulnerablePawn->tileNum == m_enPassantPawnTile
+	        && vulnerablePawn->piece && vulnerablePawn->pieceName == 'P'
+	        && vulnerablePawn->pieceColor != color;
+}
+
+void RetroChessWindow::updateEnPassantTarget(int fromTile, int toTile, char movedPiece)
+{
+	const int fromRow = fromTile / 8;
+	const int toRow = toTile / 8;
+	m_enPassantPawnTile = movedPiece == 'P' && qAbs(toRow - fromRow) == 2
+	        ? toTile : -1;
+}
+
+char RetroChessWindow::promotionChoiceForPawn(int color)
+{
+	if (color != m_localplayer_turn) {
+		const char choice = m_pendingPromotionChoice;
+		m_pendingPromotionChoice = 0;
+		return choice == 'Q' || choice == 'R' || choice == 'B' || choice == 'H'
+		        ? choice : 'Q';
+	}
+
+	QDialog dialog(this);
+	dialog.setWindowTitle(tr("Pawn promotion"));
+	QVBoxLayout layout(&dialog);
+	layout.addWidget(new QLabel(tr("Promote pawn to:"), &dialog));
+
+	QComboBox choices(&dialog);
+	choices.setIconSize(QSize(36, 36));
+	choices.setMinimumWidth(220);
+	const QChar colorCode = color ? 'w' : 'b';
+	auto addChoice = [&choices, colorCode](const QString &name, QChar resourceCode, char gameCode) {
+		choices.addItem(
+		        QIcon(QString(":/piece/%1%2.svg").arg(colorCode).arg(resourceCode)),
+		        name, QString(QChar(gameCode)));
+	};
+	addChoice(tr("Queen"), 'Q', 'Q');
+	addChoice(tr("Rook"), 'R', 'R');
+	addChoice(tr("Bishop"), 'B', 'B');
+	addChoice(tr("Knight"), 'N', 'H');
+	layout.addWidget(&choices);
+
+	QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+	connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+	connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+	layout.addWidget(&buttons);
+
+	char choice = 'Q';
+	if (dialog.exec() == QDialog::Accepted)
+		choice = choices.currentData().toString().at(0).toLatin1();
+	sendGameAction(QString("promotion:%1").arg(QChar(choice)));
+	return choice;
+}
+
 bool RetroChessWindow::isPseudoLegalMove(
 		int fromRow, int fromCol, int toRow, int toCol, int color) const
 {
@@ -1321,7 +1411,8 @@ bool RetroChessWindow::isPseudoLegalMove(
 		if (dc == 0 && !target->piece && dr == direction) return true;
 		if (dc == 0 && !target->piece && fromRow == startRow && dr == 2 * direction
 		        && !tile[fromRow + direction][fromCol]->piece) return true;
-		return adc == 1 && dr == direction && target->piece;
+		return adc == 1 && dr == direction
+		        && (target->piece || isEnPassantMove(fromRow, fromCol, toRow, toCol, color));
 	}
 	case 'H': return (adr == 2 && adc == 1) || (adr == 1 && adc == 2);
 	case 'K': return qMax(adr, adc) == 1;
@@ -1345,6 +1436,17 @@ bool RetroChessWindow::isLegalMove(
 	const int sourcePiece = source->piece;
 	const int sourceColor = source->pieceColor;
 	const char sourceName = source->pieceName;
+	Tile *enPassantPawn = nullptr;
+	int enPassantPiece = 0;
+	int enPassantColor = 0;
+	char enPassantName = 0;
+	if (sourceName == 'P' && isEnPassantMove(fromRow, fromCol, toRow, toCol, color)) {
+		enPassantPawn = tile[fromRow][toCol];
+		enPassantPiece = enPassantPawn->piece;
+		enPassantColor = enPassantPawn->pieceColor;
+		enPassantName = enPassantPawn->pieceName;
+		enPassantPawn->piece = 0;
+	}
 
 	source->piece = 0;
 	target->piece = 1;
@@ -1357,6 +1459,11 @@ bool RetroChessWindow::isLegalMove(
 	target->piece = targetPiece;
 	target->pieceColor = targetColor;
 	target->pieceName = targetName;
+	if (enPassantPawn) {
+		enPassantPawn->piece = enPassantPiece;
+		enPassantPawn->pieceColor = enPassantColor;
+		enPassantPawn->pieceName = enPassantName;
+	}
 	return legal;
 }
 
@@ -1542,7 +1649,8 @@ void RetroChessWindow::resizeEvent(QResizeEvent *event)
 	}
 }
 
-void RetroChessWindow::recordMove(int fromTile, int toTile, char pieceName, bool capture)
+void RetroChessWindow::recordMove(
+		int fromTile, int toTile, char pieceName, bool capture, char promotion)
 {
 	auto squareName = [](int tileNumber) {
 		const QChar file('a' + tileNumber % 8);
@@ -1555,6 +1663,8 @@ void RetroChessWindow::recordMove(int fromTile, int toTile, char pieceName, bool
 	notation += squareName(fromTile);
 	notation += capture ? "x" : "-";
 	notation += squareName(toTile);
+	if (promotion)
+		notation += QString("=%1").arg(QChar(promotion == 'H' ? 'N' : promotion));
 	m_move_history.push_back(notation);
 
 	const int row = (m_move_history.size() - 1) / 2;
@@ -1637,6 +1747,12 @@ void RetroChessWindow::showGameStatus(const QString &status)
 
 void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 {
+	if (action.startsWith("promotion:")) {
+		const char choice = action.size() > 10 ? action.at(10).toLatin1() : 'Q';
+		if (choice == 'Q' || choice == 'R' || choice == 'B' || choice == 'H')
+			m_pendingPromotionChoice = choice;
+		return;
+	}
 	if (action == "draw_offer" && remote) {
 		const bool accepted = QMessageBox::question(
 		        this, tr("Draw offer"), tr("Your opponent offers a draw. Accept?"),
