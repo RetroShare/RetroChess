@@ -78,7 +78,6 @@ signals:
 	void chessInviteClearedGxs(const RsGxsId &gxs_id);
 	void chessStartGxs(const RsGxsId &gxs_id);
 
-public slots:
 };
 
 #endif // NETEXAMPLENOTIFY_H

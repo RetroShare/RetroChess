@@ -201,23 +201,29 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 
 RetroChessWindow::~RetroChessWindow()
 {
+	delete[] texp;
 	delete m_ui;
 }
+
+static constexpr int TILE_SIZE = 64;
+static constexpr int BORDER_SIZE = 20;
+static constexpr int BOARD_FULL_SIZE = BORDER_SIZE * 2 + TILE_SIZE * 8; // 552
+static constexpr int BOARD_INNER_SIZE = BOARD_FULL_SIZE - BORDER_SIZE; // 532
 
 class Border
 {
 public:
 	Border();
-	void outline(QWidget *baseWidget, int xPos, int yPos, int Pos)
+	static void outline(QWidget *baseWidget, int xPos, int yPos, int Pos)
 	{
 		QLabel *outLabel = new QLabel(baseWidget);
 		outLabel->setProperty("retroChessBoardBorder", true);
 
 		if(!Pos)
-			outLabel->setGeometry(xPos,yPos,552,20);        //Horizontal Borders
+			outLabel->setGeometry(xPos,yPos,BOARD_FULL_SIZE,BORDER_SIZE);        //Horizontal Borders
 
 		else
-			outLabel->setGeometry(xPos,yPos,20,512);        //Vertical Borders
+			outLabel->setGeometry(xPos,yPos,BORDER_SIZE,BOARD_FULL_SIZE-2*BORDER_SIZE);        //Vertical Borders
 
 		const QColor borderColor = RetroChessSettings::boardTheme().dark.lighter(135);
 		outLabel->setStyleSheet(QString("QLabel { background-color: %1; color: black; }")
@@ -459,22 +465,20 @@ void RetroChessWindow::initChessBoard()
 
 	int i,j,k = 0,hor,ver;
 
-	Border *border[4] = { NULL };
-
 	//borderDisplay (border size: 552 * 552)
 	{
-		border[0]->outline( baseWidget,	0,		0,		0);
-		border[1]->outline( baseWidget,	0,		532,	0);
-		border[2]->outline( baseWidget,	0,		20,		1);
-		border[2]->outline( baseWidget,	532,	20,		1);
+		Border::outline( baseWidget,	0,		0,		0);
+		Border::outline( baseWidget,	0,		BOARD_INNER_SIZE,	0);
+		Border::outline( baseWidget,	0,		BORDER_SIZE,		1);
+		Border::outline( baseWidget,	BOARD_INNER_SIZE,	BORDER_SIZE,		1);
 	}
 
 	//Create 64 tiles (allocating memories to the objects of Tile class)
-	ver = 20;
+	ver = BORDER_SIZE;
 
 	for(i = 0; i < 8; i++)
 	{
-		hor = 20;
+		hor = BORDER_SIZE;
 		for(j=0; j<8; j++)
 		{
 			tile[i][j] = new Tile(baseWidget);
@@ -485,26 +489,26 @@ void RetroChessWindow::initChessBoard()
 			tile[i][j]->col=j;
 			tile[i][j]->tileNum=k++;
 			tile[i][j]->tileDisplay();
-			tile[i][j]->setGeometry(hor,ver,64,64);
-			tile[i][j]->resize( 64, 64 );
+			tile[i][j]->setGeometry(hor,ver,TILE_SIZE,TILE_SIZE);
+			tile[i][j]->resize( TILE_SIZE, TILE_SIZE );
 
-			hor+=64;
+			hor+=TILE_SIZE;
 		}
-		ver+=64;
+		ver+=TILE_SIZE;
 	}
 
 	// Board coordinates use the existing 20-pixel border, so they do not
 	// increase the board or window dimensions.
 	for (i = 0; i < 8; ++i) {
 		QLabel *rankLabel = new QLabel(QString::number(8 - i), baseWidget);
-		rankLabel->setGeometry(0, 20 + i * 64, 20, 64);
+		rankLabel->setGeometry(0, BORDER_SIZE + i * TILE_SIZE, BORDER_SIZE, TILE_SIZE);
 		rankLabel->setAlignment(Qt::AlignCenter);
 		rankLabel->setStyleSheet(
 		        "QLabel { color: #353525; background: transparent; font-weight: bold; }");
 		rankLabel->raise();
 
 		QLabel *fileLabel = new QLabel(QString(QChar('a' + i)), baseWidget);
-		fileLabel->setGeometry(20 + i * 64, 532, 64, 20);
+		fileLabel->setGeometry(BORDER_SIZE + i * TILE_SIZE, BOARD_INNER_SIZE, TILE_SIZE, BORDER_SIZE);
 		fileLabel->setAlignment(Qt::AlignCenter);
 		fileLabel->setStyleSheet(
 		        "QLabel { color: #353525; background: transparent; font-weight: bold; }");

@@ -66,12 +66,12 @@ public:
 	 * : notifyCustomState, notifyChatStatus, notifyPeerHasNewAvatar
 	 * @see NotifyBase
 	 */
-	virtual int   tick() override;;
+	virtual int   tick() override;
 	virtual int   status();
 	virtual bool  recvItem(RsItem *item);
 
 	/*************** pqiMonitor callback ***********************/
-	//virtual void statusChange(const std::list<pqipeer> &plist);
+
 
 
 	/************* from p3Config *******************/
@@ -98,7 +98,7 @@ public:
 	void 	qvm_msg_peer(RsPeerId peerID, QVariantMap data);
 
     void chess_click(std::string peer_id, int col, int row, int count);
-	//void set_peer(RsPeerId peer);
+
     void player_leave(std::string peer_id);
 
 	bool hasInviteFrom(RsPeerId peerID);
@@ -109,7 +109,7 @@ public:
 	void sendInvite(RsPeerId peerID);
 
 	void player_leave_gxs(const RsGxsId &gxs_id);
-	//void addChessFriend(const RsGxsId &gxsId);
+
 	void sendGxsInvite(const RsGxsId &toGxsId);
 	void acceptedInviteGxs(const RsGxsId &gxsId);
 	void clearInviteGxs(const RsGxsId &gxsId) override;

@@ -22,7 +22,7 @@
 #define CHESS_H
 
 #include "tile.h"
-#include "validation.h"
+
 
 #include <QWidget>
 

@@ -43,6 +43,7 @@ Tile::Tile(const QString& text, QWidget* pParent, Qt::WindowFlags f) : QLabel(te
 void Tile::mousePressEvent(QMouseEvent *event)
 {
     RetroChessWindow *chess_window_p = dynamic_cast<RetroChessWindow*>(m_chess_window_p );
+    if (!chess_window_p) return;
     std::string peer_id = (chess_window_p)->mPeerId;
 
     if( (chess_window_p)->m_flag_finished == 0)	// not finish yet
@@ -99,6 +100,7 @@ void Tile::validate(int c)
     int retValue,i;
 
     RetroChessWindow *chess_window_p = dynamic_cast< RetroChessWindow*> (m_chess_window_p );
+    if (!chess_window_p) return;
 
     // click 1
     if(c == 1)
@@ -111,7 +113,6 @@ void Tile::validate(int c)
 
             if(retValue)
             {
-                (chess_window_p)->click1= new Tile();
                 tile_p->setStyleSheet("QLabel {background-color: green;}");
                 (chess_window_p)->click1=tile_p;
             }

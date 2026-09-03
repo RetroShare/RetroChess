@@ -36,6 +36,7 @@
 
 #include "gui/RetroChessNotify.h"
 #include <retroshare/rschats.h>
+#include <qjsondocument.h>
 
 
 //#define DEBUG_RetroChess		1
@@ -50,38 +51,6 @@ RsRetroChess *rsRetroChess = NULL;
 #include <time.h>
 #include <sys/timeb.h>
 #endif
-
-static double getCurrentTS()
-{
-
-#ifndef WINDOWS_SYS
-	struct timeval cts_tmp;
-	gettimeofday(&cts_tmp, NULL);
-	double cts =  (cts_tmp.tv_sec) + ((double) cts_tmp.tv_usec) / 1000000.0;
-#else
-	struct _timeb timebuf;
-	_ftime( &timebuf);
-	double cts =  (timebuf.time) + ((double) timebuf.millitm) / 1000.0;
-#endif
-	return cts;
-}
-
-static uint64_t convertTsTo64bits(double ts)
-{
-	uint32_t secs = (uint32_t) ts;
-	uint32_t usecs = (uint32_t) ((ts - (double) secs) * 1000000);
-	uint64_t bits = (((uint64_t) secs) << 32) + usecs;
-	return bits;
-}
-
-static double convert64bitsToTs(uint64_t bits)
-{
-	uint32_t usecs = (uint32_t) (bits & 0xffffffff);
-	uint32_t secs = (uint32_t) ((bits >> 32) & 0xffffffff);
-	double ts =  (secs) + ((double) usecs) / 1000000.0;
-
-	return ts;
-}
 
 p3RetroChess::p3RetroChess(RsPluginHandler *handler,RetroChessNotify *notifier)
 	: RsPQIService(RS_SERVICE_TYPE_RetroChess_PLUGIN,0,handler), mRetroChessMtx("p3RetroChess"), mServiceControl(handler->getServiceControl()), mNotify(notifier), mGxsTunnels(NULL)
@@ -123,7 +92,6 @@ int	p3RetroChess::status()
 {
 	return 1;
 }
-#include<qjsondocument.h>
 void p3RetroChess::str_msg_peer(RsPeerId peerID, QString strdata)
 {
 	QVariantMap map;
@@ -165,38 +133,44 @@ void p3RetroChess::player_leave(std::string peer_id)
 
 bool p3RetroChess::hasInviteFrom(RsPeerId peerID)
 {
+	RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
 	return invitesFrom.find(peerID)!=invitesFrom.end();
 }
 bool p3RetroChess::hasInviteTo(RsPeerId peerID)
 {
+	RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
 	return invitesTo.find(peerID)!=invitesTo.end();
 }
 
 void p3RetroChess::acceptedInvite(RsPeerId peerID)
 {
-	std::set<RsPeerId>::iterator it =invitesTo.find(peerID);
-	if (it != invitesTo.end())
 	{
-		invitesTo.erase(it);
-	}
+		RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
+		std::set<RsPeerId>::iterator it =invitesTo.find(peerID);
+		if (it != invitesTo.end())
+		{
+			invitesTo.erase(it);
+		}
 
-	it =invitesFrom.find(peerID);
-	if (it != invitesFrom.end())
-	{
-		invitesFrom.erase(it);
+		it =invitesFrom.find(peerID);
+		if (it != invitesFrom.end())
+		{
+			invitesFrom.erase(it);
+		}
 	}
 	raw_msg_peer(peerID, "{\"type\":\"chess_accept\"}");
 }
 
 void p3RetroChess::clearInvite(RsPeerId peerID)
 {
+	RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
 	invitesTo.erase(peerID);
 	invitesFrom.erase(peerID);
 }
 
 void p3RetroChess::gotInvite(RsPeerId peerID)
 {
-
+	RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
 	std::set<RsPeerId>::iterator it =invitesFrom.find(peerID);
 	if (it == invitesFrom.end())
 	{
@@ -205,19 +179,18 @@ void p3RetroChess::gotInvite(RsPeerId peerID)
 }
 void p3RetroChess::sendInvite(RsPeerId peerID)
 {
-
-	std::set<RsPeerId>::iterator it =invitesTo.find(peerID);
-	if (it == invitesTo.end())
 	{
-		invitesTo.insert(peerID);
+		RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
+		std::set<RsPeerId>::iterator it =invitesTo.find(peerID);
+		if (it == invitesTo.end())
+		{
+			invitesTo.insert(peerID);
+		}
 	}
 	raw_msg_peer(peerID, "{\"type\":\"chess_invite\"}");
 }
 
-/*void p3RetroChess::set_peer(RsPeerId peer)
-{
-	mPeerID = peer;
-}*/
+
 void p3RetroChess::raw_msg_peer(RsPeerId peerID, std::string msg)
 {
 	std::cout << "MSging: " << peerID.toStdString() << "\n";
@@ -366,14 +339,6 @@ bool p3RetroChess::saveList(bool& cleanup, std::list<RsItem*>& lst)
 
 	RsConfigKeyValueSet *vitem = new RsConfigKeyValueSet ;
 
-	/*vitem->tlvkvs.pairs.push_back(push_int_value("P3RetroChess_CONFIG_ATRANSMIT",_atransmit)) ;
-	vitem->tlvkvs.pairs.push_back(push_int_value("P3RetroChess_CONFIG_VOICEHOLD",_voice_hold)) ;
-	vitem->tlvkvs.pairs.push_back(push_int_value("P3RetroChess_CONFIG_VADMIN"   ,_vadmin)) ;
-	vitem->tlvkvs.pairs.push_back(push_int_value("P3RetroChess_CONFIG_VADMAX"   ,_vadmax)) ;
-	vitem->tlvkvs.pairs.push_back(push_int_value("P3RetroChess_CONFIG_NOISE_SUP",_noise_suppress)) ;
-	vitem->tlvkvs.pairs.push_back(push_int_value("P3RetroChess_CONFIG_MIN_LOUDN",_min_loudness)) ;
-	vitem->tlvkvs.pairs.push_back(push_int_value("P3RetroChess_CONFIG_ECHO_CNCL",_echo_cancel)) ;*/
-
 	lst.push_back(vitem) ;
 
 	return true ;
@@ -382,30 +347,7 @@ bool p3RetroChess::loadList(std::list<RsItem*>& load)
 {
 	for(std::list<RsItem*>::const_iterator it(load.begin()); it!=load.end(); ++it)
 	{
-#ifdef P3TURTLE_DEBUG
-		assert(item!=NULL) ;
-#endif
-		RsConfigKeyValueSet *vitem = dynamic_cast<RsConfigKeyValueSet*>(*it) ;
-		/*
-		if(vitem != NULL)
-			for(std::list<RsTlvKeyValue>::const_iterator kit = vitem->tlvkvs.pairs.begin(); kit != vitem->tlvkvs.pairs.end(); ++kit)
-				if(kit->key == "P3RetroChess_CONFIG_ATRANSMIT")
-					_atransmit = pop_int_value(kit->value) ;
-				else if(kit->key == "P3RetroChess_CONFIG_VOICEHOLD")
-					_voice_hold = pop_int_value(kit->value) ;
-				else if(kit->key == "P3RetroChess_CONFIG_VADMIN")
-					_vadmin = pop_int_value(kit->value) ;
-				else if(kit->key == "P3RetroChess_CONFIG_VADMAX")
-					_vadmax = pop_int_value(kit->value) ;
-				else if(kit->key == "P3RetroChess_CONFIG_NOISE_SUP")
-					_noise_suppress = pop_int_value(kit->value) ;
-				else if(kit->key == "P3RetroChess_CONFIG_MIN_LOUDN")
-					_min_loudness = pop_int_value(kit->value) ;
-				else if(kit->key == "P3RetroChess_CONFIG_ECHO_CNCL")
-					_echo_cancel = pop_int_value(kit->value) ;
-
-		delete vitem ;
-		*/
+		delete *it;
 	}
 
 	return true ;
@@ -422,6 +364,7 @@ RsSerialiser *p3RetroChess::setupSerialiser()
 
 void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count)
 {
+    RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
     if (mActiveTunnels.find(gxs_id) == mActiveTunnels.end()) {
         // Tunnel not ready, try to re-open
         sendGxsInvite(gxs_id);
