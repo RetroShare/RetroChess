@@ -52,6 +52,11 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_capturedBlackLabel(nullptr),
     m_capturedWhiteLabel(nullptr),
     m_moveTable(nullptr),
+	m_historyFirstButton(nullptr),
+	m_historyPreviousButton(nullptr),
+	m_historyNextButton(nullptr),
+	m_historyLatestButton(nullptr),
+	m_viewedHistoryPly(0),
     m_moveSound(nullptr),
     m_captureSound(nullptr),
     m_victorySound(nullptr)
@@ -140,6 +145,11 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_capturedBlackLabel(nullptr),
 	m_capturedWhiteLabel(nullptr),
 	m_moveTable(nullptr),
+	m_historyFirstButton(nullptr),
+	m_historyPreviousButton(nullptr),
+	m_historyNextButton(nullptr),
+	m_historyLatestButton(nullptr),
+	m_viewedHistoryPly(0),
 	m_moveSound(nullptr),
 	m_captureSound(nullptr),
 	m_victorySound(nullptr)
@@ -247,14 +257,48 @@ void RetroChessWindow::initAccessories()
 	m_moveTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
 	m_moveTable->verticalHeader()->hide();
 	m_moveTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-	m_moveTable->setSelectionMode(QAbstractItemView::NoSelection);
-	m_moveTable->setFocusPolicy(Qt::NoFocus);
+	m_moveTable->setSelectionMode(QAbstractItemView::SingleSelection);
+	m_moveTable->setSelectionBehavior(QAbstractItemView::SelectItems);
 	m_moveTable->setShowGrid(false);
 	m_moveTable->setAlternatingRowColors(true);
 	m_moveTable->setStyleSheet(
 	        "QTableWidget { border: 0; background: transparent; alternate-background-color: #eeeeee; }"
 	        "QHeaderView::section { background: #e3e3e3; border: 0; padding: 4px; color: #555; }");
 	m_ui->moveHistoryLayout->addWidget(m_moveTable, 1);
+
+	QHBoxLayout *historyControls = new QHBoxLayout;
+	historyControls->setContentsMargins(2, 0, 2, 0);
+	historyControls->setSpacing(2);
+	m_historyFirstButton = new QPushButton(QIcon(":/images/skip-prev-solid.png"), QString(), m_ui->moveHistoryFrame);
+	m_historyPreviousButton = new QPushButton(QIcon(":/images/nav-arrow-left-solid.png"), QString(), m_ui->moveHistoryFrame);
+	m_historyNextButton = new QPushButton(QIcon(":/images/nav-arrow-right-solid.png"), QString(), m_ui->moveHistoryFrame);
+	m_historyLatestButton = new QPushButton(QIcon(":/images/skip-next-solid.png"), QString(), m_ui->moveHistoryFrame);
+	for (QPushButton *button : {m_historyFirstButton, m_historyPreviousButton,
+	                            m_historyNextButton, m_historyLatestButton}) {
+		button->setFlat(true);
+		button->setMinimumWidth(34);
+		button->setIconSize(QSize(20, 20));
+		historyControls->addWidget(button);
+	}
+	m_historyFirstButton->setToolTip(tr("Initial position"));
+	m_historyPreviousButton->setToolTip(tr("Previous move"));
+	m_historyNextButton->setToolTip(tr("Next move"));
+	m_historyLatestButton->setToolTip(tr("Latest position"));
+	m_ui->moveHistoryLayout->addLayout(historyControls);
+	connect(m_historyFirstButton, &QPushButton::clicked, this, [this]() { showHistoryPly(0); });
+	connect(m_historyPreviousButton, &QPushButton::clicked, this, [this]() {
+		showHistoryPly(m_viewedHistoryPly - 1);
+	});
+	connect(m_historyNextButton, &QPushButton::clicked, this, [this]() {
+		showHistoryPly(m_viewedHistoryPly + 1);
+	});
+	connect(m_historyLatestButton, &QPushButton::clicked, this, [this]() { showLivePosition(); });
+	connect(m_moveTable, &QTableWidget::cellClicked, this, [this](int row, int column) {
+		if (column == 0) return;
+		const int ply = row * 2 + column;
+		if (ply < m_boardHistory.size()) showHistoryPly(ply);
+	});
+	updateHistoryControls();
 
 	// Compact captured-piece strips, arranged like online chess boards:
 	// Black's lost pieces above the moves and White's below them.
@@ -464,6 +508,7 @@ void RetroChessWindow::disOrange()
 
 void RetroChessWindow::validate_tile(int row, int col, int c)
 {
+	showLivePosition();
 	Tile *clickedtile = tile[col][row];
 	//if (!click1)click1=clickedtile;
 
@@ -581,6 +626,7 @@ void RetroChessWindow::initChessBoard()
 	bR=0;
 	bC=4;
 	recordCurrentPosition();
+	recordBoardSnapshot();
 }
 
 
@@ -1859,6 +1905,72 @@ void RetroChessWindow::resizeEvent(QResizeEvent *event)
 		m_ui->m_status_bar->setGeometry(0, height() - 24, width(), 24);
 		m_ui->m_status_bar->raise();
 	}
+}
+
+void RetroChessWindow::recordBoardSnapshot(int fromTile, int toTile)
+{
+	QString position;
+	position.reserve(64);
+	for (int row = 0; row < 8; ++row)
+		for (int col = 0; col < 8; ++col) {
+			const Tile *square = tile[row][col];
+			if (!square->piece) position += '.';
+			else {
+				QChar piece(square->pieceName);
+				position += square->pieceColor ? piece.toUpper() : piece.toLower();
+			}
+		}
+	m_boardHistory.push_back(position);
+	m_boardHistoryMoves.push_back(qMakePair(fromTile, toTile));
+	m_viewedHistoryPly = m_boardHistory.size() - 1;
+	updateHistoryControls();
+}
+
+void RetroChessWindow::showHistoryPly(int ply)
+{
+	if (m_boardHistory.isEmpty()) return;
+	ply = qBound(0, ply, m_boardHistory.size() - 1);
+	m_viewedHistoryPly = ply;
+	const QString &position = m_boardHistory.at(ply);
+	for (int index = 0; index < 64; ++index) {
+		const QChar encoded = position.at(index);
+		Tile *square = tile[index / 8][index % 8];
+		square->tileDisplay();
+		square->displayPosition(encoded != '.', encoded.toUpper().toLatin1(), encoded.isUpper());
+	}
+
+	const QPair<int, int> move = m_boardHistoryMoves.at(ply);
+	const QString highlightStyle = QString("QLabel { background-color: %1; }")
+	        .arg(RetroChessSettings::boardTheme().lastMove.name());
+	if (move.first >= 0) tile[move.first / 8][move.first % 8]->setStyleSheet(highlightStyle);
+	if (move.second >= 0) tile[move.second / 8][move.second % 8]->setStyleSheet(highlightStyle);
+
+	if (ply == 0) m_moveTable->clearSelection();
+	else {
+		const int row = (ply - 1) / 2;
+		const int column = (ply - 1) % 2 + 1;
+		if (QTableWidgetItem *item = m_moveTable->item(row, column)) {
+			m_moveTable->setCurrentItem(item);
+			m_moveTable->scrollToItem(item);
+		}
+	}
+	updateHistoryControls();
+}
+
+void RetroChessWindow::showLivePosition()
+{
+	if (!m_boardHistory.isEmpty()) showHistoryPly(m_boardHistory.size() - 1);
+}
+
+void RetroChessWindow::updateHistoryControls()
+{
+	const int latest = m_boardHistory.size() - 1;
+	const bool canGoBack = latest >= 0 && m_viewedHistoryPly > 0;
+	const bool canGoForward = latest >= 0 && m_viewedHistoryPly < latest;
+	if (m_historyFirstButton) m_historyFirstButton->setEnabled(canGoBack);
+	if (m_historyPreviousButton) m_historyPreviousButton->setEnabled(canGoBack);
+	if (m_historyNextButton) m_historyNextButton->setEnabled(canGoForward);
+	if (m_historyLatestButton) m_historyLatestButton->setEnabled(canGoForward);
 }
 
 void RetroChessWindow::recordMove(

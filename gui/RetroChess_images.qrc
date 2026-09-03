@@ -18,6 +18,10 @@
 		<file>images/chess-notify.png</file>
 		<file>images/profile.png</file>
 		<file>images/retrochess.png</file>
+		<file>images/nav-arrow-left-solid.png</file>
+		<file>images/nav-arrow-right-solid.png</file>
+		<file>images/skip-prev-solid.png</file>
+		<file>images/skip-next-solid.png</file>
 		<file>sound/Move.mp3</file>
 		<file>sound/Capture.mp3</file>
 		<file>sound/victory.mp3</file>
