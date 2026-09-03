@@ -32,10 +32,12 @@
 #include <QQueue>
 #include <QHash>
 #include <QStringList>
+#include <QVector>
 
 class QLabel;
 class QTableWidget;
 class QMediaPlayer;
+class QPushButton;
 
 namespace Ui
 {
@@ -90,6 +92,7 @@ public:
 
 	void disOrange();
 	void validate_tile(int row, int col, int c);
+	void showLivePosition();
 
 	int flag,retVal;
 	int chooser(Tile *temp);
@@ -139,6 +142,16 @@ public:
 	QLabel *m_capturedBlackLabel;
 	QLabel *m_capturedWhiteLabel;
 	QTableWidget *m_moveTable;
+	QPushButton *m_historyFirstButton;
+	QPushButton *m_historyPreviousButton;
+	QPushButton *m_historyNextButton;
+	QPushButton *m_historyLatestButton;
+	QVector<QString> m_boardHistory;
+	QVector<QPair<int, int>> m_boardHistoryMoves;
+	int m_viewedHistoryPly;
+	void recordBoardSnapshot(int fromTile = -1, int toTile = -1);
+	void showHistoryPly(int ply);
+	void updateHistoryControls();
 	QMediaPlayer *m_moveSound;
 	QMediaPlayer *m_captureSound;
 	QMediaPlayer *m_victorySound;

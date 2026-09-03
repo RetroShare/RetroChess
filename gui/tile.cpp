@@ -44,6 +44,7 @@ void Tile::mousePressEvent(QMouseEvent *event)
 {
     RetroChessWindow *chess_window_p = dynamic_cast<RetroChessWindow*>(m_chess_window_p );
     if (!chess_window_p) return;
+	chess_window_p->showLivePosition();
     std::string peer_id = (chess_window_p)->mPeerId;
 
     if( (chess_window_p)->m_flag_finished == 0)	// not finish yet
@@ -90,6 +91,24 @@ void Tile::display(char elem)
 	// engine to render directly at the 64x64 tile size, producing a larger,
 	// sharper piece without bitmap upscaling.
 	this->setPixmap(QIcon(resource).pixmap(this->size()));
+}
+
+void Tile::displayPosition(bool occupied, char name, int color)
+{
+	if (!occupied) {
+		clear();
+		return;
+	}
+
+	QChar resourcePiece;
+	switch (name) {
+	case 'K': case 'Q': case 'R': case 'B': case 'P': resourcePiece = QChar(name); break;
+	case 'H': resourcePiece = 'N'; break;
+	default: clear(); return;
+	}
+	const QChar colorCode = color ? 'w' : 'b';
+	setPixmap(QIcon(QString(":/piece/%1%2.svg").arg(colorCode).arg(resourcePiece))
+	                  .pixmap(size()));
 }
 
 // check click
@@ -215,6 +234,7 @@ void Tile::validate(int c)
 				(chess_window_p)->updateEnPassantTarget(fromTile, tile_p->tileNum, movedPiece);
 				(chess_window_p)->updateHalfmoveClock(movedPiece, wasCapture);
 				(chess_window_p)->recordCurrentPosition();
+				(chess_window_p)->recordBoardSnapshot(fromTile, tile_p->tileNum);
 				(chess_window_p)->playMoveSound(wasCapture);
 
                 (chess_window_p)->playerTurnNotice();
