@@ -2055,7 +2055,8 @@ void RetroChessWindow::clearLastMove()
     }	// clear the last move queue
 }
 
-// 0: ongoing, 1: black win, 2: white win, 3: stalemate, 4: dead position
+// 0: ongoing, 1: black win, 2: white win, 3: stalemate, 4: dead position,
+// 5: fivefold repetition, 6: 75-move rule
 int RetroChessWindow::resultJudge()
 {
 	if (isDeadPosition()) {
@@ -2065,6 +2066,18 @@ int RetroChessWindow::resultJudge()
 	}
 
 	if (hasAnyLegalMove(turn)) {
+		// FIDE 9.6 draws are automatic. They are checked only after confirming
+		// that the last move did not produce checkmate or stalemate.
+		if (m_positionOccurrences.value(currentPositionKey()) >= 5) {
+			clearKingCheckHighlight();
+			showGameResultDialog(false, true, tr("Draw by fivefold repetition"));
+			return 5;
+		}
+		if (m_halfmoveClock >= 150) {
+			clearKingCheckHighlight();
+			showGameResultDialog(false, true, tr("Draw by the 75-move rule"));
+			return 6;
+		}
 		if (isKingInCheck(turn)) {
 			highlightCheckedKing(turn);
 			showGameStatus(tr("Check"));
