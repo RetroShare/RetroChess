@@ -108,6 +108,8 @@ public:
 	QString currentPositionKey();
 	void recordCurrentPosition();
 	bool canClaimThreefoldRepetition();
+	void updateHalfmoveClock(char movedPiece, bool capture);
+	bool canClaimFiftyMoveRule() const;
 	bool isEnPassantMove(int fromRow, int fromCol, int toRow, int toCol, int color) const;
 	void updateEnPassantTarget(int fromTile, int toTile, char movedPiece);
 	bool canCastle(int color, bool kingSide) const;
@@ -124,6 +126,7 @@ public:
 	char m_pendingPromotionChoice;
 	bool m_kingMoved[2];
 	bool m_rookMoved[2][2]; // [color][0 queenside, 1 kingside]
+	int m_halfmoveClock;
 
 	void orange();	// draw orange background represent avaiable movement of tiles
 	int check(Tile *temp);

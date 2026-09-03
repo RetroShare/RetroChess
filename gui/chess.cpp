@@ -79,6 +79,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
 	m_kingMoved[0] = m_kingMoved[1] = false;
 	m_rookMoved[0][0] = m_rookMoved[0][1] = false;
 	m_rookMoved[1][0] = m_rookMoved[1][1] = false;
+	m_halfmoveClock = 0;
 
     //tile = { { NULL } };
     count=0;
@@ -157,6 +158,7 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_kingMoved[0] = m_kingMoved[1] = false;
 	m_rookMoved[0][0] = m_rookMoved[0][1] = false;
 	m_rookMoved[1][0] = m_rookMoved[1][1] = false;
+	m_halfmoveClock = 0;
 
 	//tile = { { NULL } };
 	count=0;
@@ -302,7 +304,7 @@ void RetroChessWindow::initAccessories()
 		gameControls->addWidget(button);
 	}
 	abortButton->setToolTip(tr("Abort game"));
-	drawButton->setToolTip(tr("Offer a draw or claim threefold repetition"));
+	drawButton->setToolTip(tr("Offer a draw or claim a rule-based draw"));
 	resignButton->setToolTip(tr("Resign the game"));
 	m_ui->moveHistoryLayout->addLayout(gameControls);
 
@@ -325,6 +327,11 @@ void RetroChessWindow::initAccessories()
 		if (turn == m_localplayer_turn && canClaimThreefoldRepetition()) {
 			sendGameAction("draw_repetition");
 			applyGameAction("draw_repetition", false);
+			return;
+		}
+		if (turn == m_localplayer_turn && canClaimFiftyMoveRule()) {
+			sendGameAction("draw_fifty_move");
+			applyGameAction("draw_fifty_move", false);
 			return;
 		}
 		sendGameAction("draw_offer");
@@ -1673,6 +1680,16 @@ bool RetroChessWindow::canClaimThreefoldRepetition()
 	return m_positionOccurrences.value(currentPositionKey()) >= 3;
 }
 
+void RetroChessWindow::updateHalfmoveClock(char movedPiece, bool capture)
+{
+	m_halfmoveClock = movedPiece == 'P' || capture ? 0 : m_halfmoveClock + 1;
+}
+
+bool RetroChessWindow::canClaimFiftyMoveRule() const
+{
+	return m_halfmoveClock >= 100;
+}
+
 void RetroChessWindow::highlightCheckedKing(int color)
 {
 	for (int row = 0; row < 8; ++row)
@@ -1957,6 +1974,14 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		m_flag_finished = 1;
 		m_suppressLeave = true;
 		showGameResultDialog(false, true, tr("Draw by threefold repetition"));
+		emit gameEnded(QString::fromStdString(mPeerId));
+		return;
+	}
+	if (action == "draw_fifty_move") {
+		if (!canClaimFiftyMoveRule()) return;
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		showGameResultDialog(false, true, tr("Draw by the 50-move rule"));
 		emit gameEnded(QString::fromStdString(mPeerId));
 		return;
 	}
