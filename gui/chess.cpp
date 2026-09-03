@@ -36,6 +36,7 @@
 #include "chess.h"
 #include "ui_chess.h"
 #include "RetroChessSettings.h"
+#include "ChessDebugWidget.h"
 
 #include "gui/common/AvatarDefs.h"
 #include "../services/p3RetroChess.h"
@@ -59,7 +60,10 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
 	m_viewedHistoryPly(0),
     m_moveSound(nullptr),
     m_captureSound(nullptr),
-    m_victorySound(nullptr)
+    m_victorySound(nullptr),
+    m_debugWidget(nullptr),
+    m_fullmoveNumber(1),
+    m_desynchronized(false)
 {
     QString player_str; 
     if (player == 1) {
@@ -156,7 +160,10 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_viewedHistoryPly(0),
 	m_moveSound(nullptr),
 	m_captureSound(nullptr),
-	m_victorySound(nullptr)
+	m_victorySound(nullptr),
+	m_debugWidget(nullptr),
+	m_fullmoveNumber(1),
+	m_desynchronized(false)
 	//ui(new Ui::RetroChessWindow)
 {
 	m_ui->setupUi( this );
@@ -348,7 +355,12 @@ void RetroChessWindow::initAccessories()
 	QPushButton *abortButton = new QPushButton(tr("Abort"), m_ui->moveHistoryFrame);
 	QPushButton *drawButton = new QPushButton(QString::fromUtf8("½ ") + tr("Draw"), m_ui->moveHistoryFrame);
 	QPushButton *resignButton = new QPushButton(tr("Resign"), m_ui->moveHistoryFrame);
-	for (QPushButton *button : {abortButton, drawButton, resignButton}) {
+	QPushButton *debugButton = new QPushButton(
+	        QIcon(":/images/bug.png"), QString(), m_ui->moveHistoryFrame);
+	debugButton->setToolTip(tr("Debug"));
+	debugButton->setAccessibleName(tr("Debug"));
+	debugButton->setIconSize(QSize(18, 18));
+	for (QPushButton *button : {abortButton, drawButton, resignButton, debugButton}) {
 		button->setMinimumWidth(0);
 		button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 		button->setStyleSheet("QPushButton { padding: 4px 2px; font-size: 10px; }");
@@ -389,6 +401,9 @@ void RetroChessWindow::initAccessories()
 		m_ui->m_status_bar->setText(tr("Draw offer sent"));
 		m_ui->m_status_bar->show();
 	});
+	connect(debugButton, &QPushButton::clicked, this, &RetroChessWindow::showChessDebugWindow);
+	m_debugWidget = new ChessDebugWidget(
+	        windowTitle(), [this]() { return currentFen(); }, this);
 
 	m_moveSound = new QMediaPlayer(this);
 	m_captureSound = new QMediaPlayer(this);
@@ -2073,6 +2088,214 @@ void RetroChessWindow::playMoveSound(bool capture)
 	player->play();
 }
 
+static QString chessSquareName(int tileNumber)
+{
+	if (tileNumber < 0 || tileNumber >= 64) return QStringLiteral("??");
+	return QString(QChar('a' + tileNumber % 8)) + QString::number(8 - tileNumber / 8);
+}
+
+QString RetroChessWindow::currentFen() const
+{
+	QString placement;
+	for (int row = 0; row < 8; ++row) {
+		int empty = 0;
+		for (int col = 0; col < 8; ++col) {
+			const Tile *square = tile[row][col];
+			if (!square->piece) {
+				++empty;
+				continue;
+			}
+			if (empty) {
+				placement += QString::number(empty);
+				empty = 0;
+			}
+			QChar piece(square->pieceName == 'H' ? 'N' : square->pieceName);
+			placement += square->pieceColor ? piece.toUpper() : piece.toLower();
+		}
+		if (empty) placement += QString::number(empty);
+		if (row != 7) placement += '/';
+	}
+
+	QString castling;
+	auto hasPiece = [this](int row, int col, char name, int color) {
+		const Tile *square = tile[row][col];
+		return square->piece && square->pieceName == name && square->pieceColor == color;
+	};
+	if (!m_kingMoved[1] && !m_rookMoved[1][1]
+	        && hasPiece(7, 4, 'K', 1) && hasPiece(7, 7, 'R', 1)) castling += 'K';
+	if (!m_kingMoved[1] && !m_rookMoved[1][0]
+	        && hasPiece(7, 4, 'K', 1) && hasPiece(7, 0, 'R', 1)) castling += 'Q';
+	if (!m_kingMoved[0] && !m_rookMoved[0][1]
+	        && hasPiece(0, 4, 'K', 0) && hasPiece(0, 7, 'R', 0)) castling += 'k';
+	if (!m_kingMoved[0] && !m_rookMoved[0][0]
+	        && hasPiece(0, 4, 'K', 0) && hasPiece(0, 0, 'R', 0)) castling += 'q';
+	if (castling.isEmpty()) castling = "-";
+
+	QString enPassant = "-";
+	if (m_enPassantPawnTile >= 0) {
+		const Tile *pawn = tile[m_enPassantPawnTile / 8][m_enPassantPawnTile % 8];
+		if (pawn->piece && pawn->pieceName == 'P') {
+			const int targetRow = pawn->row + (pawn->pieceColor ? 1 : -1);
+			enPassant = QString(QChar('a' + pawn->col)) + QString::number(8 - targetRow);
+		}
+	}
+	return QString("%1 %2 %3 %4 %5 %6").arg(
+	        placement, turn ? "w" : "b", castling, enPassant,
+	        QString::number(m_halfmoveClock), QString::number(m_fullmoveNumber));
+}
+
+QString RetroChessWindow::positionHash() const
+{
+	return ChessDebugWidget::hashFen(currentFen());
+}
+
+void RetroChessWindow::appendDebugEvent(const QString &event)
+{
+	if (m_debugWidget) m_debugWidget->appendEvent(event);
+}
+
+void RetroChessWindow::sendMoveAction(int fromTile, int toTile, char promotion)
+{
+	const int sequence = m_boardHistory.size() - 1;
+	const QString hash = positionHash();
+	const QString move = chessSquareName(fromTile) + chessSquareName(toTile)
+	        + (promotion == '-' ? QString() : QString(QChar(promotion)).toLower());
+	appendDebugEvent(QString("TX move %1 sequence=%2 hash=%3 FEN=%4")
+	        .arg(move).arg(sequence).arg(hash, currentFen()));
+	sendGameAction(QString("move:%1:%2:%3:%4:%5")
+	        .arg(sequence).arg(fromTile).arg(toTile).arg(QChar(promotion)).arg(hash));
+}
+
+bool RetroChessWindow::loadFen(const QString &fen, QString *error)
+{
+	const QStringList fields = fen.simplified().split(' ');
+	if (fields.size() != 6) {
+		if (error) *error = tr("FEN must contain exactly six fields.");
+		return false;
+	}
+	const QStringList ranks = fields.at(0).split('/');
+	if (ranks.size() != 8 || (fields.at(1) != "w" && fields.at(1) != "b")) {
+		if (error) *error = tr("Invalid board or side-to-move field.");
+		return false;
+	}
+
+	struct FenPiece { int row; int col; char name; int color; };
+	QVector<FenPiece> pieces;
+	int kings[2] = {0, 0};
+	for (int row = 0; row < 8; ++row) {
+		int col = 0;
+		for (const QChar encoded : ranks.at(row)) {
+			if (encoded.isDigit()) {
+				const int empty = encoded.digitValue();
+				if (empty < 1 || empty > 8) col = 99;
+				else col += empty;
+				continue;
+			}
+			const QChar upper = encoded.toUpper();
+			if (col >= 8 || !QString("KQRBNP").contains(upper)) { col = 99; break; }
+			const char name = upper == 'N' ? 'H' : upper.toLatin1();
+			const int color = encoded.isUpper() ? 1 : 0;
+			pieces.push_back({row, col++, name, color});
+			if (name == 'K') ++kings[color];
+		}
+		if (col != 8) {
+			if (error) *error = tr("Every FEN rank must contain eight squares.");
+			return false;
+		}
+	}
+	if (kings[0] != 1 || kings[1] != 1) {
+		if (error) *error = tr("FEN must contain exactly one king of each color.");
+		return false;
+	}
+	bool halfOk = false, fullOk = false;
+	const int halfmove = fields.at(4).toInt(&halfOk);
+	const int fullmove = fields.at(5).toInt(&fullOk);
+	if (!halfOk || !fullOk || halfmove < 0 || fullmove < 1) {
+		if (error) *error = tr("Invalid FEN move counters.");
+		return false;
+	}
+
+	for (int row = 0; row < 8; ++row)
+		for (int col = 0; col < 8; ++col) {
+			tile[row][col]->piece = 0;
+			tile[row][col]->pieceName = 0;
+			tile[row][col]->display(0);
+			tile[row][col]->tileDisplay();
+		}
+	for (const FenPiece &piece : pieces) {
+		Tile *square = tile[piece.row][piece.col];
+		square->piece = 1;
+		square->pieceName = piece.name;
+		square->pieceColor = piece.color;
+		square->display(piece.name);
+	}
+	turn = fields.at(1) == "w" ? 1 : 0;
+	const QString rights = fields.at(2);
+	m_kingMoved[1] = !rights.contains('K') && !rights.contains('Q');
+	m_kingMoved[0] = !rights.contains('k') && !rights.contains('q');
+	m_rookMoved[1][1] = !rights.contains('K');
+	m_rookMoved[1][0] = !rights.contains('Q');
+	m_rookMoved[0][1] = !rights.contains('k');
+	m_rookMoved[0][0] = !rights.contains('q');
+	m_enPassantPawnTile = -1;
+	if (fields.at(3) != "-") {
+		const QString ep = fields.at(3).toLower();
+		if (ep.size() != 2 || ep.at(0) < 'a' || ep.at(0) > 'h'
+		        || (ep.at(1) != '3' && ep.at(1) != '6')) {
+			if (error) *error = tr("Invalid FEN en-passant square.");
+			return false;
+		}
+		const int targetCol = ep.at(0).toLatin1() - 'a';
+		const int targetRow = 8 - ep.at(1).digitValue();
+		const int pawnRow = targetRow + (turn ? 1 : -1);
+		Tile *pawn = tile[pawnRow][targetCol];
+		if (pawn->piece && pawn->pieceName == 'P' && pawn->pieceColor != turn)
+			m_enPassantPawnTile = pawn->tileNum;
+	}
+	m_halfmoveClock = halfmove;
+	m_fullmoveNumber = fullmove;
+	m_flag_finished = 0;
+	m_desynchronized = false;
+	count = max = 0;
+	click1 = nullptr;
+	m_move_history.clear();
+	m_moveTable->setRowCount(0);
+	m_positionOccurrences.clear();
+	m_boardHistory.clear();
+	m_boardHistoryMoves.clear();
+	clearLastMove();
+	recordCurrentPosition();
+	recordBoardSnapshot();
+	playerTurnNotice();
+	return true;
+}
+
+void RetroChessWindow::showChessDebugWindow()
+{
+	if (!m_debugWidget) return;
+	m_debugWidget->refresh();
+	m_debugWidget->show();
+	m_debugWidget->raise();
+	m_debugWidget->activateWindow();
+}
+
+void RetroChessWindow::updateDebugWindow()
+{
+	if (m_debugWidget) m_debugWidget->refresh();
+}
+
+void RetroChessWindow::stopForDesynchronization(const QString &reason)
+{
+	if (m_desynchronized) return;
+	m_desynchronized = true;
+	m_flag_finished = 7;
+	appendDebugEvent("DESYNC: " + reason + " Local FEN=" + currentFen());
+	showGameStatus(tr("Boards are out of sync — game paused"));
+	QMessageBox::critical(this, tr("Chess synchronization error"),
+	        tr("Boards are out of sync and the game has been paused.\n\n%1\n\n"
+	           "Open Debug to save the report.").arg(reason));
+}
+
 void RetroChessWindow::sendGameAction(const QString &action)
 {
 	if (mIsGxs) {
@@ -2096,17 +2319,46 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 	if (action.startsWith("move:")) {
 		if (!remote || m_flag_finished || turn == m_localplayer_turn) return;
 		const QStringList parts = action.split(':');
-		bool fromOk = false;
-		bool toOk = false;
-		const int fromTile = parts.size() == 4 ? parts.at(1).toInt(&fromOk) : -1;
-		const int toTile = parts.size() == 4 ? parts.at(2).toInt(&toOk) : -1;
-		const char promotion = parts.size() == 4 && !parts.at(3).isEmpty()
-		        ? parts.at(3).at(0).toLatin1() : '-';
+		const bool verifiedPacket = parts.size() == 6;
+		const bool legacyPacket = parts.size() == 4;
+		bool sequenceOk = legacyPacket;
+		bool fromOk = false, toOk = false;
+		const int sequence = verifiedPacket ? parts.at(1).toInt(&sequenceOk) : -1;
+		const int fromIndex = verifiedPacket ? 2 : 1;
+		const int toIndex = verifiedPacket ? 3 : 2;
+		const int promotionIndex = verifiedPacket ? 4 : 3;
+		const int fromTile = (verifiedPacket || legacyPacket)
+		        ? parts.at(fromIndex).toInt(&fromOk) : -1;
+		const int toTile = (verifiedPacket || legacyPacket)
+		        ? parts.at(toIndex).toInt(&toOk) : -1;
+		const char promotion = (verifiedPacket || legacyPacket)
+		        && !parts.at(promotionIndex).isEmpty()
+		        ? parts.at(promotionIndex).at(0).toLatin1() : '-';
+		if (!verifiedPacket && !legacyPacket) {
+			stopForDesynchronization(tr("Malformed move packet"));
+			return;
+		}
+		if (verifiedPacket && (!sequenceOk || sequence != m_boardHistory.size())) {
+			stopForDesynchronization(tr("Expected move sequence %1 but received %2")
+			        .arg(m_boardHistory.size()).arg(sequence));
+			return;
+		}
 		if (!fromOk || !toOk || fromTile < 0 || fromTile >= 64
-		        || toTile < 0 || toTile >= 64) return;
+		        || toTile < 0 || toTile >= 64) {
+			stopForDesynchronization(tr("Move packet contains an invalid square"));
+			return;
+		}
 
 		Tile *source = tile[fromTile / 8][fromTile % 8];
-		if (!source->piece || source->pieceColor != turn) return;
+		if (!source->piece || source->pieceColor != turn) {
+			stopForDesynchronization(tr("Received move %1%2 for the wrong piece or turn")
+			        .arg(chessSquareName(fromTile), chessSquareName(toTile)));
+			return;
+		}
+		appendDebugEvent(QString("RX move %1%2 sequence=%3 remoteHash=%4")
+		        .arg(chessSquareName(fromTile), chessSquareName(toTile))
+		        .arg(verifiedPacket ? QString::number(sequence) : "legacy")
+		        .arg(verifiedPacket ? parts.at(5) : "unavailable"));
 		if (promotion == 'Q' || promotion == 'R' || promotion == 'B' || promotion == 'H')
 			m_pendingPromotionChoice = promotion;
 		else
@@ -2126,7 +2378,22 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 			max = 0;
 			count = 0;
 			m_pendingPromotionChoice = 0;
-			showGameStatus(tr("Invalid move received"));
+			stopForDesynchronization(tr("Received move %1%2 is illegal in the local position")
+			        .arg(chessSquareName(fromTile), chessSquareName(toTile)));
+			return;
+		}
+		if (verifiedPacket) {
+			const QString localHash = positionHash();
+			const QString remoteHash = parts.at(5);
+			if (localHash != remoteHash) {
+				stopForDesynchronization(tr("Position hash differs after move %1: local %2, remote %3")
+				        .arg(sequence).arg(localHash, remoteHash));
+				return;
+			}
+			appendDebugEvent(QString("SYNC OK sequence=%1 hash=%2 FEN=%3")
+			        .arg(sequence).arg(localHash, currentFen()));
+		} else {
+			appendDebugEvent("Legacy move accepted without sequence/hash verification");
 		}
 		return;
 	}

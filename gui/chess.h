@@ -38,6 +38,7 @@ class QLabel;
 class QTableWidget;
 class QMediaPlayer;
 class QPushButton;
+class ChessDebugWidget;
 
 namespace Ui
 {
@@ -155,12 +156,23 @@ public:
 	QMediaPlayer *m_moveSound;
 	QMediaPlayer *m_captureSound;
 	QMediaPlayer *m_victorySound;
+	ChessDebugWidget *m_debugWidget;
+	int m_fullmoveNumber;
+	bool m_desynchronized;
     void recordLastMove( int tile_num );
 	void recordMove(int fromTile, int toTile, char pieceName, bool capture, char promotion = 0);
 	void recordCapturedPiece(char pieceName, int pieceColor);
 	void playMoveSound(bool capture);
 	void sendGameAction(const QString &action);
+	void sendMoveAction(int fromTile, int toTile, char promotion);
 	void applyGameAction(const QString &action, bool remote);
+	QString currentFen() const;
+	QString positionHash() const;
+	bool loadFen(const QString &fen, QString *error = nullptr);
+	void appendDebugEvent(const QString &event);
+	void showChessDebugWindow();
+	void updateDebugWindow();
+	void stopForDesynchronization(const QString &reason);
 	void showGameStatus(const QString &status);
 	void refreshBoardTheme();
     void drawLastMove();

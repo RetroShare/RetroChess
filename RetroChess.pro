@@ -49,6 +49,7 @@ SOURCES = RetroChessPlugin.cpp               \
           gui/NEMainpage.cpp \
           gui/RetroChessNotify.cpp \
           gui/chess.cpp \
+          gui/ChessDebugWidget.cpp \
           gui/tile.cpp \
           gui/RetroChessChatWidgetHolder.cpp \
           gui/RetroChessSettings.cpp \
@@ -57,6 +58,7 @@ SOURCES = RetroChessPlugin.cpp               \
           gui/toaster/RetroChessToasterNotify.cpp
 
 HEADERS = RetroChessPlugin.h                 \
+          gui/ChessDebugWidget.h \
           services/p3RetroChess.h            \
           services/rsRetroChessItems.h       \
           interface/rsRetroChess.h \

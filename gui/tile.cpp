@@ -53,11 +53,21 @@ void Tile::mousePressEvent(QMouseEvent *event)
 			        ? (chess_window_p)->click1->tileNum : -1;
 			const char movedPiece = fromTile >= 0
 			        ? (chess_window_p)->click1->pieceName : 0;
-			if (validate(++(chess_window_p)->count) && fromTile >= 0) {
+			const bool destinationAttempt = fromTile >= 0
+			        && this != (chess_window_p)->click1
+			        && !(piece && pieceColor == (chess_window_p)->turn);
+			const bool moved = validate(++(chess_window_p)->count);
+			if (moved && fromTile >= 0) {
 				const char promotion = movedPiece == 'P' && pieceName != 'P'
 				        ? pieceName : '-';
-				(chess_window_p)->sendGameAction(QString("move:%1:%2:%3")
-				        .arg(fromTile).arg(tileNum).arg(QChar(promotion)));
+				(chess_window_p)->sendMoveAction(fromTile, tileNum, promotion);
+			} else if (destinationAttempt) {
+				(chess_window_p)->appendDebugEvent(QString("REJECT local move tiles %1-%2 FEN=%3")
+				        .arg(fromTile).arg(tileNum).arg((chess_window_p)->currentFen()));
+			} else if ((chess_window_p)->count == 1
+			           && (chess_window_p)->click1 == this) {
+				(chess_window_p)->appendDebugEvent(QString("SELECT tile=%1 FEN=%2")
+				        .arg(tileNum).arg((chess_window_p)->currentFen()));
 			}
 		}
         // not local player's turn
@@ -237,8 +247,10 @@ bool Tile::validate(int c)
 
                 (chess_window_p)->max=0;
 
-                (chess_window_p)->turn=((chess_window_p)->turn+1)%2;
-                (chess_window_p)->count=0;
+				(chess_window_p)->turn=((chess_window_p)->turn+1)%2;
+				if ((chess_window_p)->turn == 1)
+					++(chess_window_p)->m_fullmoveNumber;
+				(chess_window_p)->count=0;
 
                 // ---- record last move
                 (chess_window_p)->clearLastMove();
