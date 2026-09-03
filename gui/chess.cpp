@@ -85,6 +85,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
 	m_rookMoved[0][0] = m_rookMoved[0][1] = false;
 	m_rookMoved[1][0] = m_rookMoved[1][1] = false;
 	m_halfmoveClock = 0;
+	click1 = nullptr;
 
     //tile = { { NULL } };
     count=0;
@@ -169,6 +170,7 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_rookMoved[0][0] = m_rookMoved[0][1] = false;
 	m_rookMoved[1][0] = m_rookMoved[1][1] = false;
 	m_halfmoveClock = 0;
+	click1 = nullptr;
 
 	//tile = { { NULL } };
 	count=0;
@@ -508,11 +510,10 @@ void RetroChessWindow::disOrange()
 
 void RetroChessWindow::validate_tile(int row, int col, int c)
 {
+	Q_UNUSED(c)
 	showLivePosition();
 	Tile *clickedtile = tile[col][row];
-	//if (!click1)click1=clickedtile;
-
-    clickedtile->validate(++count);
+	clickedtile->validate(++count);
 }
 
 void RetroChessWindow::initChessBoard()
@@ -1525,7 +1526,6 @@ char RetroChessWindow::promotionChoiceForPawn(int color)
 	char choice = 'Q';
 	if (dialog.exec() == QDialog::Accepted)
 		choice = choices.currentData().toString().at(0).toLatin1();
-	sendGameAction(QString("promotion:%1").arg(QChar(choice)));
 	return choice;
 }
 
@@ -2075,6 +2075,43 @@ void RetroChessWindow::showGameStatus(const QString &status)
 
 void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 {
+	if (action.startsWith("move:")) {
+		if (!remote || m_flag_finished || turn == m_localplayer_turn) return;
+		const QStringList parts = action.split(':');
+		bool fromOk = false;
+		bool toOk = false;
+		const int fromTile = parts.size() == 4 ? parts.at(1).toInt(&fromOk) : -1;
+		const int toTile = parts.size() == 4 ? parts.at(2).toInt(&toOk) : -1;
+		const char promotion = parts.size() == 4 && !parts.at(3).isEmpty()
+		        ? parts.at(3).at(0).toLatin1() : '-';
+		if (!fromOk || !toOk || fromTile < 0 || fromTile >= 64
+		        || toTile < 0 || toTile >= 64) return;
+
+		Tile *source = tile[fromTile / 8][fromTile % 8];
+		if (!source->piece || source->pieceColor != turn) return;
+		if (promotion == 'Q' || promotion == 'R' || promotion == 'B' || promotion == 'H')
+			m_pendingPromotionChoice = promotion;
+		else
+			m_pendingPromotionChoice = 0;
+
+		if (click1) click1->tileDisplay();
+		disOrange();
+		click1 = nullptr;
+		max = 0;
+		count = 0;
+		source->validate(++count);
+		const bool moved = tile[toTile / 8][toTile % 8]->validate(++count);
+		if (!moved) {
+			if (click1) click1->tileDisplay();
+			disOrange();
+			click1 = nullptr;
+			max = 0;
+			count = 0;
+			m_pendingPromotionChoice = 0;
+			showGameStatus(tr("Invalid move received"));
+		}
+		return;
+	}
 	if (action.startsWith("promotion:")) {
 		const char choice = action.size() > 10 ? action.at(10).toLatin1() : 'Q';
 		if (choice == 'Q' || choice == 'R' || choice == 'B' || choice == 'H')

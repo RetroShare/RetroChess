@@ -40,7 +40,7 @@ public:
 	void display(char elem);
 	void displayPosition(bool occupied, char pieceName, int color);
 	void tileDisplay();
-    void validate(int c);		// normal check(for sync)
+	bool validate(int c);		// Returns true when this click completes a legal move.
 
     void pawnLevelupCheck();
 
