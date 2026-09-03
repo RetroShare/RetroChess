@@ -213,6 +213,7 @@ void Tile::validate(int c)
 				        fromTile, tile_p->tileNum, movedPiece,
 				        wasCapture ? capturedPiece : 0, capturedColor);
 				(chess_window_p)->updateEnPassantTarget(fromTile, tile_p->tileNum, movedPiece);
+				(chess_window_p)->recordCurrentPosition();
 				(chess_window_p)->playMoveSound(wasCapture);
 
                 (chess_window_p)->playerTurnNotice();

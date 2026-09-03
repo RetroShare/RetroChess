@@ -302,7 +302,7 @@ void RetroChessWindow::initAccessories()
 		gameControls->addWidget(button);
 	}
 	abortButton->setToolTip(tr("Abort game"));
-	drawButton->setToolTip(tr("Offer a draw"));
+	drawButton->setToolTip(tr("Offer a draw or claim threefold repetition"));
 	resignButton->setToolTip(tr("Resign the game"));
 	m_ui->moveHistoryLayout->addLayout(gameControls);
 
@@ -322,6 +322,11 @@ void RetroChessWindow::initAccessories()
 	});
 	connect(drawButton, &QPushButton::clicked, this, [this]() {
 		if (m_flag_finished) return;
+		if (turn == m_localplayer_turn && canClaimThreefoldRepetition()) {
+			sendGameAction("draw_repetition");
+			applyGameAction("draw_repetition", false);
+			return;
+		}
 		sendGameAction("draw_offer");
 		m_ui->m_status_bar->setText(tr("Draw offer sent"));
 		m_ui->m_status_bar->show();
@@ -568,6 +573,7 @@ void RetroChessWindow::initChessBoard()
 
 	bR=0;
 	bC=4;
+	recordCurrentPosition();
 }
 
 
@@ -1570,6 +1576,103 @@ bool RetroChessWindow::hasAnyLegalMove(int color)
 	return false;
 }
 
+bool RetroChessWindow::isDeadPosition() const
+{
+	int bishops = 0;
+	int knights = 0;
+	int bishopSquareColor = -1;
+
+	for (int row = 0; row < 8; ++row) {
+		for (int col = 0; col < 8; ++col) {
+			const Tile *square = tile[row][col];
+			if (!square->piece || square->pieceName == 'K') continue;
+
+			switch (square->pieceName) {
+			case 'B': {
+				++bishops;
+				const int color = (row + col) % 2;
+				if (bishopSquareColor < 0)
+					bishopSquareColor = color;
+				else if (bishopSquareColor != color)
+					return false;
+				break;
+			}
+			case 'H':
+				++knights;
+				break;
+			default:
+				// A pawn, rook or queen always leaves mating material.
+				return false;
+			}
+		}
+	}
+
+	// K vs K, K+B vs K, and K+N vs K.
+	if (bishops + knights <= 1) return true;
+
+	// With no knights and every bishop confined to the same square color,
+	// neither side can ever mate (including positions with promoted bishops).
+	return knights == 0 && bishops > 0;
+}
+
+QString RetroChessWindow::currentPositionKey()
+{
+	QString key;
+	key.reserve(80);
+	for (int row = 0; row < 8; ++row) {
+		for (int col = 0; col < 8; ++col) {
+			const Tile *square = tile[row][col];
+			if (!square->piece) {
+				key += '.';
+				continue;
+			}
+			QChar piece(square->pieceName);
+			key += square->pieceColor ? piece.toUpper() : piece.toLower();
+		}
+	}
+
+	key += turn ? " w " : " b ";
+	key += !m_kingMoved[1] && !m_rookMoved[1][1] ? 'K' : '-';
+	key += !m_kingMoved[1] && !m_rookMoved[1][0] ? 'Q' : '-';
+	key += !m_kingMoved[0] && !m_rookMoved[0][1] ? 'k' : '-';
+	key += !m_kingMoved[0] && !m_rookMoved[0][0] ? 'q' : '-';
+	key += ' ';
+
+	// En-passant changes the position only when it gives the side to move an
+	// actual legal move; otherwise the available moves are identical.
+	int enPassantDestination = -1;
+	if (m_enPassantPawnTile >= 0) {
+		const int pawnRow = m_enPassantPawnTile / 8;
+		const int pawnCol = m_enPassantPawnTile % 8;
+		const int destinationRow = pawnRow + (turn ? -1 : 1);
+		for (int offset : {-1, 1}) {
+			const int fromCol = pawnCol + offset;
+			if (fromCol < 0 || fromCol > 7 || destinationRow < 0 || destinationRow > 7)
+				continue;
+			const Tile *candidate = tile[pawnRow][fromCol];
+			if (candidate->piece && candidate->pieceName == 'P'
+			        && candidate->pieceColor == turn
+			        && isLegalMove(pawnRow, fromCol, destinationRow, pawnCol, turn)) {
+				enPassantDestination = destinationRow * 8 + pawnCol;
+				break;
+			}
+		}
+	}
+	key += enPassantDestination < 0 ? "-" : QString::number(enPassantDestination);
+	return key;
+}
+
+void RetroChessWindow::recordCurrentPosition()
+{
+	const QString key = currentPositionKey();
+	m_positionOccurrences.insert(key, m_positionOccurrences.value(key) + 1);
+}
+
+bool RetroChessWindow::canClaimThreefoldRepetition()
+{
+	return m_positionOccurrences.value(currentPositionKey()) >= 3;
+}
+
 void RetroChessWindow::highlightCheckedKing(int color)
 {
 	for (int row = 0; row < 8; ++row)
@@ -1849,6 +1952,14 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 			m_pendingPromotionChoice = choice;
 		return;
 	}
+	if (action == "draw_repetition") {
+		if (!canClaimThreefoldRepetition()) return;
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		showGameResultDialog(false, true, tr("Draw by threefold repetition"));
+		emit gameEnded(QString::fromStdString(mPeerId));
+		return;
+	}
 	if (action == "draw_offer" && remote) {
 		const bool accepted = QMessageBox::question(
 		        this, tr("Draw offer"), tr("Your opponent offers a draw. Accept?"),
@@ -1919,9 +2030,15 @@ void RetroChessWindow::clearLastMove()
     }	// clear the last move queue
 }
 
-// 0: ongoing, 1: black win, 2: white win, 3: stalemate
+// 0: ongoing, 1: black win, 2: white win, 3: stalemate, 4: dead position
 int RetroChessWindow::resultJudge()
 {
+	if (isDeadPosition()) {
+		clearKingCheckHighlight();
+		showGameResultDialog(false, true, tr("Draw by dead position"));
+		return 4;
+	}
+
 	if (hasAnyLegalMove(turn)) {
 		if (isKingInCheck(turn)) {
 			highlightCheckedKing(turn);

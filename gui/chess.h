@@ -30,6 +30,7 @@
 #include "retroshare/rsidentity.h"
 
 #include <QQueue>
+#include <QHash>
 #include <QStringList>
 
 class QLabel;
@@ -103,6 +104,10 @@ public:
 	bool isPseudoLegalMove(int fromRow, int fromCol, int toRow, int toCol, int color) const;
 	bool isLegalMove(int fromRow, int fromCol, int toRow, int toCol, int color);
 	bool hasAnyLegalMove(int color);
+	bool isDeadPosition() const;
+	QString currentPositionKey();
+	void recordCurrentPosition();
+	bool canClaimThreefoldRepetition();
 	bool isEnPassantMove(int fromRow, int fromCol, int toRow, int toCol, int color) const;
 	void updateEnPassantTarget(int fromTile, int toTile, char movedPiece);
 	bool canCastle(int color, bool kingSide) const;
@@ -125,6 +130,7 @@ public:
 
     QQueue<int> m_last_move_que;	// record last move numbers
 	QStringList m_move_history;
+	QHash<QString, int> m_positionOccurrences;
 	QString m_capturedBlack;
 	QString m_capturedWhite;
 	QLabel *m_capturedBlackLabel;
