@@ -127,7 +127,10 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
         }
     }
 
-    QString title = QString::fromUtf8(p2name.c_str()) + " Playing Chess against " + QString::fromUtf8(p1name.c_str()) + player_str;
+	const std::string &localName = m_localplayer_turn == 0 ? p1name : p2name;
+	const std::string &opponentName = m_localplayer_turn == 0 ? p2name : p1name;
+	QString title = QString::fromUtf8(localName.c_str()) + " Playing Chess against "
+	        + QString::fromUtf8(opponentName.c_str()) + player_str;
 
     setWindowTitle(title);
     initAccessories();
@@ -199,9 +202,11 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	p1name = rsPeers->getPeerName(p1id);
 	p2name = rsPeers->getPeerName(p2id);
 
-	QString title = QString::fromStdString(p2name);
+	const std::string &localName = m_localplayer_turn == 0 ? p1name : p2name;
+	const std::string &opponentName = m_localplayer_turn == 0 ? p2name : p1name;
+	QString title = QString::fromStdString(localName);
 	title += " Playing Chess against ";
-	title += QString::fromStdString(p1name);
+	title += QString::fromStdString(opponentName);
 	title+=player_str;
 
 
@@ -482,6 +487,18 @@ void RetroChessWindow::initAccessories()
 		setGxsAvatar(m_ui->m_player2_avatar, p2avatar);
 	}
 
+	// Re-apply the final player-panel order after every accessory has been
+	// reparented. For Black, the Black/local frame belongs below the board and
+	// the White/opponent frame above it.
+	if (m_localplayer_turn == 0) {
+		m_ui->gridLayout_4->removeWidget(m_ui->frame);
+		m_ui->gridLayout_4->removeWidget(m_ui->frame_2);
+		m_ui->gridLayout_4->addWidget(m_ui->frame_2, 0, 0);
+		m_ui->gridLayout_4->addWidget(m_ui->frame, 5, 0);
+		m_ui->gridLayout_4->invalidate();
+		m_ui->gridLayout_4->activate();
+	}
+
 	//m_ui->m_move_record->setStyleSheet("QLabel {background-color: white;}");
 }
 
@@ -521,7 +538,8 @@ void RetroChessWindow::initChessBoard()
 	//QWidget *baseWidget, Tile *tile[8][8]
 	QWidget *baseWidget = m_ui->m_chess_board;
 
-	int i,j,k = 0,hor,ver;
+	int i,j,k = 0;
+	const bool flipped = m_localplayer_turn == 0;
 
 	//borderDisplay (border size: 552 * 552)
 	{
@@ -532,11 +550,8 @@ void RetroChessWindow::initChessBoard()
 	}
 
 	//Create 64 tiles (allocating memories to the objects of Tile class)
-	ver = BORDER_SIZE;
-
 	for(i = 0; i < 8; i++)
 	{
-		hor = BORDER_SIZE;
 		for(j=0; j<8; j++)
 		{
 			tile[i][j] = new Tile(baseWidget);
@@ -547,25 +562,28 @@ void RetroChessWindow::initChessBoard()
 			tile[i][j]->col=j;
 			tile[i][j]->tileNum=k++;
 			tile[i][j]->tileDisplay();
-			tile[i][j]->setGeometry(hor,ver,TILE_SIZE,TILE_SIZE);
+			const int displayRow = flipped ? 7 - i : i;
+			const int displayCol = flipped ? 7 - j : j;
+			tile[i][j]->setGeometry(
+			        BORDER_SIZE + displayCol * TILE_SIZE,
+			        BORDER_SIZE + displayRow * TILE_SIZE,
+			        TILE_SIZE, TILE_SIZE);
 			tile[i][j]->resize( TILE_SIZE, TILE_SIZE );
-
-			hor+=TILE_SIZE;
 		}
-		ver+=TILE_SIZE;
 	}
 
 	// Board coordinates use the existing 20-pixel border, so they do not
 	// increase the board or window dimensions.
 	for (i = 0; i < 8; ++i) {
-		QLabel *rankLabel = new QLabel(QString::number(8 - i), baseWidget);
+		const int boardIndex = flipped ? 7 - i : i;
+		QLabel *rankLabel = new QLabel(QString::number(8 - boardIndex), baseWidget);
 		rankLabel->setGeometry(0, BORDER_SIZE + i * TILE_SIZE, BORDER_SIZE, TILE_SIZE);
 		rankLabel->setAlignment(Qt::AlignCenter);
 		rankLabel->setStyleSheet(
 		        "QLabel { color: #353525; background: transparent; font-weight: bold; }");
 		rankLabel->raise();
 
-		QLabel *fileLabel = new QLabel(QString(QChar('a' + i)), baseWidget);
+		QLabel *fileLabel = new QLabel(QString(QChar('a' + boardIndex)), baseWidget);
 		fileLabel->setGeometry(BORDER_SIZE + i * TILE_SIZE, BOARD_INNER_SIZE, TILE_SIZE, BORDER_SIZE);
 		fileLabel->setAlignment(Qt::AlignCenter);
 		fileLabel->setStyleSheet(
