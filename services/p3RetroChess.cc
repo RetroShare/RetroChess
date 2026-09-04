@@ -291,8 +291,10 @@ bool	p3RetroChess::recvItem(RsItem *item)
 	switch(item->PacketSubType())
 	{
 	case RS_PKT_SUBTYPE_RetroChess_DATA:
+		// handleData() only forwards the message string to the notifier and
+		// does not take ownership, so the item must not be kept: keeping it
+		// leaked one item per received message.
 		handleData(dynamic_cast<RsRetroChessDataItem*>(item));
-		keep = true ;
 		break;
 	/*case RS_PKT_SUBTYPE_RetroChess_INVITE:
 		if (invites.find(item->PeerId()!=invites.end())){
