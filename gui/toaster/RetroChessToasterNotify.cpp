@@ -21,6 +21,7 @@
 
 #include "ChessToaster.h"
 #include "gui/RetroChessNotify.h"
+#include "gui/RetroChessSettings.h"
 #include "gui/SoundManager.h"
 #include "gui/settings/rsharesettings.h"
 #include "gui/toaster/ToasterItem.h"
@@ -55,7 +56,7 @@ RetroChessToasterNotify::RetroChessToasterNotify(
 
 void RetroChessToasterNotify::playInviteSound()
 {
-	if (SoundManager::isMute()) return;
+	if (SoundManager::isMute() || !RetroChessSettings::invitationSoundEnabled()) return;
 	mInviteSound->stop();
 	mInviteSound->setPosition(0);
 	mInviteSound->play();

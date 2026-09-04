@@ -25,6 +25,8 @@
 #include <QPushButton>
 #include <QHeaderView>
 #include <QTableWidget>
+#include <QStatusBar>
+#include <QToolButton>
 #include <QMediaPlayer>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QAudioOutput>
@@ -32,6 +34,7 @@
 #include <QMessageBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QEvent>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QTimer>
@@ -66,6 +69,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_moveSound(nullptr),
     m_captureSound(nullptr),
     m_victorySound(nullptr),
+    m_gameStatusBar(nullptr),
     m_debugWidget(nullptr),
     m_fullmoveNumber(1),
     m_desynchronized(false)
@@ -166,6 +170,7 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_moveSound(nullptr),
 	m_captureSound(nullptr),
 	m_victorySound(nullptr),
+	m_gameStatusBar(nullptr),
 	m_debugWidget(nullptr),
 	m_fullmoveNumber(1),
 	m_desynchronized(false)
@@ -240,6 +245,8 @@ static constexpr int TILE_SIZE = 64;
 static constexpr int BORDER_SIZE = 20;
 static constexpr int BOARD_FULL_SIZE = BORDER_SIZE * 2 + TILE_SIZE * 8; // 552
 static constexpr int BOARD_INNER_SIZE = BOARD_FULL_SIZE - BORDER_SIZE; // 532
+static constexpr int PLAYER_PANEL_WIDTH = 164;
+static constexpr int MOVES_PANEL_WIDTH = 190;
 
 class Border
 {
@@ -249,6 +256,10 @@ public:
 	{
 		QLabel *outLabel = new QLabel(baseWidget);
 		outLabel->setProperty("retroChessBoardBorder", true);
+		if (!Pos)
+			outLabel->setProperty("retroChessBorderSide", yPos == 0 ? "top" : "bottom");
+		else
+			outLabel->setProperty("retroChessBorderSide", xPos == 0 ? "left" : "right");
 
 		if(!Pos)
 			outLabel->setGeometry(xPos,yPos,BOARD_FULL_SIZE,BORDER_SIZE);        //Horizontal Borders
@@ -264,6 +275,11 @@ public:
 
 void RetroChessWindow::initAccessories()
 {
+	m_ui->frame_3->setFixedWidth(PLAYER_PANEL_WIDTH);
+	m_ui->moveHistoryFrame->setFixedWidth(MOVES_PANEL_WIDTH);
+	m_ui->splitter->setChildrenCollapsible(false);
+	m_ui->gridLayout->setAlignment(m_ui->splitter, Qt::AlignHCenter);
+
 	// display player's name
 	m_ui->m_player1_name->setText( p1name.c_str() );
 	m_ui->m_player2_name->setText( p2name.c_str() );
@@ -351,8 +367,28 @@ void RetroChessWindow::initAccessories()
 		label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 		label->setContentsMargins(4, 0, 4, 0);
 	}
-	m_ui->moveHistoryLayout->insertWidget(0, opponentStatus);
+	QHBoxLayout *opponentStatusLayout = new QHBoxLayout;
+	opponentStatusLayout->setContentsMargins(0, 0, 0, 0);
+	opponentStatusLayout->setSpacing(2);
+	opponentStatusLayout->addWidget(opponentStatus, 1);
+	QToolButton *settingsButton = new QToolButton(m_ui->moveHistoryFrame);
+	settingsButton->setIcon(QIcon(":/images/settings.png"));
+	settingsButton->setToolTip(tr("RetroChess settings"));
+	settingsButton->setAccessibleName(tr("RetroChess settings"));
+	settingsButton->setAutoRaise(true);
+	settingsButton->setStyleSheet(
+	        "QToolButton { border: none; background: transparent; padding: 2px; }");
+	settingsButton->setFocusPolicy(Qt::NoFocus);
+	settingsButton->setFixedSize(25, 25);
+	settingsButton->setIconSize(QSize(18, 18));
+	opponentStatusLayout->addWidget(settingsButton);
+	m_ui->moveHistoryLayout->insertLayout(0, opponentStatusLayout);
 	m_ui->moveHistoryLayout->addWidget(localStatus);
+	connect(settingsButton, &QToolButton::clicked, this, [this]() {
+		RetroChessSettingsDialog dialog(this);
+		if (dialog.exec() == QDialog::Accepted)
+			refreshBoardTheme();
+	});
 
 	QHBoxLayout *gameControls = new QHBoxLayout;
 	gameControls->setContentsMargins(2, 2, 2, 2);
@@ -365,12 +401,18 @@ void RetroChessWindow::initAccessories()
 	debugButton->setToolTip(tr("Debug"));
 	debugButton->setAccessibleName(tr("Debug"));
 	debugButton->setIconSize(QSize(18, 18));
-	for (QPushButton *button : {abortButton, drawButton, resignButton, debugButton}) {
+	for (QPushButton *button : {abortButton, drawButton, resignButton}) {
 		button->setMinimumWidth(0);
 		button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 		button->setStyleSheet("QPushButton { padding: 4px 2px; font-size: 10px; }");
 		gameControls->addWidget(button);
 	}
+	debugButton->setFixedSize(25, 25);
+	debugButton->setFlat(true);
+	debugButton->setFocusPolicy(Qt::NoFocus);
+	debugButton->setStyleSheet(
+	        "QPushButton { border: none; background: transparent; padding: 2px; }");
+	gameControls->addWidget(debugButton);
 	abortButton->setToolTip(tr("Abort game"));
 	drawButton->setToolTip(tr("Offer a draw or claim a rule-based draw"));
 	resignButton->setToolTip(tr("Resign the game"));
@@ -432,16 +474,18 @@ void RetroChessWindow::initAccessories()
 	m_victorySound->setVolume(80);
 #endif
 
-	// Keep game notifications out of the sidebar layout. This compact overlay
-	// behaves like a status bar and never changes the window's size hint.
+	// Use a real bottom status bar so messages reserve layout space and never
+	// overlap the resizable chess board.
 	m_ui->gridLayout_4->removeWidget(m_ui->m_status_bar);
-	m_ui->m_status_bar->setParent(this);
-	m_ui->m_status_bar->setFixedHeight(24);
+	m_gameStatusBar = new QStatusBar(this);
+	m_gameStatusBar->setSizeGripEnabled(false);
+	m_gameStatusBar->setFixedHeight(24);
+	m_ui->m_status_bar->setStyleSheet(QString());
 	m_ui->m_status_bar->setAlignment(Qt::AlignCenter);
-	m_ui->m_status_bar->setStyleSheet(
-	        "QLabel { background: #fff3cd; color: #7a1f1f; border-top: 1px solid #d6b656; padding: 2px; }");
-	m_ui->m_status_bar->setGeometry(0, height() - 24, width(), 24);
-	m_ui->m_status_bar->raise();
+	m_gameStatusBar->addWidget(m_ui->m_status_bar, 1);
+	m_ui->gridLayout->addWidget(m_gameStatusBar, 1, 0);
+	m_ui->gridLayout->setRowStretch(0, 1);
+	m_ui->gridLayout->setRowStretch(1, 0);
 
 	if (!mIsGxs) {
 		// Direct games need separate lookup paths: getAvatarFromSslId() is for
@@ -609,6 +653,7 @@ void RetroChessWindow::initChessBoard()
 	for (i = 0; i < 8; ++i) {
 		const int boardIndex = flipped ? 7 - i : i;
 		QLabel *rankLabel = new QLabel(QString::number(8 - boardIndex), baseWidget);
+		rankLabel->setProperty("retroChessRankIndex", i);
 		rankLabel->setGeometry(0, BORDER_SIZE + i * TILE_SIZE, BORDER_SIZE, TILE_SIZE);
 		rankLabel->setAlignment(Qt::AlignCenter);
 		rankLabel->setStyleSheet(
@@ -616,6 +661,7 @@ void RetroChessWindow::initChessBoard()
 		rankLabel->raise();
 
 		QLabel *fileLabel = new QLabel(QString(QChar('a' + boardIndex)), baseWidget);
+		fileLabel->setProperty("retroChessFileIndex", i);
 		fileLabel->setGeometry(BORDER_SIZE + i * TILE_SIZE, BOARD_INNER_SIZE, TILE_SIZE, BORDER_SIZE);
 		fileLabel->setAlignment(Qt::AlignCenter);
 		fileLabel->setStyleSheet(
@@ -678,6 +724,10 @@ void RetroChessWindow::initChessBoard()
 	bC=4;
 	recordCurrentPosition();
 	recordBoardSnapshot();
+	baseWidget->setMaximumHeight(QWIDGETSIZE_MAX);
+	baseWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+	baseWidget->installEventFilter(this);
+	layoutChessBoard();
 }
 
 
@@ -1901,7 +1951,7 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
     if (m_resultPopupShown)
         return;
     m_resultPopupShown = true;
-	if (!draw && m_victorySound) {
+	if (!draw && m_victorySound && RetroChessSettings::gameResultSoundEnabled()) {
 		m_victorySound->stop();
 		m_victorySound->setPosition(0);
 		m_victorySound->play();
@@ -1960,9 +2010,67 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
 void RetroChessWindow::resizeEvent(QResizeEvent *event)
 {
 	QWidget::resizeEvent(event);
-	if (m_ui && m_ui->m_status_bar) {
-		m_ui->m_status_bar->setGeometry(0, height() - 24, width(), 24);
-		m_ui->m_status_bar->raise();
+}
+
+bool RetroChessWindow::eventFilter(QObject *watched, QEvent *event)
+{
+	if (m_ui && watched == m_ui->m_chess_board && event->type() == QEvent::Resize)
+		layoutChessBoard();
+	return QWidget::eventFilter(watched, event);
+}
+
+void RetroChessWindow::layoutChessBoard()
+{
+	if (!m_ui || !m_ui->m_chess_board || !tile[0][0]) return;
+	QWidget *board = m_ui->m_chess_board;
+	const int desiredBoardWidth = qMax(BOARD_FULL_SIZE, board->height());
+	if (board->width() != desiredBoardWidth)
+		board->setFixedWidth(desiredBoardWidth);
+	const int handlesWidth = 2 * m_ui->splitter->handleWidth();
+	m_ui->splitter->setMaximumWidth(
+	        PLAYER_PANEL_WIDTH + desiredBoardWidth + MOVES_PANEL_WIDTH + handlesWidth);
+	const int availableSide = qMin(board->width(), board->height());
+	const int tileSize = qMax(1, (availableSide - 2 * BORDER_SIZE) / 8);
+	const int boardSide = 2 * BORDER_SIZE + 8 * tileSize;
+	const int offsetX = (board->width() - boardSide) / 2;
+	const int offsetY = (board->height() - boardSide) / 2;
+	const bool flipped = m_localplayer_turn == 0;
+
+	for (int row = 0; row < 8; ++row)
+		for (int col = 0; col < 8; ++col) {
+			Tile *square = tile[row][col];
+			const int displayRow = flipped ? 7 - row : row;
+			const int displayCol = flipped ? 7 - col : col;
+			square->setGeometry(
+			        offsetX + BORDER_SIZE + displayCol * tileSize,
+			        offsetY + BORDER_SIZE + displayRow * tileSize,
+			        tileSize, tileSize);
+			if (square->piece) square->display(square->pieceName);
+		}
+
+	const QList<QLabel*> labels = board->findChildren<QLabel*>(
+	        QString(), Qt::FindDirectChildrenOnly);
+	for (QLabel *label : labels) {
+		const QString side = label->property("retroChessBorderSide").toString();
+		if (side == "top")
+			label->setGeometry(offsetX, offsetY, boardSide, BORDER_SIZE);
+		else if (side == "bottom")
+			label->setGeometry(offsetX, offsetY + BORDER_SIZE + 8 * tileSize,
+			                   boardSide, BORDER_SIZE);
+		else if (side == "left")
+			label->setGeometry(offsetX, offsetY + BORDER_SIZE, BORDER_SIZE, 8 * tileSize);
+		else if (side == "right")
+			label->setGeometry(offsetX + BORDER_SIZE + 8 * tileSize,
+			                   offsetY + BORDER_SIZE, BORDER_SIZE, 8 * tileSize);
+
+		const QVariant rankIndex = label->property("retroChessRankIndex");
+		if (rankIndex.isValid())
+			label->setGeometry(offsetX, offsetY + BORDER_SIZE + rankIndex.toInt() * tileSize,
+			                   BORDER_SIZE, tileSize);
+		const QVariant fileIndex = label->property("retroChessFileIndex");
+		if (fileIndex.isValid())
+			label->setGeometry(offsetX + BORDER_SIZE + fileIndex.toInt() * tileSize,
+			                   offsetY + BORDER_SIZE + 8 * tileSize, tileSize, BORDER_SIZE);
 	}
 }
 
@@ -2106,6 +2214,8 @@ void RetroChessWindow::recordCapturedPiece(char pieceName, int pieceColor)
 
 void RetroChessWindow::playMoveSound(bool capture)
 {
+	if (capture ? !RetroChessSettings::captureSoundEnabled()
+	            : !RetroChessSettings::moveSoundEnabled()) return;
 	QMediaPlayer *player = capture ? m_captureSound : m_moveSound;
 	if (!player)
 		return;

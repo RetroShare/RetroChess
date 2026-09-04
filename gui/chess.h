@@ -38,6 +38,7 @@ class QLabel;
 class QTableWidget;
 class QMediaPlayer;
 class QPushButton;
+class QStatusBar;
 class ChessDebugWidget;
 
 namespace Ui
@@ -54,6 +55,7 @@ private:
 
 	void initAccessories();
 	void initChessBoard();
+	void layoutChessBoard();
 	RsPeerId p1id;
 	RsPeerId p2id;
 	std::string p1name;
@@ -62,6 +64,7 @@ private:
 protected:
     void closeEvent(QCloseEvent *event) override;
 	void resizeEvent(QResizeEvent *event) override;
+	bool eventFilter(QObject *watched, QEvent *event) override;
 
 public:
 	std::string mPeerId;
@@ -156,6 +159,7 @@ public:
 	QMediaPlayer *m_moveSound;
 	QMediaPlayer *m_captureSound;
 	QMediaPlayer *m_victorySound;
+	QStatusBar *m_gameStatusBar;
 	ChessDebugWidget *m_debugWidget;
 	int m_fullmoveNumber;
 	bool m_desynchronized;
