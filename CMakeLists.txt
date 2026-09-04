@@ -98,15 +98,20 @@ if(RS_DEVELOPMENT_BUILD)
     )
 endif()
 
+# Resolve the RetroShare super-project root so this file works both from the
+# super-project (add_subdirectory) and standalone (cmake run in this dir),
+# as long as the plugin lives in <root>/plugins/RetroChess.
+get_filename_component(RS_SUPERPROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+
 target_include_directories(RetroChess PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/gui
     ${CMAKE_CURRENT_SOURCE_DIR}/services
     ${CMAKE_CURRENT_SOURCE_DIR}/interface
-    ${CMAKE_SOURCE_DIR}/libretroshare/src
-    ${CMAKE_SOURCE_DIR}/retroshare-gui/src
-    ${CMAKE_SOURCE_DIR}/retroshare-gui/src/gui
-    ${CMAKE_SOURCE_DIR}/supportlibs/rapidjson/include
+    ${RS_SUPERPROJECT_ROOT}/libretroshare/src
+    ${RS_SUPERPROJECT_ROOT}/retroshare-gui/src
+    ${RS_SUPERPROJECT_ROOT}/retroshare-gui/src/gui
+    ${RS_SUPERPROJECT_ROOT}/supportlibs/rapidjson/include
 )
 
 install(TARGETS RetroChess DESTINATION lib/retroshare/plugins)

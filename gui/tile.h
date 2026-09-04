@@ -29,8 +29,8 @@ class Tile: public QLabel
 {
 public:
 	//Constructors
-	Tile(QWidget* pParent=0, Qt::WindowFlags f=0);
-	Tile(const QString& text, QWidget* pParent = 0, Qt::WindowFlags f = 0);
+	Tile(QWidget* pParent=0, Qt::WindowFlags f=Qt::WindowFlags());
+	Tile(const QString& text, QWidget* pParent = 0, Qt::WindowFlags f = Qt::WindowFlags());
 
 	//Methods
 protected:

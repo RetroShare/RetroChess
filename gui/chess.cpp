@@ -26,6 +26,9 @@
 #include <QHeaderView>
 #include <QTableWidget>
 #include <QMediaPlayer>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QAudioOutput>
+#endif
 #include <QMessageBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -408,12 +411,24 @@ void RetroChessWindow::initAccessories()
 	m_moveSound = new QMediaPlayer(this);
 	m_captureSound = new QMediaPlayer(this);
 	m_victorySound = new QMediaPlayer(this);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	m_moveSound->setAudioOutput(new QAudioOutput(m_moveSound));
+	m_captureSound->setAudioOutput(new QAudioOutput(m_captureSound));
+	m_victorySound->setAudioOutput(new QAudioOutput(m_victorySound));
+	m_moveSound->setSource(QUrl("qrc:/sound/Move.mp3"));
+	m_captureSound->setSource(QUrl("qrc:/sound/Capture.mp3"));
+	m_victorySound->setSource(QUrl("qrc:/sound/victory.mp3"));
+	m_moveSound->audioOutput()->setVolume(0.7f);
+	m_captureSound->audioOutput()->setVolume(0.7f);
+	m_victorySound->audioOutput()->setVolume(0.8f);
+#else
 	m_moveSound->setMedia(QUrl("qrc:/sound/Move.mp3"));
 	m_captureSound->setMedia(QUrl("qrc:/sound/Capture.mp3"));
 	m_victorySound->setMedia(QUrl("qrc:/sound/victory.mp3"));
 	m_moveSound->setVolume(70);
 	m_captureSound->setVolume(70);
 	m_victorySound->setVolume(80);
+#endif
 
 	// Keep game notifications out of the sidebar layout. This compact overlay
 	// behaves like a status bar and never changes the window's size hint.

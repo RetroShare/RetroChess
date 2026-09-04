@@ -37,6 +37,7 @@
 #include <QTimer>
 #include <QShowEvent>
 #include <QDateTime>
+#include <QLocale>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -262,7 +263,7 @@ void NEMainpage::addGxsInvitation(const RsGxsId &gxs_id)
 	identityFont.setPointSize(qMax(identityFont.pointSize() + 4, 18));
 	item->setFont(0, identityFont);
 	item->setId(gxs_id, 0, true);
-	item->setText(1, QDateTime::currentDateTime().toString(Qt::DefaultLocaleShortDate));
+	item->setText(1, QLocale().toString(QDateTime::currentDateTime(), QLocale::ShortFormat));
 	item->setSizeHint(0, QSize(44, 48));
 
 	QWidget *actions = new QWidget(ui->pendingInvites);
