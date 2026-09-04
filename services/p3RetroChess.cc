@@ -193,8 +193,10 @@ void p3RetroChess::sendInvite(RsPeerId peerID)
 
 void p3RetroChess::raw_msg_peer(RsPeerId peerID, std::string msg)
 {
+#ifdef DEBUG_RetroChess
 	std::cout << "MSging: " << peerID.toStdString() << "\n";
 	std::cout << "MSging: " << msg << "\n";
+#endif
 	/* create the packet */
 	RsRetroChessDataItem *pingPkt = new RsRetroChessDataItem();
 	pingPkt->PeerId(peerID);
@@ -284,7 +286,9 @@ void p3RetroChess::handleData(RsRetroChessDataItem *item)
 
 bool	p3RetroChess::recvItem(RsItem *item)
 {
+#ifdef DEBUG_RetroChess
 	std::cout << "recvItem type: " << item->PacketSubType() << "\n";
+#endif
 	/* pass to specific handler */
 	bool keep = false ;
 
@@ -754,7 +758,9 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
 
     // All messages are JSON
     std::string msg((const char*)data, data_size);
+#ifdef DEBUG_RetroChess
     std::cout << "Chess::handleRawData: received from " << sender_id << ": " << msg << std::endl;
+#endif
 
     QJsonDocument jsondoc = QJsonDocument::fromJson(QByteArray::fromStdString(msg));
     QVariantMap map = jsondoc.toVariant().toMap();

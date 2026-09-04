@@ -35,9 +35,11 @@ void RetroChessNotify::notifyReceivedPaint(const RsPeerId &peer_id, int x, int y
 
 void RetroChessNotify::notifyReceivedMsg(const RsPeerId& peer_id, QString str)
 {
+#ifdef DEBUG_RetroChess
 	std::cout << "pNotify Recvd Packet from: " << peer_id;
 	std::cout << " saying " << str.toStdString();
 	std::cout << std::endl;
+#endif
 	emit NeMsgArrived(peer_id, str) ;
 }
 

@@ -404,9 +404,11 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		return;
 	}
 	QVariantMap vmap = jdoc.toVariant().toMap();
+#ifdef DEBUG_RetroChess
 	std::cout << "GUI got Packet from: " << peer_id;
 	std::cout << " saying " << str.toStdString();
 	std::cout << std::endl;
+#endif
 	QString type = vmap.value("type").toString();
 	if (type == "chessclick")
 	{
