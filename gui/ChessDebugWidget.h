@@ -1,7 +1,7 @@
 /*******************************************************************************
- * gui/tile.h                                                                  *
+ * gui/ChessDebugWidget.h                                                      *
  *                                                                             *
- * Copyright (C) 2020 RetroShare Team <retroshare.project@gmail.com>           *
+ * Copyright (C) 2026 RetroShare Team <retroshare.project@gmail.com>           *
  *                                                                             *
  * This program is free software: you can redistribute it and/or modify        *
  * it under the terms of the GNU Affero General Public License as              *
@@ -18,48 +18,37 @@
  *                                                                             *
  *******************************************************************************/
 
-#ifndef TILE_H
-#define TILE_H
+#ifndef CHESSDEBUGWIDGET_H
+#define CHESSDEBUGWIDGET_H
 
-#include <QLabel>
-#include <QDebug>
-#include <QWidget>
+#include <QDialog>
+#include <QStringList>
+#include <functional>
 
-class Tile: public QLabel
+class QLabel;
+class QLineEdit;
+class QTextEdit;
+
+class ChessDebugWidget : public QDialog
 {
 public:
-	//Constructors
-	Tile(QWidget* pParent=0, Qt::WindowFlags f=0);
-	Tile(const QString& text, QWidget* pParent = 0, Qt::WindowFlags f = 0);
+	using FenProvider = std::function<QString()>;
 
-	//Methods
-protected:
-	void mousePressEvent(QMouseEvent *event);
-
-public:
-	void display(char elem);
-	void displayPosition(bool occupied, char pieceName, int color);
-	void tileDisplay();
-	bool validate(int c);		// Returns true when this click completes a legal move.
-
-    void pawnLevelupCheck();
-
-	void setChessWindow( QWidget *board);
-	QWidget* getChessWindow() const;
-
-	//Fields
-	int tileColor;	// "background" 0(black) : 1(white)
-	int piece;		// 0(empty) : 1(piece occpied)
-	int pieceColor;	// 0(black) : 1(white)
-	int row,col;
-	int tileNum;	// index in one-division array
-
-	char pieceName;
+	explicit ChessDebugWidget(
+	        const QString &gameDescription, FenProvider fenProvider,
+	        QWidget *parent = nullptr);
+	void appendEvent(const QString &event);
+	void refresh();
+	QString report() const;
+	static QString hashFen(const QString &fen);
 
 private:
-    QWidget *m_chess_window_p;	//parent chess board
+	QString m_gameDescription;
+	FenProvider m_fenProvider;
+	QStringList m_events;
+	QLineEdit *m_fenEdit;
+	QLabel *m_hashLabel;
+	QTextEdit *m_logEdit;
 };
 
-void validate_tile(int row, int col, int c);
-
-#endif // TILE_H
+#endif // CHESSDEBUGWIDGET_H

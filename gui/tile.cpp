@@ -31,7 +31,6 @@ extern Tile *click1;
 extern Tile *tile[8][8];
 */
 
-void validate(Tile *tile_p,int c);
 void disOrange();
 
 Tile::Tile(QWidget* pParent, Qt::WindowFlags f) : QLabel(pParent, f)
@@ -45,20 +44,32 @@ void Tile::mousePressEvent(QMouseEvent *event)
     RetroChessWindow *chess_window_p = dynamic_cast<RetroChessWindow*>(m_chess_window_p );
     if (!chess_window_p) return;
 	chess_window_p->showLivePosition();
-    std::string peer_id = (chess_window_p)->mPeerId;
-
-    if( (chess_window_p)->m_flag_finished == 0)	// not finish yet
-    {
+	if( (chess_window_p)->m_flag_finished == 0)	// not finish yet
+	{
         // local player's turn
-        if((chess_window_p)->m_localplayer_turn == (chess_window_p)->turn)
-        {
-            validate( ++(chess_window_p)->count );
-                if ((chess_window_p)->mIsGxs) {
-                    rsRetroChess->chess_click_gxs((chess_window_p)->mGxsId, this->row,this->col, (chess_window_p)->count);
-                } else {
-                    rsRetroChess->chess_click((chess_window_p)->mPeerId, this->row,this->col, (chess_window_p)->count);
-                }
-        }
+		if((chess_window_p)->m_localplayer_turn == (chess_window_p)->turn)
+		{
+			const int fromTile = (chess_window_p)->count == 1 && (chess_window_p)->click1
+			        ? (chess_window_p)->click1->tileNum : -1;
+			const char movedPiece = fromTile >= 0
+			        ? (chess_window_p)->click1->pieceName : 0;
+			const bool destinationAttempt = fromTile >= 0
+			        && this != (chess_window_p)->click1
+			        && !(piece && pieceColor == (chess_window_p)->turn);
+			const bool moved = validate(++(chess_window_p)->count);
+			if (moved && fromTile >= 0) {
+				const char promotion = movedPiece == 'P' && pieceName != 'P'
+				        ? pieceName : '-';
+				(chess_window_p)->sendMoveAction(fromTile, tileNum, promotion);
+			} else if (destinationAttempt) {
+				(chess_window_p)->appendDebugEvent(QString("REJECT local move tiles %1-%2 FEN=%3")
+				        .arg(fromTile).arg(tileNum).arg((chess_window_p)->currentFen()));
+			} else if ((chess_window_p)->count == 1
+			           && (chess_window_p)->click1 == this) {
+				(chess_window_p)->appendDebugEvent(QString("SELECT tile=%1 FEN=%2")
+				        .arg(tileNum).arg((chess_window_p)->currentFen()));
+			}
+		}
         // not local player's turn
     }
 
@@ -112,14 +123,15 @@ void Tile::displayPosition(bool occupied, char name, int color)
 }
 
 // check click
-void Tile::validate(int c)
+bool Tile::validate(int c)
 {
     Tile *tile_p = this;
 
     int retValue,i;
 
     RetroChessWindow *chess_window_p = dynamic_cast< RetroChessWindow*> (m_chess_window_p );
-    if (!chess_window_p) return;
+	if (!chess_window_p) return false;
+	bool moveCompleted = false;
 
     // click 1
     if(c == 1)
@@ -151,16 +163,35 @@ void Tile::validate(int c)
     }
 
     // click 0 or 2 times(piece moved)
-    else
-    {
+	else
+	{
+		if (!(chess_window_p)->click1) {
+			(chess_window_p)->count = 0;
+			(chess_window_p)->max = 0;
+			return false;
+		}
 
-        if(tile_p->tileNum==(chess_window_p)->click1->tileNum)
+		if(tile_p->tileNum==(chess_window_p)->click1->tileNum)
         {
             (chess_window_p)->click1->tileDisplay();
             (chess_window_p)->disOrange();
-            (chess_window_p)->max=0;
-            (chess_window_p)->count=0;
-        }
+			(chess_window_p)->max=0;
+			(chess_window_p)->count=0;
+			(chess_window_p)->click1=nullptr;
+		}
+		else if (tile_p->piece && tile_p->pieceColor == (chess_window_p)->turn)
+		{
+			(chess_window_p)->disOrange();
+			(chess_window_p)->max = 0;
+			if ((chess_window_p)->chooser(tile_p)) {
+				tile_p->setStyleSheet("QLabel {background-color: green;}");
+				(chess_window_p)->click1 = tile_p;
+				(chess_window_p)->count = 1;
+			} else {
+				(chess_window_p)->click1 = nullptr;
+				(chess_window_p)->count = 0;
+			}
+		}
 
         for(i=0; i<(chess_window_p)->max; i++)
         {
@@ -216,8 +247,10 @@ void Tile::validate(int c)
 
                 (chess_window_p)->max=0;
 
-                (chess_window_p)->turn=((chess_window_p)->turn+1)%2;
-                (chess_window_p)->count=0;
+				(chess_window_p)->turn=((chess_window_p)->turn+1)%2;
+				if ((chess_window_p)->turn == 1)
+					++(chess_window_p)->m_fullmoveNumber;
+				(chess_window_p)->count=0;
 
                 // ---- record last move
                 (chess_window_p)->clearLastMove();
@@ -237,8 +270,10 @@ void Tile::validate(int c)
 				(chess_window_p)->recordBoardSnapshot(fromTile, tile_p->tileNum);
 				(chess_window_p)->playMoveSound(wasCapture);
 
-                (chess_window_p)->playerTurnNotice();
-                // ----
+				(chess_window_p)->playerTurnNotice();
+				moveCompleted = true;
+				(chess_window_p)->click1 = nullptr;
+				// ----
 
                 break;
             }
@@ -249,7 +284,8 @@ void Tile::validate(int c)
         (chess_window_p)->drawLastMove();
     }
 
-    (chess_window_p)->m_flag_finished = (chess_window_p)->resultJudge();
+	(chess_window_p)->m_flag_finished = (chess_window_p)->resultJudge();
+	return moveCompleted;
 }
 
 void Tile::tileDisplay()
