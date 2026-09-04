@@ -26,6 +26,9 @@
 #include "gui/toaster/ToasterItem.h"
 #include <retroshare/rspeers.h>
 #include <QMediaPlayer>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QAudioOutput>
+#endif
 #include <QUrl>
 
 namespace
@@ -38,7 +41,12 @@ RetroChessToasterNotify::RetroChessToasterNotify(
         RetroChessNotify *notify, QObject *parent)
     : ToasterNotify(parent), mNotify(notify), mInviteSound(new QMediaPlayer(this))
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	mInviteSound->setAudioOutput(new QAudioOutput(mInviteSound));
+	mInviteSound->setSource(QUrl("qrc:/sound/ping.mp3"));
+#else
 	mInviteSound->setMedia(QUrl("qrc:/sound/ping.mp3"));
+#endif
 	connect(notify, &RetroChessNotify::chessInvited,
 	        this, &RetroChessToasterNotify::chessInvited, Qt::QueuedConnection);
 	connect(notify, &RetroChessNotify::chessInvitedGxs,
