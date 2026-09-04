@@ -24,6 +24,7 @@
 #include <QLabel>
 #include <QDebug>
 #include <QWidget>
+#include <QPoint>
 
 class Tile: public QLabel
 {
@@ -34,7 +35,10 @@ public:
 
 	//Methods
 protected:
-	void mousePressEvent(QMouseEvent *event);
+	void mousePressEvent(QMouseEvent *event) override;
+	void mouseMoveEvent(QMouseEvent *event) override;
+	void dragEnterEvent(QDragEnterEvent *event) override;
+	void dropEvent(QDropEvent *event) override;
 
 public:
 	void display(char elem);
@@ -57,6 +61,8 @@ public:
 	char pieceName;
 
 private:
+	void activateSquare();
+	QPoint m_dragStartPosition;
     QWidget *m_chess_window_p;	//parent chess board
 };
 

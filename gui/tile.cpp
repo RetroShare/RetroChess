@@ -25,6 +25,11 @@
 
 #include <QIcon>
 #include <QPointer>
+#include <QApplication>
+#include <QDrag>
+#include <QDragEnterEvent>
+#include <QMimeData>
+#include <QMouseEvent>
 
 /*extern int count,turn;
 extern QWidget *myWidget;
@@ -35,12 +40,29 @@ extern Tile *tile[8][8];
 void disOrange();
 
 Tile::Tile(QWidget* pParent, Qt::WindowFlags f) : QLabel(pParent, f)
-{}
+{
+	setAcceptDrops(true);
+}
 
 Tile::Tile(const QString& text, QWidget* pParent, Qt::WindowFlags f) : QLabel(text, pParent, f)
-{}
+{
+	setAcceptDrops(true);
+}
 
 void Tile::mousePressEvent(QMouseEvent *event)
+{
+	if (event->button() == Qt::LeftButton) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+		m_dragStartPosition = event->position().toPoint();
+#else
+		m_dragStartPosition = event->pos();
+#endif
+		activateSquare();
+	}
+	QLabel::mousePressEvent(event);
+}
+
+void Tile::activateSquare()
 {
     RetroChessWindow *chess_window_p = dynamic_cast<RetroChessWindow*>(m_chess_window_p );
     if (!chess_window_p) return;
@@ -79,7 +101,70 @@ void Tile::mousePressEvent(QMouseEvent *event)
         // not local player's turn
     }
 
-    QLabel::mousePressEvent( event );
+}
+
+void Tile::mouseMoveEvent(QMouseEvent *event)
+{
+	const QPoint mousePosition =
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	        event->position().toPoint();
+#else
+	        event->pos();
+#endif
+	if (!(event->buttons() & Qt::LeftButton)
+	        || (mousePosition - m_dragStartPosition).manhattanLength()
+	           < QApplication::startDragDistance()) {
+		QLabel::mouseMoveEvent(event);
+		return;
+	}
+
+	RetroChessWindow *chessWindow = dynamic_cast<RetroChessWindow*>(m_chess_window_p);
+	if (!chessWindow || chessWindow->m_flag_finished
+	        || chessWindow->turn != chessWindow->m_localplayer_turn
+	        || chessWindow->count != 1 || chessWindow->click1 != this) return;
+
+	QDrag *drag = new QDrag(this);
+	QMimeData *mime = new QMimeData;
+	mime->setData("application/x-retrochess-tile", QByteArray::number(tileNum));
+	drag->setMimeData(mime);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	const QPixmap piecePixmap = pixmap();
+#else
+	const QPixmap piecePixmap = pixmap(Qt::ReturnByValue);
+#endif
+	if (!piecePixmap.isNull()) {
+		drag->setPixmap(piecePixmap);
+		drag->setHotSpot(mousePosition);
+	}
+	drag->exec(Qt::MoveAction);
+}
+
+void Tile::dragEnterEvent(QDragEnterEvent *event)
+{
+	RetroChessWindow *chessWindow = dynamic_cast<RetroChessWindow*>(m_chess_window_p);
+	if (chessWindow && !chessWindow->m_flag_finished
+	        && chessWindow->turn == chessWindow->m_localplayer_turn
+	        && chessWindow->click1
+	        && event->mimeData()->hasFormat("application/x-retrochess-tile")
+	        && event->mimeData()->data("application/x-retrochess-tile").toInt()
+	           == chessWindow->click1->tileNum)
+		event->acceptProposedAction();
+	else
+		event->ignore();
+}
+
+void Tile::dropEvent(QDropEvent *event)
+{
+	RetroChessWindow *chessWindow = dynamic_cast<RetroChessWindow*>(m_chess_window_p);
+	if (!chessWindow || !chessWindow->click1
+	        || !event->mimeData()->hasFormat("application/x-retrochess-tile")
+	        || event->mimeData()->data("application/x-retrochess-tile").toInt()
+	           != chessWindow->click1->tileNum) {
+		event->ignore();
+		return;
+	}
+	event->acceptProposedAction();
+	activateSquare();
 }
 
 void Tile::display(char elem)
