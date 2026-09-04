@@ -502,6 +502,19 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 
 void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 {
+	if (RetroChessWindow *existing = activeGames.value(peer_id, nullptr)) {
+		if (existing->m_flag_finished == 0) {
+			// A game with this opponent is already running. Overwriting the
+			// map entry would orphan the old window (it stays open but stops
+			// receiving moves) — just bring it to the front instead.
+			existing->raise();
+			existing->activateWindow();
+			return;
+		}
+		// Finished game: close it silently before opening the new one.
+		existing->closeForRematch();
+	}
+
 	RetroChessWindow *rcw = new RetroChessWindow(peer_id, player_id);
 	connect(rcw, SIGNAL(rematchRequestedPeer(QString,int)),
 	        this, SLOT(requestRematchPeer(QString,int)));
@@ -529,8 +542,18 @@ void NEMainpage::requestRematchPeer(QString peerId, int localColor)
 
 void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 {
+    if (RetroChessWindow *existing = activeGames.value(gxs_id.toStdString(), nullptr)) {
+        if (existing->m_flag_finished == 0) {
+            // Same as create_chess_window(): never orphan a running game.
+            existing->raise();
+            existing->activateWindow();
+            return;
+        }
+        existing->closeForRematch();
+    }
+
     // Open the window with the GXS constructor
-    RetroChessWindow *win = new RetroChessWindow(gxs_id, player_id); 
+    RetroChessWindow *win = new RetroChessWindow(gxs_id, player_id);
     connect(win, SIGNAL(rematchRequested(RsGxsId,int)),
             this, SLOT(requestRematchGxs(RsGxsId,int)));
     connect(win, SIGNAL(gameClosed(QString)), this, SLOT(removeActiveGame(QString)));
