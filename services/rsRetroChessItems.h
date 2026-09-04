@@ -84,7 +84,9 @@ public:
 class RsRetroChessDataItem: public RsRetroChessItem
 {
 public:
-	RsRetroChessDataItem() :RsRetroChessItem(RS_PKT_SUBTYPE_RetroChess_DATA) {}
+	// flags and data_size must not stay uninitialized: serialise() writes
+	// both to the wire, which leaked 4 bytes of heap garbage per packet.
+	RsRetroChessDataItem() :RsRetroChessItem(RS_PKT_SUBTYPE_RetroChess_DATA), flags(0), data_size(0) {}
 	RsRetroChessDataItem(void *data,uint32_t size) ; // de-serialization
 
 	virtual bool serialise(void *data,uint32_t& size) ;
