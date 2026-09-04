@@ -167,8 +167,10 @@ private:
 	// Leave messages get a short delivery window before their tunnel is closed.
 	std::map<RsGxsId, time_t> mPendingGxsCloses;
 	// DistantChatIds for which sendInvite_chat() was called but getDistantChatStatus()
-	// failed (tunnel not established yet). Retried every tick() until it succeeds.
-	std::map<DistantChatPeerId, time_t> mPendingDistantChatInvites;
+	// failed (tunnel not established yet). Retried every tick() until it succeeds
+	// or the give-up deadline passes.
+	struct PendingDistantInvite { time_t queuedTS; time_t lastTryTS; };
+	std::map<DistantChatPeerId, PendingDistantInvite> mPendingDistantChatInvites;
 
 	RsGxsTunnelService *mGxsTunnels;
 	RsMutex mRetroChessMtx;

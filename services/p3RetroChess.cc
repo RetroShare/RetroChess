@@ -536,9 +536,12 @@ bool p3RetroChess::sendInvite_chat(const ChatId &chatId)
         std::cout << "Chess: sendInvite_chat: distant chat not ready yet, queuing retry for "
                   << chatId.toStdString() << std::endl;
         RsStackMutex stack(mRetroChessMtx);
-        // Only add once; don't reset timestamp on duplicate clicks
+        // Only add once; don't reset timestamps on duplicate clicks
         if (mPendingDistantChatInvites.find(chatId.toDistantChatId()) == mPendingDistantChatInvites.end()) {
-            mPendingDistantChatInvites[chatId.toDistantChatId()] = time(NULL);
+            PendingDistantInvite pending;
+            pending.queuedTS = time(NULL);
+            pending.lastTryTS = pending.queuedTS;
+            mPendingDistantChatInvites[chatId.toDistantChatId()] = pending;
         }
         return true;
     }
@@ -615,7 +618,12 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
 
 void p3RetroChess::retryPendingDistantChatInvites()
 {
-    std::map<DistantChatPeerId, time_t> pending;
+    // Stop retrying an invite whose distant chat never comes up. Without a
+    // deadline a single click on the chess button of an offline identity
+    // meant a retry every 2 seconds for the whole session.
+    static const time_t GIVE_UP_AFTER_SECS = 600;
+
+    std::map<DistantChatPeerId, PendingDistantInvite> pending;
     {
         RsStackMutex stack(mRetroChessMtx);
         pending = mPendingDistantChatInvites;
@@ -625,8 +633,16 @@ void p3RetroChess::retryPendingDistantChatInvites()
 
     time_t now = time(NULL);
     for (auto it = pending.begin(); it != pending.end(); ++it) {
+        if (now - it->second.queuedTS > GIVE_UP_AFTER_SECS) {
+            std::cerr << "Chess: giving up on distant chat invite for "
+                      << it->first << " (tunnel never came up)" << std::endl;
+            RsStackMutex stack(mRetroChessMtx);
+            mPendingDistantChatInvites.erase(it->first);
+            continue;
+        }
+
         // Throttle: only retry every 2 seconds
-        if (now - it->second < 2) continue;
+        if (now - it->second.lastTryTS < 2) continue;
 
         DistantChatPeerInfo info;
         if (rsChats->getDistantChatStatus(it->first, info)
@@ -645,7 +661,9 @@ void p3RetroChess::retryPendingDistantChatInvites()
         } else {
             // Still not ready — update timestamp so we wait another 2 seconds
             RsStackMutex stack(mRetroChessMtx);
-            mPendingDistantChatInvites[it->first] = now;
+            auto mit = mPendingDistantChatInvites.find(it->first);
+            if (mit != mPendingDistantChatInvites.end())
+                mit->second.lastTryTS = now;
         }
     }
 }
