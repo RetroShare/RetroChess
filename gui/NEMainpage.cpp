@@ -313,7 +313,10 @@ void NEMainpage::chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count
 	std::string key = gxs_id.toStdString();
 	if (activeGames.find(key) != activeGames.end()) {
 		RetroChessWindow* rcw = activeGames.value(key);
-		if (rcw->m_flag_finished == 0)
+		// Remote clicks may only act while it is the remote player's turn.
+		// validate() itself only checks pieceColor == turn, so without this
+		// gate a hostile client could select and move OUR pieces.
+		if (rcw->m_flag_finished == 0 && rcw->turn != rcw->m_localplayer_turn)
 			rcw->validate_tile(row, col, count);
 	} else {
 		std::cerr << "RetroChess: Received GXS move but no active game for " << key << std::endl;
@@ -404,7 +407,9 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		int col = vmap.value("col").toInt();
 		int count = vmap.value("count").toInt();
 		RetroChessWindow* rcw = activeGames.value(peer_id.toStdString(), nullptr);
-		if (rcw && rcw->m_flag_finished == 0)
+		// Same turn gate as the GXS path: a remote click must not be able to
+		// drive our own pieces during our turn.
+		if (rcw && rcw->m_flag_finished == 0 && rcw->turn != rcw->m_localplayer_turn)
 			rcw->validate_tile(row,col,count);
 	}
     else if(type == "player_status_message")
