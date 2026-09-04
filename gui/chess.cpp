@@ -280,9 +280,6 @@ void RetroChessWindow::initAccessories()
 	m_moveTable->setSelectionBehavior(QAbstractItemView::SelectItems);
 	m_moveTable->setShowGrid(false);
 	m_moveTable->setAlternatingRowColors(true);
-	m_moveTable->setStyleSheet(
-	        "QTableWidget { border: 0; background: transparent; alternate-background-color: #eeeeee; }"
-	        "QHeaderView::section { background: #e3e3e3; border: 0; padding: 4px; color: #555; }");
 	m_ui->moveHistoryLayout->addWidget(m_moveTable, 1);
 
 	QHBoxLayout *historyControls = new QHBoxLayout;
@@ -347,7 +344,10 @@ void RetroChessWindow::initAccessories()
 	opponentStatus->setParent(m_ui->moveHistoryFrame);
 	localStatus->setParent(m_ui->moveHistoryFrame);
 	for (QLabel *label : {opponentStatus, localStatus}) {
-		label->setMinimumHeight(25);
+		label->setFixedHeight(25);
+		QSizePolicy policy = label->sizePolicy();
+		policy.setRetainSizeWhenHidden(true);
+		label->setSizePolicy(policy);
 		label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 		label->setContentsMargins(4, 0, 4, 0);
 	}
