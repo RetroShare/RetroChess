@@ -375,12 +375,11 @@ void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int 
 
     RsGxsTunnelId tunnel_id = mActiveTunnels[gxs_id];
 
-    // Create a data item for the move
-    RsRetroChessDataItem *item = new RsRetroChessDataItem();
-    item->m_msg = QString("%1,%2,%3").arg(col).arg(row).arg(count).toStdString();
-
-    // Send raw data through the secured tunnel
-    mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, (const uint8_t*)item->m_msg.c_str(), item->m_msg.size());
+    // sendData() copies the buffer, so a plain string is all that is needed.
+    // The RsRetroChessDataItem previously allocated here was never freed,
+    // leaking one item per move sent.
+    const std::string msg = QString("%1,%2,%3").arg(col).arg(row).arg(count).toStdString();
+    mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, (const uint8_t*)msg.c_str(), msg.size());
 }
 
 void p3RetroChess::requestGxsTunnel(const RsGxsId &gxsId)
