@@ -32,7 +32,6 @@
 #include <iostream>
 #include <algorithm>
 #include <string>
-#include <QTime>
 #include <QMenu>
 #include <QMessageBox>
 #include <QToolButton>
@@ -44,8 +43,12 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QTreeWidgetItem>
+#include <QFileDialog>
+#include <QSaveFile>
 
 #include "gui/RetroChessSettings.h"
+#include "gui/ChessGameHistory.h"
+#include "gui/ChessGameReviewDialog.h"
 #include "gui/RetroChessUserNotify.h"
 #include "gui/gxs/GxsIdTreeWidgetItem.h"
 
@@ -84,6 +87,20 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui->pendingInvites->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 	ui->pendingInvites->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
 	ui->pendingInvites->setIconSize(QSize(40, 40));
+	ui->gameHistory->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+	ui->gameHistory->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+	ui->gameHistory->header()->setSectionResizeMode(2, QHeaderView::Stretch);
+	ui->gameHistory->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+	ui->gameHistory->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+	connect(ui->reviewGameButton, &QPushButton::clicked,
+	        this, &NEMainpage::reviewSelectedGame);
+	connect(ui->exportGameButton, &QPushButton::clicked,
+	        this, &NEMainpage::exportSelectedGame);
+	connect(ui->deleteGameButton, &QPushButton::clicked,
+	        this, &NEMainpage::deleteSelectedGame);
+	connect(ui->gameHistory, &QTreeWidget::itemDoubleClicked,
+	        this, [this](QTreeWidgetItem *, int) { reviewSelectedGame(); });
+	refreshGameHistory();
 }
 
 NEMainpage::~NEMainpage()
@@ -491,18 +508,6 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		if (activeGames.contains(key))
 			activeGames.value(key)->applyGameAction(vmap.value("action").toString(), true);
 	}
-	// else if( type == "chess_reject") // other player rejected your invite (need to be finish)
-	else
-	{
-		QString output = QTime::currentTime().toString() +" ";
-		output+= QString::fromStdString(rsPeers->getPeerName(peer_id));
-		output+=": ";
-		output+=str;
-		// Any peer can feed this list; never let it grow without bound.
-		while (ui->netLogWidget->count() >= 200)
-			delete ui->netLogWidget->takeItem(0);
-		ui->netLogWidget->addItem(output);
-	}
 }
 
 void NEMainpage::create_chess_window(std::string peer_id, int player_id)
@@ -525,6 +530,7 @@ void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 	        this, SLOT(requestRematchPeer(QString,int)));
 	connect(rcw, SIGNAL(gameClosed(QString)), this, SLOT(removeActiveGame(QString)));
 	connect(rcw, SIGNAL(gameEnded(QString)), this, SLOT(removeActiveGameListing(QString)));
+	connect(rcw, SIGNAL(gameReadyForHistory()), this, SLOT(archiveFinishedGame()));
 	rcw->show();
 
 	activeGames.insert(peer_id, rcw);
@@ -563,12 +569,99 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
             this, SLOT(requestRematchGxs(RsGxsId,int)));
     connect(win, SIGNAL(gameClosed(QString)), this, SLOT(removeActiveGame(QString)));
     connect(win, SIGNAL(gameEnded(QString)), this, SLOT(removeActiveGameListing(QString)));
+	connect(win, SIGNAL(gameReadyForHistory()), this, SLOT(archiveFinishedGame()));
     win->show();
 
     // Track the game so GXS moves can be routed to it
     std::string key = gxs_id.toStdString();
     activeGames.insert(key, win);
     ui->active_games->addItem(QString::fromStdString(key));
+}
+
+void NEMainpage::archiveFinishedGame()
+{
+	RetroChessWindow *window = qobject_cast<RetroChessWindow *>(sender());
+	if (!window) return;
+	ChessGameHistory::addGame(window->historyRecord());
+	refreshGameHistory();
+}
+
+void NEMainpage::refreshGameHistory()
+{
+	ui->gameHistory->clear();
+	const QVector<ChessGameRecord> games = ChessGameHistory::games();
+	for (const ChessGameRecord &game : games) {
+		QTreeWidgetItem *item = new QTreeWidgetItem(ui->gameHistory);
+		item->setData(0, Qt::UserRole, game.id);
+		item->setText(0, QLocale().toString(
+		        game.endedAt.toLocalTime(), QLocale::ShortFormat));
+		item->setText(1, game.whitePlayer);
+		item->setText(2, game.blackPlayer);
+		item->setText(3, game.result);
+		item->setText(4, QString::number(game.moves.size()));
+		item->setToolTip(3, game.reason);
+	}
+	const bool hasGames = !games.isEmpty();
+	ui->gameHistoryDescription->setText(hasGames
+	        ? tr("Double-click a saved game to replay every position.")
+	        : tr("No saved games yet. Finished and interrupted games will appear here."));
+	ui->reviewGameButton->setEnabled(hasGames);
+	ui->exportGameButton->setEnabled(hasGames);
+	ui->deleteGameButton->setEnabled(hasGames);
+	if (hasGames)
+		ui->gameHistory->setCurrentItem(ui->gameHistory->topLevelItem(0));
+}
+
+bool NEMainpage::selectedHistoryGame(ChessGameRecord &selected) const
+{
+	QTreeWidgetItem *item = ui->gameHistory->currentItem();
+	if (!item) return false;
+	const QString id = item->data(0, Qt::UserRole).toString();
+	for (const ChessGameRecord &game : ChessGameHistory::games())
+		if (game.id == id) {
+			selected = game;
+			return true;
+		}
+	return false;
+}
+
+void NEMainpage::reviewSelectedGame()
+{
+	ChessGameRecord game;
+	if (!selectedHistoryGame(game)) return;
+	ChessGameReviewDialog dialog(game, this);
+	dialog.exec();
+}
+
+void NEMainpage::exportSelectedGame()
+{
+	ChessGameRecord game;
+	if (!selectedHistoryGame(game)) return;
+	const QString path = QFileDialog::getSaveFileName(
+	        this, tr("Export chess game"),
+	        QString("%1-vs-%2.pgn").arg(game.whitePlayer, game.blackPlayer),
+	        tr("Portable Game Notation (*.pgn)"));
+	if (path.isEmpty()) return;
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly)
+	        || file.write(ChessGameHistory::toPgn(game).toUtf8()) < 0
+	        || !file.commit())
+		QMessageBox::warning(
+		        this, tr("Export chess game"),
+		        tr("The PGN file could not be saved."));
+}
+
+void NEMainpage::deleteSelectedGame()
+{
+	ChessGameRecord game;
+	if (!selectedHistoryGame(game)) return;
+	if (QMessageBox::question(
+	        this, tr("Delete saved game"),
+	        tr("Delete the saved game between %1 and %2?")
+	                .arg(game.whitePlayer, game.blackPlayer)) != QMessageBox::Yes)
+		return;
+	ChessGameHistory::removeGame(game.id);
+	refreshGameHistory();
 }
 
 void NEMainpage::setupMenuActions()

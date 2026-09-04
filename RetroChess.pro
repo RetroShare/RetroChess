@@ -50,6 +50,8 @@ SOURCES = RetroChessPlugin.cpp               \
           gui/RetroChessNotify.cpp \
           gui/chess.cpp \
           gui/ChessDebugWidget.cpp \
+          gui/ChessGameHistory.cpp \
+          gui/ChessGameReviewDialog.cpp \
           gui/tile.cpp \
           gui/RetroChessChatWidgetHolder.cpp \
           gui/RetroChessSettings.cpp \
@@ -59,6 +61,8 @@ SOURCES = RetroChessPlugin.cpp               \
 
 HEADERS = RetroChessPlugin.h                 \
           gui/ChessDebugWidget.h \
+          gui/ChessGameHistory.h \
+          gui/ChessGameReviewDialog.h \
           services/p3RetroChess.h            \
           services/rsRetroChessItems.h       \
           interface/rsRetroChess.h \

@@ -87,6 +87,7 @@ private slots:
 	void removeActiveGameListing(QString gameId);
 	void autoJoinOfficialLobby();
 	void officialLobbyNewMessage(ChatWidget *chatWidget);
+	void archiveFinishedGame();
 private:
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
@@ -102,6 +103,11 @@ private:
 	void addGxsInvitation(const RsGxsId &gxs_id);
 	void removePendingInvitation(const QString &key);
 	void showOfficialLobby();
+	void refreshGameHistory();
+	bool selectedHistoryGame(ChessGameRecord &game) const;
+	void reviewSelectedGame();
+	void exportSelectedGame();
+	void deleteSelectedGame();
 	void showEvent(QShowEvent *event) override;
 };
 
