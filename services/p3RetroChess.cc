@@ -885,6 +885,9 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
                 mInvitesToGxs.erase(gxs_id);
                 mPendingGxsInvites.erase(gxs_id);
                 mPendingGxsCloses.erase(gxs_id);
+                // Re-populated on the next invite; without this the map grew
+                // for the whole session.
+                mOwnGxsIdByPeer.erase(gxs_id);
             }
         }
         if (!gxs_id.isNull()) {

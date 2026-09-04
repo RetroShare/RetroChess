@@ -496,6 +496,9 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		output+= QString::fromStdString(rsPeers->getPeerName(peer_id));
 		output+=": ";
 		output+=str;
+		// Any peer can feed this list; never let it grow without bound.
+		while (ui->netLogWidget->count() >= 200)
+			delete ui->netLogWidget->takeItem(0);
 		ui->netLogWidget->addItem(output);
 	}
 }
