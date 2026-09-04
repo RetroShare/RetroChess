@@ -148,6 +148,9 @@ private:
 	std::set<RsPeerId> invitesTo;
 	std::set<RsPeerId> invitesFrom;
 	std::set<RsGxsId> mInvitesFromGxs;
+	// GXS identities we sent (or queued) a chess_invite to. A chess_accept
+	// from anyone else must be ignored, like hasInviteTo() on the peer path.
+	std::set<RsGxsId> mInvitesToGxs;
 
 	void handleData(RsRetroChessDataItem*) ;
 

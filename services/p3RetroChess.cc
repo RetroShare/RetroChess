@@ -568,7 +568,11 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         if (mGxsTunnels->sendData(
                     activeTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
                     reinterpret_cast<const uint8_t*>(invite.data()), invite.size()))
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            mInvitesToGxs.insert(toId);
             return true;
+        }
 
         // A game may have closed before the tunnel-status callback reaches us.
         // Never lose a new invitation by continuing to trust that stale entry.
@@ -587,6 +591,7 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         // invitation instead of replacing the tunnel ID on every button click.
         if (mPendingTunnels.find(toId) != mPendingTunnels.end()) {
             mPendingGxsInvites[toId] = invite;
+            mInvitesToGxs.insert(toId);
             return true;
         }
     }
@@ -599,6 +604,7 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         RsStackMutex stack(mRetroChessMtx);
         mPendingTunnels[toId] = tunnelId;
         mPendingGxsInvites[toId] = "{\"type\":\"chess_invite\"}";
+        mInvitesToGxs.insert(toId);
         std::cout << "Chess: Tunnel requested (id=" << tunnelId << "), invite queued for " << toId << std::endl;
         return true;
     } else {
@@ -749,6 +755,19 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         mNotify->notifyChessInviteGxs(sender_id);
 
     } else if (type == "chess_accept") {
+        // Only honour an accept for an invitation we actually sent, like
+        // hasInviteTo() on the direct-peer path. Otherwise any identity able
+        // to open a tunnel could spawn game windows at will.
+        bool invited;
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            invited = mInvitesToGxs.erase(sender_id) > 0;
+        }
+        if (!invited) {
+            std::cerr << "Chess: Ignoring chess_accept from " << sender_id
+                      << " (no pending invitation)" << std::endl;
+            return;
+        }
         std::cout << "Chess: Received accept from GXS " << sender_id << std::endl;
         mNotify->notifyChessAcceptedGxs(sender_id);
 
@@ -845,6 +864,7 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
             mTunnelToGxsIdMap.erase(tunnel_id);
             if (!gxs_id.isNull()) {
                 mInvitesFromGxs.erase(gxs_id);
+                mInvitesToGxs.erase(gxs_id);
                 mPendingGxsInvites.erase(gxs_id);
                 mPendingGxsCloses.erase(gxs_id);
             }
