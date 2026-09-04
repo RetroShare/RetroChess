@@ -41,6 +41,8 @@
 #include "RetroChessSettings.h"
 #include "ChessDebugWidget.h"
 
+#include <QPointer>
+
 #include "gui/common/AvatarDefs.h"
 #include "../services/p3RetroChess.h"
 
@@ -1546,7 +1548,10 @@ char RetroChessWindow::promotionChoiceForPawn(int color)
 		        ? choice : 'Q';
 	}
 
-	QDialog dialog(this);
+	// Deliberately parentless: exec() is application-modal anyway, and a
+	// stack-allocated child would be double-destroyed if this window got
+	// deleted while the nested event loop below is running.
+	QDialog dialog;
 	dialog.setWindowTitle(tr("Pawn promotion"));
 	QVBoxLayout layout(&dialog);
 	layout.addWidget(new QLabel(tr("Promote pawn to:"), &dialog));
@@ -1572,8 +1577,14 @@ char RetroChessWindow::promotionChoiceForPawn(int color)
 	layout.addWidget(&buttons);
 
 	char choice = 'Q';
+	QPointer<RetroChessWindow> self(this);
 	if (dialog.exec() == QDialog::Accepted)
 		choice = choices.currentData().toString().at(0).toLatin1();
+	// Network slots processed by the nested loop may have destroyed this
+	// window. The promotion choice now travels inside the move action, so
+	// nothing must be sent from here.
+	if (!self)
+		return 'Q';
 	return choice;
 }
 
@@ -2435,9 +2446,15 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		return;
 	}
 	if (action == "draw_offer" && remote) {
+		// The question box spins a nested event loop; other network slots may
+		// destroy this window meanwhile (rematch accept, close). Do not touch
+		// any member after exec without checking.
+		QPointer<RetroChessWindow> self(this);
 		const bool accepted = QMessageBox::question(
 		        this, tr("Draw offer"), tr("Your opponent offers a draw. Accept?"),
 		        QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
+		if (!self)
+			return;
 		sendGameAction(accepted ? "draw_accept" : "draw_decline");
 		if (accepted) applyGameAction("draw_accept", false);
 		return;

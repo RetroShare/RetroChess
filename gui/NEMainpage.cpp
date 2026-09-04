@@ -27,6 +27,8 @@
 
 #include <qjsondocument.h>
 
+#include <QPointer>
+
 #include <iostream>
 #include <algorithm>
 #include <string>
@@ -313,7 +315,10 @@ void NEMainpage::chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count
 	std::string key = gxs_id.toStdString();
 	if (activeGames.find(key) != activeGames.end()) {
 		RetroChessWindow* rcw = activeGames.value(key);
-		if (rcw->m_flag_finished == 0)
+		// Remote clicks may only act while it is the remote player's turn.
+		// validate() itself only checks pieceColor == turn, so without this
+		// gate a hostile client could select and move OUR pieces.
+		if (rcw->m_flag_finished == 0 && rcw->turn != rcw->m_localplayer_turn)
 			rcw->validate_tile(row, col, count);
 	} else {
 		std::cerr << "RetroChess: Received GXS move but no active game for " << key << std::endl;
@@ -364,13 +369,18 @@ void NEMainpage::chessRematchGxs(const RsGxsId &gxs_id, int remoteColor)
 		rsRetroChess->sendGameActionGxs(gxs_id, "rematch_decline");
 		return;
 	}
-	RetroChessWindow *window = activeGames.value(key);
+	QPointer<RetroChessWindow> window = activeGames.value(key);
 	const bool alreadyRequested = window->m_rematchRequested;
 	if (!alreadyRequested && QMessageBox::question(
 	        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?")) != QMessageBox::Yes) {
 		rsRetroChess->sendGameActionGxs(gxs_id, "rematch_decline");
 		return;
 	}
+	// The question box spins a nested event loop: other network slots run
+	// meanwhile and may have destroyed the window (e.g. a concurrent rematch
+	// or close). Never touch it again without checking.
+	if (!window)
+		return;
 	if (!alreadyRequested)
 		rsRetroChess->sendRematchGxs(gxs_id, window->m_localplayer_turn);
 	window->closeForRematch();
@@ -394,9 +404,11 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		return;
 	}
 	QVariantMap vmap = jdoc.toVariant().toMap();
+#ifdef DEBUG_RetroChess
 	std::cout << "GUI got Packet from: " << peer_id;
 	std::cout << " saying " << str.toStdString();
 	std::cout << std::endl;
+#endif
 	QString type = vmap.value("type").toString();
 	if (type == "chessclick")
 	{
@@ -404,7 +416,9 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		int col = vmap.value("col").toInt();
 		int count = vmap.value("count").toInt();
 		RetroChessWindow* rcw = activeGames.value(peer_id.toStdString(), nullptr);
-		if (rcw && rcw->m_flag_finished == 0)
+		// Same turn gate as the GXS path: a remote click must not be able to
+		// drive our own pieces during our turn.
+		if (rcw && rcw->m_flag_finished == 0 && rcw->turn != rcw->m_localplayer_turn)
 			rcw->validate_tile(row,col,count);
 	}
     else if(type == "player_status_message")
@@ -421,10 +435,6 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 				removeActiveGame(QString::fromStdString(peer_id.toStdString()));
 			}
 		}
-    }
-	else if (type == "chess_init")
-    {
-        create_chess_window(peer_id.toStdString(), 1);
     }
 	else if (type == "chess_invite")
 	{
@@ -451,7 +461,7 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 			rsRetroChess->qvm_msg_peer(peer_id, decline);
 			return;
 		}
-		RetroChessWindow *window = activeGames.value(key);
+		QPointer<RetroChessWindow> window = activeGames.value(key);
 		const bool alreadyRequested = window->m_rematchRequested;
 		if (!alreadyRequested && QMessageBox::question(
 		        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?")) != QMessageBox::Yes) {
@@ -461,6 +471,10 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 			rsRetroChess->qvm_msg_peer(peer_id, decline);
 			return;
 		}
+		// Same nested-event-loop hazard as chessRematchGxs(): the window may
+		// have been destroyed while the question box was open.
+		if (!window)
+			return;
 		if (!alreadyRequested) {
 			QVariantMap accept;
 			accept.insert("type", "chess_rematch");
@@ -484,12 +498,28 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 		output+= QString::fromStdString(rsPeers->getPeerName(peer_id));
 		output+=": ";
 		output+=str;
+		// Any peer can feed this list; never let it grow without bound.
+		while (ui->netLogWidget->count() >= 200)
+			delete ui->netLogWidget->takeItem(0);
 		ui->netLogWidget->addItem(output);
 	}
 }
 
 void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 {
+	if (RetroChessWindow *existing = activeGames.value(peer_id, nullptr)) {
+		if (existing->m_flag_finished == 0) {
+			// A game with this opponent is already running. Overwriting the
+			// map entry would orphan the old window (it stays open but stops
+			// receiving moves) — just bring it to the front instead.
+			existing->raise();
+			existing->activateWindow();
+			return;
+		}
+		// Finished game: close it silently before opening the new one.
+		existing->closeForRematch();
+	}
+
 	RetroChessWindow *rcw = new RetroChessWindow(peer_id, player_id);
 	connect(rcw, SIGNAL(rematchRequestedPeer(QString,int)),
 	        this, SLOT(requestRematchPeer(QString,int)));
@@ -517,8 +547,18 @@ void NEMainpage::requestRematchPeer(QString peerId, int localColor)
 
 void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 {
+    if (RetroChessWindow *existing = activeGames.value(gxs_id.toStdString(), nullptr)) {
+        if (existing->m_flag_finished == 0) {
+            // Same as create_chess_window(): never orphan a running game.
+            existing->raise();
+            existing->activateWindow();
+            return;
+        }
+        existing->closeForRematch();
+    }
+
     // Open the window with the GXS constructor
-    RetroChessWindow *win = new RetroChessWindow(gxs_id, player_id); 
+    RetroChessWindow *win = new RetroChessWindow(gxs_id, player_id);
     connect(win, SIGNAL(rematchRequested(RsGxsId,int)),
             this, SLOT(requestRematchGxs(RsGxsId,int)));
     connect(win, SIGNAL(gameClosed(QString)), this, SLOT(removeActiveGame(QString)));

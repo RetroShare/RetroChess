@@ -88,7 +88,9 @@ bool RsRetroChessDataItem::serialise(void *data, uint32_t& pktsize)
 
 
 	ok &= setRawString(data, tlvsize, &offset, m_msg );
+#ifdef RSSERIAL_DEBUG
 	std::cout << "string sizes: " << getRawStringSize(m_msg) << " OR " << m_msg.size() << "\n";
+#endif
 
 	if (offset != tlvsize)
 	{

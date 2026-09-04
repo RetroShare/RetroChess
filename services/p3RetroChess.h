@@ -148,6 +148,9 @@ private:
 	std::set<RsPeerId> invitesTo;
 	std::set<RsPeerId> invitesFrom;
 	std::set<RsGxsId> mInvitesFromGxs;
+	// GXS identities we sent (or queued) a chess_invite to. A chess_accept
+	// from anyone else must be ignored, like hasInviteTo() on the peer path.
+	std::set<RsGxsId> mInvitesToGxs;
 
 	void handleData(RsRetroChessDataItem*) ;
 
@@ -164,8 +167,10 @@ private:
 	// Leave messages get a short delivery window before their tunnel is closed.
 	std::map<RsGxsId, time_t> mPendingGxsCloses;
 	// DistantChatIds for which sendInvite_chat() was called but getDistantChatStatus()
-	// failed (tunnel not established yet). Retried every tick() until it succeeds.
-	std::map<DistantChatPeerId, time_t> mPendingDistantChatInvites;
+	// failed (tunnel not established yet). Retried every tick() until it succeeds
+	// or the give-up deadline passes.
+	struct PendingDistantInvite { time_t queuedTS; time_t lastTryTS; };
+	std::map<DistantChatPeerId, PendingDistantInvite> mPendingDistantChatInvites;
 
 	RsGxsTunnelService *mGxsTunnels;
 	RsMutex mRetroChessMtx;
