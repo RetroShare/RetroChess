@@ -24,6 +24,7 @@
 #include "../interface/rsRetroChess.h"
 
 #include <QIcon>
+#include <QPointer>
 
 /*extern int count,turn;
 extern QWidget *myWidget;
@@ -56,7 +57,12 @@ void Tile::mousePressEvent(QMouseEvent *event)
 			const bool destinationAttempt = fromTile >= 0
 			        && this != (chess_window_p)->click1
 			        && !(piece && pieceColor == (chess_window_p)->turn);
+			// validate() can run the modal promotion dialog, whose nested
+			// event loop may destroy the game window and this tile.
+			QPointer<Tile> selfGuard(this);
 			const bool moved = validate(++(chess_window_p)->count);
+			if (!selfGuard)
+				return;
 			if (moved && fromTile >= 0) {
 				const char promotion = movedPiece == 'P' && pieceName != 'P'
 				        ? pieceName : '-';
@@ -230,7 +236,15 @@ bool Tile::validate(int c)
                 tile_p->display((chess_window_p)->click1->pieceName);
 
                 (chess_window_p)->click1->tileDisplay();
-                tile_p->pawnLevelupCheck();
+                {
+                    // pawnLevelupCheck() may open the modal promotion dialog,
+                    // whose nested event loop can destroy the whole game
+                    // window (and this tile with it).
+                    QPointer<Tile> selfGuard(tile_p);
+                    tile_p->pawnLevelupCheck();
+                    if (!selfGuard)
+                        return false;
+                }
                 tile_p->tileDisplay();
 				const char promotedPiece = movedPiece == 'P' && tile_p->pieceName != 'P'
 				        ? tile_p->pieceName : 0;
@@ -300,17 +314,25 @@ void Tile::tileDisplay()
 
 void Tile::pawnLevelupCheck()
 {
-    if( this->pieceName == 'P')
-    {
-        // white
-        if( this->pieceColor && this->row == 0)
-			this->display(dynamic_cast<RetroChessWindow*>(m_chess_window_p)
-			        ->promotionChoiceForPawn(this->pieceColor));
-        // black
-        else if( this->pieceColor == 0 && this->row == 7)
-			this->display(dynamic_cast<RetroChessWindow*>(m_chess_window_p)
-			        ->promotionChoiceForPawn(this->pieceColor));
-    }
+    if( this->pieceName != 'P')
+        return;
+
+    // white promotes on row 0, black on row 7
+    if( !(this->pieceColor && this->row == 0)
+            && !(this->pieceColor == 0 && this->row == 7))
+        return;
+
+    RetroChessWindow *chess_window_p = dynamic_cast<RetroChessWindow*>(m_chess_window_p);
+    if (!chess_window_p)
+        return;
+
+    // promotionChoiceForPawn() runs a modal dialog: guard against this tile
+    // being destroyed by slots processed in its nested event loop.
+    QPointer<Tile> self(this);
+    const char choice = chess_window_p->promotionChoiceForPawn(this->pieceColor);
+    if (!self)
+        return;
+    this->display(choice);
 }
 
 

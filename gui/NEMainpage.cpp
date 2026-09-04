@@ -27,6 +27,8 @@
 
 #include <qjsondocument.h>
 
+#include <QPointer>
+
 #include <iostream>
 #include <algorithm>
 #include <string>
@@ -367,13 +369,18 @@ void NEMainpage::chessRematchGxs(const RsGxsId &gxs_id, int remoteColor)
 		rsRetroChess->sendGameActionGxs(gxs_id, "rematch_decline");
 		return;
 	}
-	RetroChessWindow *window = activeGames.value(key);
+	QPointer<RetroChessWindow> window = activeGames.value(key);
 	const bool alreadyRequested = window->m_rematchRequested;
 	if (!alreadyRequested && QMessageBox::question(
 	        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?")) != QMessageBox::Yes) {
 		rsRetroChess->sendGameActionGxs(gxs_id, "rematch_decline");
 		return;
 	}
+	// The question box spins a nested event loop: other network slots run
+	// meanwhile and may have destroyed the window (e.g. a concurrent rematch
+	// or close). Never touch it again without checking.
+	if (!window)
+		return;
 	if (!alreadyRequested)
 		rsRetroChess->sendRematchGxs(gxs_id, window->m_localplayer_turn);
 	window->closeForRematch();
@@ -452,7 +459,7 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 			rsRetroChess->qvm_msg_peer(peer_id, decline);
 			return;
 		}
-		RetroChessWindow *window = activeGames.value(key);
+		QPointer<RetroChessWindow> window = activeGames.value(key);
 		const bool alreadyRequested = window->m_rematchRequested;
 		if (!alreadyRequested && QMessageBox::question(
 		        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?")) != QMessageBox::Yes) {
@@ -462,6 +469,10 @@ void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 			rsRetroChess->qvm_msg_peer(peer_id, decline);
 			return;
 		}
+		// Same nested-event-loop hazard as chessRematchGxs(): the window may
+		// have been destroyed while the question box was open.
+		if (!window)
+			return;
 		if (!alreadyRequested) {
 			QVariantMap accept;
 			accept.insert("type", "chess_rematch");
