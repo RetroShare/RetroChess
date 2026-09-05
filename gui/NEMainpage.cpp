@@ -51,6 +51,9 @@
 #include "gui/ChessGameReviewDialog.h"
 #include "gui/RetroChessUserNotify.h"
 #include "gui/gxs/GxsIdTreeWidgetItem.h"
+#include "gui/settings/rsharesettings.h"
+#include "gui/common/AvatarDefs.h"
+#include "util/HandleRichText.h"
 
 #include "gui/chat/ChatDialog.h"
 #include <retroshare/rsidentity.h>
@@ -87,11 +90,34 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui->pendingInvites->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 	ui->pendingInvites->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
 	ui->pendingInvites->setIconSize(QSize(40, 40));
-	ui->gameHistory->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-	ui->gameHistory->header()->setSectionResizeMode(1, QHeaderView::Stretch);
-	ui->gameHistory->header()->setSectionResizeMode(2, QHeaderView::Stretch);
-	ui->gameHistory->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-	ui->gameHistory->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+	QHeaderView *historyHeader = ui->gameHistory->header();
+	historyHeader->setSectionResizeMode(QHeaderView::Interactive);
+	historyHeader->setSectionsMovable(true);
+	historyHeader->setMinimumSectionSize(45);
+	const QByteArray historyHeaderState = Settings->valueFromGroup(
+	        "RetroChess", "GameHistoryHeaderState", QByteArray()).toByteArray();
+	if (!historyHeaderState.isEmpty())
+		historyHeader->restoreState(historyHeaderState);
+	else {
+		historyHeader->resizeSection(0, 165);
+		historyHeader->resizeSection(1, 210);
+		historyHeader->resizeSection(2, 210);
+		historyHeader->resizeSection(3, 85);
+		historyHeader->resizeSection(4, 75);
+	}
+	historyHeader->setStretchLastSection(true);
+	connect(historyHeader, &QHeaderView::sectionResized, this,
+	        [historyHeader](int, int, int) {
+		Settings->setValueToGroup(
+		        "RetroChess", "GameHistoryHeaderState", historyHeader->saveState());
+	});
+	connect(historyHeader, &QHeaderView::sectionMoved, this,
+	        [historyHeader](int, int, int) {
+		Settings->setValueToGroup(
+		        "RetroChess", "GameHistoryHeaderState", historyHeader->saveState());
+	});
+	ui->gameHistory->setIconSize(QSize(32, 32));
+	ui->gameHistory->setContextMenuPolicy(Qt::CustomContextMenu);
 	connect(ui->reviewGameButton, &QPushButton::clicked,
 	        this, &NEMainpage::reviewSelectedGame);
 	connect(ui->exportGameButton, &QPushButton::clicked,
@@ -100,6 +126,21 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	        this, &NEMainpage::deleteSelectedGame);
 	connect(ui->gameHistory, &QTreeWidget::itemDoubleClicked,
 	        this, [this](QTreeWidgetItem *, int) { reviewSelectedGame(); });
+	connect(ui->gameHistory, &QTreeWidget::customContextMenuRequested,
+	        this, [this](const QPoint &position) {
+		QTreeWidgetItem *item = ui->gameHistory->itemAt(position);
+		if (!item) return;
+		ui->gameHistory->setCurrentItem(item);
+		QMenu menu(ui->gameHistory);
+		QAction *review = menu.addAction(tr("Review"));
+		QAction *exportPgn = menu.addAction(tr("Export PGN"));
+		menu.addSeparator();
+		QAction *remove = menu.addAction(tr("Delete"));
+		QAction *selected = menu.exec(ui->gameHistory->viewport()->mapToGlobal(position));
+		if (selected == review) reviewSelectedGame();
+		else if (selected == exportPgn) exportSelectedGame();
+		else if (selected == remove) deleteSelectedGame();
+	});
 	refreshGameHistory();
 }
 
@@ -591,15 +632,77 @@ void NEMainpage::refreshGameHistory()
 	ui->gameHistory->clear();
 	const QVector<ChessGameRecord> games = ChessGameHistory::games();
 	for (const ChessGameRecord &game : games) {
-		QTreeWidgetItem *item = new QTreeWidgetItem(ui->gameHistory);
+		QTreeWidgetItem *item = nullptr;
+		if (!game.whiteGxsId.isEmpty()) {
+			item = new GxsIdRSTreeWidgetItem(
+			        nullptr, GxsIdDetails::ICON_TYPE_AVATAR, true, ui->gameHistory);
+		} else item = new QTreeWidgetItem(ui->gameHistory);
 		item->setData(0, Qt::UserRole, game.id);
 		item->setText(0, QLocale().toString(
 		        game.endedAt.toLocalTime(), QLocale::ShortFormat));
 		item->setText(1, game.whitePlayer);
 		item->setText(2, game.blackPlayer);
+		auto setGxsIdentity = [item](
+		        int column, const QString &idText, const QString &storedName) {
+			if (idText.isEmpty()) return;
+			const RsGxsId id(idText.toStdString());
+			RsIdentityDetails details;
+			QPixmap pixmap;
+			QString name = storedName;
+			const bool detailsAvailable = rsIdentity->getIdDetails(id, details);
+			if (detailsAvailable) {
+				if (!details.mNickname.empty())
+					name = QString::fromUtf8(details.mNickname.c_str());
+				if (details.mAvatar.mSize == 0
+				        || !GxsIdDetails::loadPixmapFromData(
+				                details.mAvatar.mData, details.mAvatar.mSize,
+				                pixmap, GxsIdDetails::MEDIUM))
+					pixmap = GxsIdDetails::makeDefaultIcon(id, GxsIdDetails::MEDIUM);
+			} else pixmap = GxsIdDetails::makeDefaultIcon(id, GxsIdDetails::MEDIUM);
+			item->setText(column, name);
+			item->setData(column, Qt::UserRole, idText);
+			item->setIcon(column, QIcon(pixmap));
+
+			QPixmap tooltipPixmap;
+			if (!detailsAvailable || details.mAvatar.mSize == 0
+			        || !GxsIdDetails::loadPixmapFromData(
+			                details.mAvatar.mData, details.mAvatar.mSize,
+			                tooltipPixmap, GxsIdDetails::LARGE))
+				tooltipPixmap = GxsIdDetails::makeDefaultIcon(id, GxsIdDetails::LARGE);
+			QString tooltip = detailsAvailable
+			        ? GxsIdDetails::getComment(details) : QString();
+			if (tooltip.isEmpty())
+				tooltip = tr("Identity name: %1<br/>Identity Id: %2")
+				        .arg(name.toHtmlEscaped(), idText.toHtmlEscaped());
+			QString embeddedImage;
+			if (RsHtml::makeEmbeddedImage(
+			        tooltipPixmap.scaled(
+			                QSize(96, 96), Qt::KeepAspectRatio,
+			                Qt::SmoothTransformation).toImage(),
+			        embeddedImage, -1))
+				tooltip = QString("<table><tr><td>%1</td><td>%2</td></tr></table>")
+				        .arg(embeddedImage, tooltip);
+			item->setToolTip(column, tooltip);
+		};
+		setGxsIdentity(1, game.whiteGxsId, game.whitePlayer);
+		setGxsIdentity(2, game.blackGxsId, game.blackPlayer);
+		if (!game.whitePeerId.isEmpty()) {
+			QPixmap avatar;
+			AvatarDefs::getAvatarFromSslId(
+			        RsPeerId(game.whitePeerId.toStdString()), avatar);
+			if (!avatar.isNull()) item->setIcon(1, QIcon(avatar));
+		}
+		if (!game.blackPeerId.isEmpty()) {
+			QPixmap avatar;
+			AvatarDefs::getAvatarFromSslId(
+			        RsPeerId(game.blackPeerId.toStdString()), avatar);
+			if (!avatar.isNull()) item->setIcon(2, QIcon(avatar));
+		}
 		item->setText(3, game.result);
 		item->setText(4, QString::number(game.moves.size()));
 		item->setToolTip(3, game.reason);
+		for (int column = 0; column < ui->gameHistory->columnCount(); ++column)
+			item->setSizeHint(column, QSize(32, 40));
 	}
 	const bool hasGames = !games.isEmpty();
 	ui->gameHistoryDescription->setText(hasGames

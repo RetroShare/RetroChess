@@ -2737,6 +2737,15 @@ ChessGameRecord RetroChessWindow::historyRecord() const
 	game.endedAt = QDateTime::currentDateTimeUtc();
 	game.whitePlayer = QString::fromUtf8(p2name.c_str());
 	game.blackPlayer = QString::fromUtf8(p1name.c_str());
+	if (mIsGxs) {
+		const RsGxsId whiteId = m_localplayer_turn == 1 ? mOwnGxsId : mGxsId;
+		const RsGxsId blackId = m_localplayer_turn == 0 ? mOwnGxsId : mGxsId;
+		game.whiteGxsId = QString::fromStdString(whiteId.toStdString());
+		game.blackGxsId = QString::fromStdString(blackId.toStdString());
+	} else {
+		game.whitePeerId = QString::fromStdString(p2id.toStdString());
+		game.blackPeerId = QString::fromStdString(p1id.toStdString());
+	}
 	game.result = m_gameResult;
 	game.reason = m_gameEndReason;
 	game.moves = m_move_history;

@@ -54,6 +54,10 @@ QJsonObject toJson(const ChessGameRecord &game)
 	object["ended"] = game.endedAt.toString(Qt::ISODateWithMs);
 	object["white"] = game.whitePlayer;
 	object["black"] = game.blackPlayer;
+	object["whiteGxsId"] = game.whiteGxsId;
+	object["blackGxsId"] = game.blackGxsId;
+	object["whitePeerId"] = game.whitePeerId;
+	object["blackPeerId"] = game.blackPeerId;
 	object["result"] = game.result;
 	object["reason"] = game.reason;
 	object["moves"] = stringsToJson(game.moves);
@@ -69,6 +73,10 @@ ChessGameRecord fromJson(const QJsonObject &object)
 	game.endedAt = QDateTime::fromString(object["ended"].toString(), Qt::ISODateWithMs);
 	game.whitePlayer = object["white"].toString();
 	game.blackPlayer = object["black"].toString();
+	game.whiteGxsId = object["whiteGxsId"].toString();
+	game.blackGxsId = object["blackGxsId"].toString();
+	game.whitePeerId = object["whitePeerId"].toString();
+	game.blackPeerId = object["blackPeerId"].toString();
 	game.result = object["result"].toString();
 	game.reason = object["reason"].toString();
 	game.moves = stringsFromJson(object["moves"].toArray());

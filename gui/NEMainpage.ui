@@ -209,26 +209,51 @@
       </attribute>
       <layout class="QVBoxLayout" name="gameHistoryLayout">
        <item>
-        <widget class="QLabel" name="gameHistoryDescription">
-         <property name="text">
-          <string>Saved games will appear here for replay and analysis.</string>
-         </property>
-         <property name="wordWrap">
-          <bool>true</bool>
-         </property>
-       </widget>
-       </item>
-       <item>
         <layout class="QHBoxLayout" name="gameHistoryActions">
          <item>
+          <widget class="QLabel" name="gameHistoryDescription">
+           <property name="text">
+            <string>Saved games will appear here for replay and analysis.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="gameHistoryActionsSpacer">
-           <property name="orientation"><enum>Qt::Horizontal</enum></property>
-           <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
           </spacer>
          </item>
-         <item><widget class="QPushButton" name="reviewGameButton"><property name="text"><string>Review</string></property></widget></item>
-         <item><widget class="QPushButton" name="exportGameButton"><property name="text"><string>Export PGN</string></property></widget></item>
-         <item><widget class="QPushButton" name="deleteGameButton"><property name="text"><string>Delete</string></property></widget></item>
+         <item>
+          <widget class="QPushButton" name="reviewGameButton">
+           <property name="text">
+            <string>Review</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="exportGameButton">
+           <property name="text">
+            <string>Export PGN</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="deleteGameButton">
+           <property name="text">
+            <string>Delete</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
        <item>

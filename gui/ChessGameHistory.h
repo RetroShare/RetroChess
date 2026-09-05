@@ -33,6 +33,10 @@ struct ChessGameRecord
 	QDateTime endedAt;
 	QString whitePlayer;
 	QString blackPlayer;
+	QString whiteGxsId;
+	QString blackGxsId;
+	QString whitePeerId;
+	QString blackPeerId;
 	QString result;
 	QString reason;
 	QStringList moves;
