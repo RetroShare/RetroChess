@@ -72,7 +72,9 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_gameStatusBar(nullptr),
     m_debugWidget(nullptr),
     m_fullmoveNumber(1),
-    m_desynchronized(false)
+    m_desynchronized(false),
+    m_gameStartedAt(QDateTime::currentDateTimeUtc()),
+    m_gameArchived(false)
 {
     QString player_str; 
     if (player == 1) {
@@ -173,7 +175,9 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_gameStatusBar(nullptr),
 	m_debugWidget(nullptr),
 	m_fullmoveNumber(1),
-	m_desynchronized(false)
+	m_desynchronized(false),
+	m_gameStartedAt(QDateTime::currentDateTimeUtc()),
+	m_gameArchived(false)
 	//ui(new Ui::RetroChessWindow)
 {
 	m_ui->setupUi( this );
@@ -580,6 +584,8 @@ void RetroChessWindow::initAccessories()
 
 void RetroChessWindow::closeEvent(QCloseEvent *event)
 {
+	if (!m_gameArchived)
+		completeGameHistory("*", tr("Game window closed before completion"));
     // send leave message
     if (!m_suppressLeave && mIsGxs) {
         rsRetroChess->player_leave_gxs(this->mGxsId);
@@ -1951,6 +1957,10 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
     if (m_resultPopupShown)
         return;
     m_resultPopupShown = true;
+	const int winningColor = localWon ? m_localplayer_turn : 1 - m_localplayer_turn;
+	completeGameHistory(
+	        draw ? "1/2-1/2" : (winningColor == 1 ? "1-0" : "0-1"),
+	        !reason.isEmpty() ? reason : (draw ? tr("Draw") : tr("Resignation")));
 	if (!draw && m_victorySound && RetroChessSettings::gameResultSoundEnabled()) {
 		m_victorySound->stop();
 		m_victorySound->setPosition(0);
@@ -2425,6 +2435,7 @@ void RetroChessWindow::stopForDesynchronization(const QString &reason)
 	if (m_desynchronized) return;
 	m_desynchronized = true;
 	m_flag_finished = 7;
+	completeGameHistory("*", tr("Boards out of sync: %1").arg(reason));
 	appendDebugEvent("DESYNC: " + reason + " Local FEN=" + currentFen());
 	showGameStatus(tr("Boards are out of sync — game paused"));
 	QMessageBox::critical(this, tr("Chess synchronization error"),
@@ -2592,6 +2603,7 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		m_suppressLeave = true;
 		m_ui->m_status_bar->setText(remote ? tr("Opponent aborted the game") : tr("Game aborted"));
 		m_ui->m_status_bar->show();
+		completeGameHistory("*", remote ? tr("Opponent aborted") : tr("Game aborted"));
 		emit gameEnded(QString::fromStdString(mPeerId));
 	} else if (action == "resign") {
 		m_flag_finished = 1;
@@ -2687,6 +2699,9 @@ void RetroChessWindow::showPlayerLeaveMsg()
 {
 	// Stop all local interaction as soon as the opponent leaves.
 	m_flag_finished = 1;
+	completeGameHistory(
+	        m_localplayer_turn == 1 ? "1-0" : "0-1",
+	        tr("Opponent left the game"));
     QString name;
     if (mIsGxs) {
         // Resolve GXS nickname
@@ -2704,6 +2719,38 @@ void RetroChessWindow::showPlayerLeaveMsg()
     QString status_msg = name + tr(" has left");
     m_ui->m_status_bar->setText(status_msg);
     m_ui->m_status_bar->setVisible(true);
+}
+
+void RetroChessWindow::completeGameHistory(const QString &result, const QString &reason)
+{
+	if (m_gameArchived) return;
+	m_gameArchived = true;
+	m_gameResult = result;
+	m_gameEndReason = reason;
+	emit gameReadyForHistory();
+}
+
+ChessGameRecord RetroChessWindow::historyRecord() const
+{
+	ChessGameRecord game;
+	game.startedAt = m_gameStartedAt;
+	game.endedAt = QDateTime::currentDateTimeUtc();
+	game.whitePlayer = QString::fromUtf8(p2name.c_str());
+	game.blackPlayer = QString::fromUtf8(p1name.c_str());
+	if (mIsGxs) {
+		const RsGxsId whiteId = m_localplayer_turn == 1 ? mOwnGxsId : mGxsId;
+		const RsGxsId blackId = m_localplayer_turn == 0 ? mOwnGxsId : mGxsId;
+		game.whiteGxsId = QString::fromStdString(whiteId.toStdString());
+		game.blackGxsId = QString::fromStdString(blackId.toStdString());
+	} else {
+		game.whitePeerId = QString::fromStdString(p2id.toStdString());
+		game.blackPeerId = QString::fromStdString(p1id.toStdString());
+	}
+	game.result = m_gameResult;
+	game.reason = m_gameEndReason;
+	game.moves = m_move_history;
+	game.positions = QStringList(m_boardHistory.begin(), m_boardHistory.end());
+	return game;
 }
 
 void RetroChessWindow::playerTurnNotice()

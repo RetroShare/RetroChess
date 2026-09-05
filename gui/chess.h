@@ -34,6 +34,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include "ChessGameHistory.h"
+
 class QLabel;
 class QTableWidget;
 class QMediaPlayer;
@@ -179,6 +181,7 @@ public:
 	void stopForDesynchronization(const QString &reason);
 	void showGameStatus(const QString &status);
 	void refreshBoardTheme();
+	ChessGameRecord historyRecord() const;
     void drawLastMove();
     void clearLastMove();
 
@@ -187,12 +190,18 @@ public:
     void playerTurnNotice();
 	void closeForRematch();
 	void showGameResultDialog(bool localWon, bool draw = false, const QString &reason = QString());
+	void completeGameHistory(const QString &result, const QString &reason);
+	QDateTime m_gameStartedAt;
+	QString m_gameResult;
+	QString m_gameEndReason;
+	bool m_gameArchived;
 
 signals:
 	void rematchRequested(const RsGxsId &gxsId, int localColor);
 	void rematchRequestedPeer(QString peerId, int localColor);
 	void gameClosed(QString gameId);
 	void gameEnded(QString gameId);
+	void gameReadyForHistory();
 };
 
 
