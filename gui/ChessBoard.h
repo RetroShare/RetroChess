@@ -1,7 +1,7 @@
 /*******************************************************************************
- * gui/tile.h                                                                  *
+ * gui/ChessBoard.h                                                           *
  *                                                                             *
- * Copyright (C) 2020 RetroShare Team <retroshare.project@gmail.com>           *
+ * Copyright (C) 2026 RetroShare Team <retroshare.project@gmail.com>           *
  *                                                                             *
  * This program is free software: you can redistribute it and/or modify        *
  * it under the terms of the GNU Affero General Public License as              *
@@ -18,44 +18,48 @@
  *                                                                             *
  *******************************************************************************/
 
-#ifndef TILE_H
-#define TILE_H
+#ifndef CHESSBOARD_H
+#define CHESSBOARD_H
 
-#include <QLabel>
-#include <QDebug>
+#include <QPoint>
 #include <QWidget>
 
-class Tile: public QLabel
+#include <functional>
+
+class ChessBoard : public QWidget
 {
-public:
-	//Constructors
-	Tile(QWidget* pParent=0, Qt::WindowFlags f=Qt::WindowFlags());
-	Tile(const QString& text, QWidget* pParent = 0, Qt::WindowFlags f = Qt::WindowFlags());
+	Q_OBJECT
 
 public:
-	void display(char elem);
-	void displayPosition(bool occupied, char pieceName, int color);
-	void tileDisplay();
-	bool validate(int c);		// Returns true when this click completes a legal move.
+	explicit ChessBoard(QWidget *parent = nullptr);
 
-    void pawnLevelupCheck();
+	void registerSquare(QWidget *square, int squareNumber);
+	void setSelectedSquare(int square);
+	void notifyMoveProduced(int fromSquare, int toSquare, char promotion);
+	void setStateHandlers(
+	        std::function<QString()> saveHandler,
+	        std::function<bool(const QString &, QString *)> loadHandler);
 
-	void setChessWindow( QWidget *board);
-	QWidget* getChessWindow() const;
+	QString saveState() const;
+	QString positionHash() const;
+	bool loadState(const QString &fen, QString *error = nullptr);
 
-	//Fields
-	int tileColor;	// "background" 0(black) : 1(white)
-	int piece;		// 0(empty) : 1(piece occpied)
-	int pieceColor;	// 0(black) : 1(white)
-	int row,col;
-	int tileNum;	// index in one-division array
+signals:
+	void squareActivated(int square);
+	void moveProduced(int fromSquare, int toSquare, char promotion);
+	void stateLoaded(const QString &fen, const QString &hash);
+	void stateLoadRejected(const QString &fen, const QString &reason);
 
-	char pieceName;
+protected:
+	bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
-    QWidget *m_chess_window_p;	//parent chess board
+	int squareNumber(QObject *object) const;
+
+	QPoint m_dragStartPosition;
+	int m_selectedSquare;
+	std::function<QString()> m_saveHandler;
+	std::function<bool(const QString &, QString *)> m_loadHandler;
 };
 
-void validate_tile(int row, int col, int c);
-
-#endif // TILE_H
+#endif // CHESSBOARD_H

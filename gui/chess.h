@@ -35,6 +35,7 @@
 #include <QVector>
 
 #include "ChessGameHistory.h"
+#include "ChessPosition.h"
 
 class QLabel;
 class QTableWidget;
@@ -42,6 +43,7 @@ class QMediaPlayer;
 class QPushButton;
 class QStatusBar;
 class ChessDebugWidget;
+class ChessBoard;
 
 namespace Ui
 {
@@ -163,6 +165,8 @@ public:
 	QMediaPlayer *m_victorySound;
 	QStatusBar *m_gameStatusBar;
 	ChessDebugWidget *m_debugWidget;
+	ChessBoard *m_chessBoard;
+	ChessPosition m_position;
 	int m_fullmoveNumber;
 	bool m_desynchronized;
     void recordLastMove( int tile_num );
@@ -191,6 +195,7 @@ public:
 	void closeForRematch();
 	void showGameResultDialog(bool localWon, bool draw = false, const QString &reason = QString());
 	void completeGameHistory(const QString &result, const QString &reason);
+	void activateBoardSquare(int square);
 	QDateTime m_gameStartedAt;
 	QString m_gameResult;
 	QString m_gameEndReason;
