@@ -43,6 +43,7 @@
 #include "ui_chess.h"
 #include "RetroChessSettings.h"
 #include "ChessDebugWidget.h"
+#include "ChessBoard.h"
 
 #include <QPointer>
 
@@ -71,6 +72,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_victorySound(nullptr),
     m_gameStatusBar(nullptr),
     m_debugWidget(nullptr),
+    m_chessBoard(nullptr),
     m_fullmoveNumber(1),
     m_desynchronized(false),
     m_gameStartedAt(QDateTime::currentDateTimeUtc()),
@@ -174,6 +176,7 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_victorySound(nullptr),
 	m_gameStatusBar(nullptr),
 	m_debugWidget(nullptr),
+	m_chessBoard(nullptr),
 	m_fullmoveNumber(1),
 	m_desynchronized(false),
 	m_gameStartedAt(QDateTime::currentDateTimeUtc()),
@@ -617,8 +620,24 @@ void RetroChessWindow::validate_tile(int row, int col, int c)
 
 void RetroChessWindow::initChessBoard()
 {
-	//QWidget *baseWidget, Tile *tile[8][8]
-	QWidget *baseWidget = m_ui->m_chess_board;
+	QVBoxLayout *boardLayout = new QVBoxLayout(m_ui->m_chess_board);
+	boardLayout->setContentsMargins(0, 0, 0, 0);
+	boardLayout->setSpacing(0);
+	m_chessBoard = new ChessBoard(m_ui->m_chess_board);
+	boardLayout->addWidget(m_chessBoard);
+	QWidget *baseWidget = m_chessBoard;
+	m_chessBoard->setStateHandlers(
+	        [this]() { return m_position.fen(); },
+	        [this](const QString &fen, QString *error) {
+			ChessPosition candidate = m_position;
+			if (!candidate.loadFen(fen, error) || !loadFen(fen, error)) return false;
+			m_position = candidate;
+			return true;
+		});
+	connect(m_chessBoard, &ChessBoard::squareActivated,
+	        this, &RetroChessWindow::activateBoardSquare);
+	connect(m_chessBoard, &ChessBoard::moveProduced,
+	        this, &RetroChessWindow::sendMoveAction);
 
 	int i,j,k = 0;
 	const bool flipped = m_localplayer_turn == 0;
@@ -643,6 +662,7 @@ void RetroChessWindow::initChessBoard()
 			tile[i][j]->row=i;
 			tile[i][j]->col=j;
 			tile[i][j]->tileNum=k++;
+			m_chessBoard->registerSquare(tile[i][j], tile[i][j]->tileNum);
 			tile[i][j]->tileDisplay();
 			const int displayRow = flipped ? 7 - i : i;
 			const int displayCol = flipped ? 7 - j : j;
@@ -730,10 +750,56 @@ void RetroChessWindow::initChessBoard()
 	bC=4;
 	recordCurrentPosition();
 	recordBoardSnapshot();
+	QString positionError;
+	if (!m_position.loadFen(currentFen(), &positionError))
+		appendDebugEvent("POSITION INIT ERROR: " + positionError);
 	baseWidget->setMaximumHeight(QWIDGETSIZE_MAX);
 	baseWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
-	baseWidget->installEventFilter(this);
+	m_ui->m_chess_board->installEventFilter(this);
 	layoutChessBoard();
+}
+
+void RetroChessWindow::activateBoardSquare(int square)
+{
+	if (square < 0 || square >= 64 || m_flag_finished
+	        || m_localplayer_turn != turn) return;
+	showLivePosition();
+	Tile *destination = tile[square / 8][square % 8];
+	const int fromTile = count == 1 && click1 ? click1->tileNum : -1;
+	const char movedPiece = fromTile >= 0 ? click1->pieceName : 0;
+	const bool destinationAttempt = fromTile >= 0 && destination != click1
+	        && !(destination->piece && destination->pieceColor == turn);
+	if (destinationAttempt) {
+		ChessMove candidate;
+		candidate.from = fromTile;
+		candidate.to = square;
+		if (movedPiece == 'P' && (square / 8 == 0 || square / 8 == 7))
+			candidate.promotion = 'q';
+		QString ruleError;
+		if (!m_position.isLegalMove(candidate, &ruleError)) {
+			appendDebugEvent(QString("REJECT model move %1: %2 FEN=%3")
+			        .arg(candidate.uci(), ruleError, m_position.fen()));
+			return;
+		}
+	}
+	QPointer<RetroChessWindow> self(this);
+	const bool moved = destination->validate(++count);
+	if (!self) return;
+	if (moved && fromTile >= 0) {
+		const char promotion = movedPiece == 'P' && destination->pieceName != 'P'
+		        ? destination->pieceName : '-';
+		QString syncError;
+		if (!m_position.loadFen(currentFen(), &syncError))
+			appendDebugEvent("POSITION SYNC ERROR: " + syncError);
+		m_chessBoard->notifyMoveProduced(fromTile, square, promotion);
+	} else if (destinationAttempt) {
+		appendDebugEvent(QString("REJECT local move tiles %1-%2 FEN=%3")
+		        .arg(fromTile).arg(square).arg(currentFen()));
+	} else if (count == 1 && click1 == destination) {
+		appendDebugEvent(QString("SELECT tile=%1 FEN=%2")
+		        .arg(square).arg(currentFen()));
+	}
+	m_chessBoard->setSelectedSquare(click1 ? click1->tileNum : -1);
 }
 
 
@@ -2031,8 +2097,8 @@ bool RetroChessWindow::eventFilter(QObject *watched, QEvent *event)
 
 void RetroChessWindow::layoutChessBoard()
 {
-	if (!m_ui || !m_ui->m_chess_board || !tile[0][0]) return;
-	QWidget *board = m_ui->m_chess_board;
+	if (!m_ui || !m_chessBoard || !tile[0][0]) return;
+	QWidget *board = m_chessBoard;
 	const int desiredBoardWidth = qMax(BOARD_FULL_SIZE, board->height());
 	if (board->width() != desiredBoardWidth)
 		board->setFixedWidth(desiredBoardWidth);
@@ -2502,6 +2568,18 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 			        .arg(chessSquareName(fromTile), chessSquareName(toTile)));
 			return;
 		}
+		ChessMove modelMove;
+		modelMove.from = fromTile;
+		modelMove.to = toTile;
+		if (promotion != '-')
+			modelMove.promotion = promotion == 'H'
+			        ? 'n' : QChar(promotion).toLower().toLatin1();
+		QString modelError;
+		if (!m_position.isLegalMove(modelMove, &modelError)) {
+			stopForDesynchronization(tr("Received move %1 is rejected by ChessPosition: %2")
+			        .arg(modelMove.uci(), modelError));
+			return;
+		}
 		appendDebugEvent(QString("RX move %1%2 sequence=%3 remoteHash=%4")
 		        .arg(chessSquareName(fromTile), chessSquareName(toTile))
 		        .arg(verifiedPacket ? QString::number(sequence) : "legacy")
@@ -2527,6 +2605,11 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 			m_pendingPromotionChoice = 0;
 			stopForDesynchronization(tr("Received move %1%2 is illegal in the local position")
 			        .arg(chessSquareName(fromTile), chessSquareName(toTile)));
+			return;
+		}
+		if (!m_position.loadFen(currentFen(), &modelError)) {
+			stopForDesynchronization(tr("ChessPosition could not synchronize: %1")
+			        .arg(modelError));
 			return;
 		}
 		if (verifiedPacket) {
