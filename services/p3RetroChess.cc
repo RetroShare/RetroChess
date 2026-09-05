@@ -85,7 +85,28 @@ int	p3RetroChess::tick()
 	handleGxsTick();
 	closePendingGxsTunnels();
 	retryPendingDistantChatInvites();
+	reconnectInterruptedSessions();
 	return 0;
+}
+
+void p3RetroChess::reconnectInterruptedSessions()
+{
+	const time_t now = time(NULL);
+	std::vector<RsGxsId> reconnect;
+	{
+		RsStackMutex stack(mRetroChessMtx);
+		for (const auto &entry : mGameSessions) {
+			const RsRetroChessGameSession &session = entry.second;
+			const RsGxsId id(session.endpointId.toStdString());
+			if (!session.gxs || mActiveTunnels.count(id)
+			        || mPendingTunnels.count(id)) continue;
+			const time_t last = mLastSessionReconnect[entry.first];
+			if (now - last < 15) continue;
+			mLastSessionReconnect[entry.first] = now;
+			reconnect.push_back(RsGxsId(session.endpointId.toStdString()));
+		}
+	}
+	for (const RsGxsId &id : reconnect) requestGxsTunnel(id);
 }
 
 int	p3RetroChess::status()
@@ -344,6 +365,25 @@ bool p3RetroChess::saveList(bool& cleanup, std::list<RsItem*>& lst)
 	cleanup = true ;
 
 	RsConfigKeyValueSet *vitem = new RsConfigKeyValueSet ;
+	{
+		RsStackMutex stack(mRetroChessMtx);
+		for (const auto &entry : mGameSessions) {
+			const RsRetroChessGameSession &session = entry.second;
+			QVariantMap data;
+			data.insert("endpoint", session.endpointId);
+			data.insert("localIdentity", session.localIdentityId);
+			data.insert("gxs", session.gxs);
+			data.insert("color", session.localColor);
+			data.insert("fen", session.fen);
+			data.insert("sequence", session.moveSequence);
+			data.insert("interrupted", true);
+			RsTlvKeyValue value;
+			value.key = "GAME_SESSION:" + entry.first;
+			value.value = QJsonDocument::fromVariant(data)
+			        .toJson(QJsonDocument::Compact).toStdString();
+			vitem->tlvkvs.pairs.push_back(value);
+		}
+	}
 
 	lst.push_back(vitem) ;
 
@@ -351,12 +391,91 @@ bool p3RetroChess::saveList(bool& cleanup, std::list<RsItem*>& lst)
 }
 bool p3RetroChess::loadList(std::list<RsItem*>& load)
 {
-	for(std::list<RsItem*>::const_iterator it(load.begin()); it!=load.end(); ++it)
-	{
-		delete *it;
+	for (RsItem *item : load) {
+		if (RsConfigKeyValueSet *values = dynamic_cast<RsConfigKeyValueSet *>(item)) {
+			for (const RsTlvKeyValue &value : values->tlvkvs.pairs) {
+				if (value.key.compare(0, 13, "GAME_SESSION:") != 0) continue;
+				const QVariantMap data = QJsonDocument::fromJson(
+				        QByteArray::fromStdString(value.value)).toVariant().toMap();
+				RsRetroChessGameSession session;
+				session.endpointId = data.value("endpoint").toString();
+				session.localIdentityId = data.value("localIdentity").toString();
+				session.gxs = data.value("gxs").toBool();
+				session.localColor = data.value("color").toInt();
+				session.fen = data.value("fen").toString();
+				session.moveSequence = data.value("sequence").toUInt();
+				session.interrupted = true;
+				if (!session.endpointId.isEmpty()) {
+					RsStackMutex stack(mRetroChessMtx);
+					mGameSessions[session.endpointId.toStdString()] = session;
+					if (session.gxs && !session.localIdentityId.isEmpty())
+						mOwnGxsIdByPeer[RsGxsId(session.endpointId.toStdString())]
+						        = RsGxsId(session.localIdentityId.toStdString());
+				}
+			}
+		}
+		delete item;
 	}
-
+	load.clear();
 	return true ;
+}
+
+void p3RetroChess::registerGameSession(const RsRetroChessGameSession &session)
+{
+	if (session.endpointId.isEmpty()) return;
+	{
+		RsStackMutex stack(mRetroChessMtx);
+		mGameSessions[session.endpointId.toStdString()] = session;
+		if (session.gxs && !session.localIdentityId.isEmpty())
+			mOwnGxsIdByPeer[RsGxsId(session.endpointId.toStdString())]
+			        = RsGxsId(session.localIdentityId.toStdString());
+	}
+	IndicateConfigChanged();
+}
+
+void p3RetroChess::updateGameSession(
+        const QString &endpointId, const QString &fen, uint32_t moveSequence)
+{
+	{
+		RsStackMutex stack(mRetroChessMtx);
+		auto it = mGameSessions.find(endpointId.toStdString());
+		if (it == mGameSessions.end()) return;
+		it->second.fen = fen;
+		it->second.moveSequence = moveSequence;
+		it->second.interrupted = false;
+	}
+	IndicateConfigChanged();
+}
+
+void p3RetroChess::unregisterGameSession(const QString &endpointId)
+{
+	bool removed;
+	{
+		RsStackMutex stack(mRetroChessMtx);
+		removed = mGameSessions.erase(endpointId.toStdString()) > 0;
+		mLastSessionReconnect.erase(endpointId.toStdString());
+	}
+	if (removed) IndicateConfigChanged();
+}
+
+std::vector<RsRetroChessGameSession> p3RetroChess::gameSessions()
+{
+	RsStackMutex stack(mRetroChessMtx);
+	std::vector<RsRetroChessGameSession> result;
+	for (const auto &entry : mGameSessions) result.push_back(entry.second);
+	return result;
+}
+
+std::vector<RsRetroChessAvailablePeer> p3RetroChess::availableChessPeers()
+{
+	std::vector<RsRetroChessAvailablePeer> result;
+	RsStackMutex stack(mRetroChessMtx);
+	for (const auto &entry : mActiveTunnels)
+		result.push_back({QString::fromStdString(entry.first.toStdString()), true, true});
+	for (const auto &entry : mPendingTunnels)
+		if (mActiveTunnels.count(entry.first) == 0)
+			result.push_back({QString::fromStdString(entry.first.toStdString()), true, false});
+	return result;
 }
 
 RsSerialiser *p3RetroChess::setupSerialiser()
@@ -413,10 +532,17 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
     if (!mGxsTunnels) return;
 
     RsGxsId from_gxs_id;
-    std::list<RsGxsId> ownIds;
-    rsIdentity->getOwnIds(ownIds);
-    if (ownIds.empty()) return;
-    from_gxs_id = ownIds.front();
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto ownIt = mOwnGxsIdByPeer.find(to_gxs_id);
+        if (ownIt != mOwnGxsIdByPeer.end()) from_gxs_id = ownIt->second;
+    }
+    if (from_gxs_id.isNull()) {
+        std::list<RsGxsId> ownIds;
+        rsIdentity->getOwnIds(ownIds);
+        if (ownIds.empty()) return;
+        from_gxs_id = ownIds.front();
+    }
 
     RsGxsTunnelId tunnel_id;
     uint32_t error_code;
@@ -430,6 +556,23 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
         mPendingTunnels[to_gxs_id] = tunnel_id;
         std::cout << "Chess Tunnel requested. Pending ID: " << tunnel_id << std::endl;
     }
+}
+
+bool p3RetroChess::sendInviteToGxs(const RsGxsId &gxsId)
+{
+	RsGxsId ownId;
+	{
+		RsStackMutex stack(mRetroChessMtx);
+		auto it = mOwnGxsIdByPeer.find(gxsId);
+		if (it != mOwnGxsIdByPeer.end()) ownId = it->second;
+	}
+	if (ownId.isNull()) {
+		std::list<RsGxsId> ownIds;
+		rsIdentity->getOwnIds(ownIds);
+		if (ownIds.empty()) return false;
+		ownId = ownIds.front();
+	}
+	return doSendInviteOverGxs(gxsId, ownId);
 }
 
 void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)

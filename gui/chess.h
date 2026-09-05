@@ -101,6 +101,11 @@ public:
 	void disOrange();
 	void validate_tile(int row, int col, int c);
 	void showLivePosition();
+	QString sessionFen() const;
+	uint32_t sessionMoveSequence() const;
+	bool restoreSessionPosition(
+	        const QString &fen, uint32_t moveSequence,
+	        QString *error = nullptr);
 
 	int flag,retVal;
 	int chooser(Tile *temp);
@@ -207,6 +212,7 @@ signals:
 	void gameClosed(QString gameId);
 	void gameEnded(QString gameId);
 	void gameReadyForHistory();
+	void sessionStateChanged(const QString &fen, uint32_t moveSequence);
 };
 
 

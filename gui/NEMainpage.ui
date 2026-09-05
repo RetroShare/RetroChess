@@ -203,6 +203,31 @@
        </item>
       </layout>
      </widget>
+     <widget class="QWidget" name="availablePlayersTab">
+      <attribute name="title">
+       <string>Available Players</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="availablePlayersLayout">
+       <item>
+        <widget class="QLabel" name="availablePlayersDescription">
+         <property name="text">
+          <string>GXS identities connected through a RetroChess tunnel.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTreeWidget" name="availablePlayers">
+         <property name="alternatingRowColors"><bool>true</bool></property>
+         <property name="rootIsDecorated"><bool>false</bool></property>
+         <property name="sortingEnabled"><bool>true</bool></property>
+         <column><property name="text"><string>Player</string></property></column>
+         <column><property name="text"><string>Connection</string></property></column>
+         <column><property name="text"><string>Status</string></property></column>
+         <column><property name="text"><string>Action</string></property></column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
      <widget class="QWidget" name="gameHistoryTab">
       <attribute name="title">
        <string>Game History</string>

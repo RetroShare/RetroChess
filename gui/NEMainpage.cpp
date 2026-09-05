@@ -38,6 +38,7 @@
 #include <QTimer>
 #include <QShowEvent>
 #include <QDateTime>
+#include <QCoreApplication>
 #include <QLocale>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -47,6 +48,7 @@
 #include <QSaveFile>
 
 #include "gui/RetroChessSettings.h"
+#include "gui/RetroChessSessionService.h"
 #include "gui/ChessGameHistory.h"
 #include "gui/ChessGameReviewDialog.h"
 #include "gui/RetroChessUserNotify.h"
@@ -63,12 +65,42 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	MainPage(parent),
 	ui(new Ui::NEMainpage),
 	mNotify(notify),
+	mGameSessions(new RetroChessSessionService(this)),
 	mOfficialLobbyTimer(new QTimer(this)),
+	mAvailablePlayersTimer(new QTimer(this)),
 	mOfficialLobbyDialog(nullptr),
 	mLobbyUnreadCount(0)
 {
 	ui->setupUi(this);
 	setupMenuActions();
+	connect(mGameSessions, &RetroChessSessionService::gameAdded,
+	        this, [this](const QString &key) {
+		if (ui->active_games->findItems(key, Qt::MatchExactly).isEmpty())
+			ui->active_games->addItem(key);
+	});
+	connect(mGameSessions, &RetroChessSessionService::gameRemoved,
+	        this, [this](const QString &key) {
+		removeActiveGameListing(key);
+		if (!QCoreApplication::closingDown())
+			rsRetroChess->unregisterGameSession(key);
+	});
+	connect(mGameSessions, &RetroChessSessionService::unroutableEvent,
+	        this, [](const QString &key, const QString &eventType) {
+		std::cerr << "RetroChess: Received " << eventType.toStdString()
+		          << " but no active game exists for " << key.toStdString()
+		          << std::endl;
+	});
+	connect(mGameSessions, &RetroChessSessionService::peerInviteReceived,
+	        this, &NEMainpage::chessInvitePeer);
+	connect(mGameSessions, &RetroChessSessionService::peerInviteAccepted,
+	        this, &NEMainpage::chessAcceptedPeer);
+	connect(mGameSessions, &RetroChessSessionService::peerRematchRequested,
+	        this, &NEMainpage::chessRematchPeer);
+	connect(mGameSessions, &RetroChessSessionService::invalidPeerPacket,
+	        this, [](const RsPeerId &peer, const QString &reason) {
+		std::cerr << "RetroChess: Invalid packet from " << peer.toStdString()
+		          << ": " << reason.toStdString() << std::endl;
+	});
 
 	connect(mNotify, SIGNAL(NeMsgArrived(RsPeerId,QString)), this, SLOT(NeMsgArrived(RsPeerId,QString)));
 	connect(mNotify, SIGNAL(chessStart(RsPeerId)), this, SLOT(chessStart(RsPeerId)));
@@ -90,6 +122,17 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui->pendingInvites->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 	ui->pendingInvites->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
 	ui->pendingInvites->setIconSize(QSize(40, 40));
+	ui->availablePlayers->setIconSize(QSize(32, 32));
+	ui->availablePlayers->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+	ui->availablePlayers->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+	ui->availablePlayers->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+	ui->availablePlayers->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+	mAvailablePlayersTimer->setInterval(3000);
+	connect(mAvailablePlayersTimer, &QTimer::timeout,
+	        this, &NEMainpage::refreshAvailablePlayers);
+	mAvailablePlayersTimer->start();
+	connect(ui->tabWidget, &QTabWidget::currentChanged,
+	        this, [this](int) { refreshAvailablePlayers(); });
 	QHeaderView *historyHeader = ui->gameHistory->header();
 	historyHeader->setSectionResizeMode(QHeaderView::Interactive);
 	historyHeader->setSectionsMovable(true);
@@ -142,16 +185,67 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		else if (selected == remove) deleteSelectedGame();
 	});
 	refreshGameHistory();
+	refreshAvailablePlayers();
+	for (const RsRetroChessGameSession &session : rsRetroChess->gameSessions()) {
+		if (session.gxs)
+			create_chess_window_gxs(
+			        RsGxsId(session.endpointId.toStdString()), session.localColor);
+		else
+			create_chess_window(session.endpointId.toStdString(), session.localColor);
+		if (RetroChessWindow *window = mGameSessions->game(session.endpointId)) {
+			QString error;
+			if (!session.fen.isEmpty()
+			        && !window->restoreSessionPosition(
+			                session.fen, session.moveSequence, &error))
+				std::cerr << "RetroChess: Could not restore session "
+				          << session.endpointId.toStdString() << ": "
+				          << error.toStdString() << std::endl;
+		}
+	}
+}
+
+void NEMainpage::refreshAvailablePlayers()
+{
+	ui->availablePlayers->setSortingEnabled(false);
+	ui->availablePlayers->clear();
+	const auto peers = rsRetroChess->availableChessPeers();
+	for (const RsRetroChessAvailablePeer &peer : peers) {
+		if (!peer.gxs) continue;
+		GxsIdRSTreeWidgetItem *item = new GxsIdRSTreeWidgetItem(
+		        nullptr, GxsIdDetails::ICON_TYPE_AVATAR, true,
+		        ui->availablePlayers);
+		item->setId(RsGxsId(peer.endpointId.toStdString()), 0, true);
+		item->setData(0, Qt::UserRole, peer.endpointId);
+		item->setText(1, tr("GXS identity"));
+		item->setText(2, peer.tunnelReady ? tr("Ready") : tr("Connecting"));
+		for (int column = 0; column < 4; ++column)
+			item->setSizeHint(column, QSize(32, 38));
+
+		QPushButton *invite = new QPushButton(tr("Invite"), ui->availablePlayers);
+		invite->setFixedHeight(28);
+		invite->setEnabled(peer.tunnelReady
+		        && !mGameSessions->contains(peer.endpointId));
+		if (mGameSessions->contains(peer.endpointId)) invite->setText(tr("Playing"));
+		ui->availablePlayers->setItemWidget(item, 3, invite);
+		connect(invite, &QPushButton::clicked, this, [this, peer]() {
+			bool sent = false;
+			sent = rsRetroChess->sendInviteToGxs(
+			        RsGxsId(peer.endpointId.toStdString()));
+			if (!sent)
+				QMessageBox::warning(
+				        this, tr("Chess invitation"),
+				        tr("The chess invitation could not be sent."));
+		});
+	}
+	ui->availablePlayersDescription->setText(peers.empty()
+	        ? tr("No RetroChess GXS identities are currently available.")
+	        : tr("Select a RetroChess GXS identity to invite."));
+	ui->availablePlayers->setSortingEnabled(true);
 }
 
 NEMainpage::~NEMainpage()
 {
-	for (auto it = activeGames.begin(); it != activeGames.end(); ++it) {
-		if (it.value()) {
-			it.value()->deleteLater();
-		}
-	}
-	activeGames.clear();
+	mGameSessions->closeAll();
 	delete ui;
 }
 
@@ -370,33 +464,19 @@ void NEMainpage::removePendingInvitation(const QString &key)
 
 void NEMainpage::chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count)
 {
-	std::string key = gxs_id.toStdString();
-	if (activeGames.find(key) != activeGames.end()) {
-		RetroChessWindow* rcw = activeGames.value(key);
-		// Remote clicks may only act while it is the remote player's turn.
-		// validate() itself only checks pieceColor == turn, so without this
-		// gate a hostile client could select and move OUR pieces.
-		if (rcw->m_flag_finished == 0 && rcw->turn != rcw->m_localplayer_turn)
-			rcw->validate_tile(row, col, count);
-	} else {
-		std::cerr << "RetroChess: Received GXS move but no active game for " << key << std::endl;
-	}
+	mGameSessions->routeMove(
+	        QString::fromStdString(gxs_id.toStdString()), col, row, count);
 }
 
 void NEMainpage::chessPlayerLeftGxs(const RsGxsId &gxs_id)
 {
-	const std::string key = gxs_id.toStdString();
-	if (activeGames.find(key) != activeGames.end()) {
-		activeGames.value(key)->showPlayerLeaveMsg();
-		removeActiveGame(QString::fromStdString(key));
-	}
+	mGameSessions->routePlayerLeft(
+	        QString::fromStdString(gxs_id.toStdString()));
 }
 
 void NEMainpage::removeActiveGame(QString gameId)
 {
-	const std::string key = gameId.toStdString();
-	activeGames.remove(key);
-	removeActiveGameListing(gameId);
+	mGameSessions->unregisterGame(gameId);
 }
 
 void NEMainpage::removeActiveGameListing(QString gameId)
@@ -412,9 +492,8 @@ void NEMainpage::requestRematchGxs(const RsGxsId &gxs_id, int localColor)
 	if (!rsRetroChess->sendRematchGxs(gxs_id, localColor))
 		return;
 
-	const std::string key = gxs_id.toStdString();
-	if (activeGames.contains(key)) {
-		RetroChessWindow *window = activeGames.value(key);
+	const QString key = QString::fromStdString(gxs_id.toStdString());
+	if (RetroChessWindow *window = mGameSessions->game(key)) {
 		window->m_rematchRequested = true;
 		window->showGameStatus(tr("Waiting for opponent to accept rematch"));
 	}
@@ -422,12 +501,12 @@ void NEMainpage::requestRematchGxs(const RsGxsId &gxs_id, int localColor)
 
 void NEMainpage::chessRematchGxs(const RsGxsId &gxs_id, int remoteColor)
 {
-	const std::string key = gxs_id.toStdString();
-	if (!activeGames.contains(key)) {
+	const QString key = QString::fromStdString(gxs_id.toStdString());
+	if (!mGameSessions->contains(key)) {
 		rsRetroChess->sendGameActionGxs(gxs_id, "rematch_decline");
 		return;
 	}
-	QPointer<RetroChessWindow> window = activeGames.value(key);
+	QPointer<RetroChessWindow> window = mGameSessions->game(key);
 	const bool alreadyRequested = window->m_rematchRequested;
 	if (!alreadyRequested && QMessageBox::question(
 	        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?")) != QMessageBox::Yes) {
@@ -448,112 +527,65 @@ void NEMainpage::chessRematchGxs(const RsGxsId &gxs_id, int remoteColor)
 
 void NEMainpage::chessGameActionGxs(const RsGxsId &gxs_id, QString action)
 {
-	const std::string key = gxs_id.toStdString();
-	if (activeGames.contains(key))
-		activeGames.value(key)->applyGameAction(action, true);
+	mGameSessions->routeAction(
+	        QString::fromStdString(gxs_id.toStdString()), action);
 }
 
 // decode received message here
 void NEMainpage::NeMsgArrived(const RsPeerId &peer_id, QString str)
 {
-	QJsonDocument jdoc = QJsonDocument::fromJson(str.toUtf8());
-	if (jdoc.isNull() || !jdoc.isObject()) {
-		std::cerr << "RetroChess: Invalid JSON received" << std::endl;
+	mGameSessions->processPeerPacket(peer_id, str);
+}
+
+void NEMainpage::chessInvitePeer(const RsPeerId &peer_id)
+{
+	ChatDialog::chatFriend(ChatId(peer_id));
+	rsRetroChess->gotInvite(peer_id);
+	mNotify->notifyChessInvite(peer_id);
+}
+
+void NEMainpage::chessAcceptedPeer(const RsPeerId &peer_id)
+{
+	if (!rsRetroChess->hasInviteTo(peer_id)) return;
+	rsRetroChess->clearInvite(peer_id);
+	create_chess_window(peer_id.toStdString(), 0);
+}
+
+void NEMainpage::chessRematchPeer(const RsPeerId &peer_id, int remoteColor)
+{
+	const QString key = QString::fromStdString(peer_id.toStdString());
+	QPointer<RetroChessWindow> window = mGameSessions->game(key);
+	QVariantMap reply;
+	if (!window) {
+		reply.insert("type", "game_action");
+		reply.insert("action", "rematch_decline");
+		rsRetroChess->qvm_msg_peer(peer_id, reply);
 		return;
 	}
-	QVariantMap vmap = jdoc.toVariant().toMap();
-#ifdef DEBUG_RetroChess
-	std::cout << "GUI got Packet from: " << peer_id;
-	std::cout << " saying " << str.toStdString();
-	std::cout << std::endl;
-#endif
-	QString type = vmap.value("type").toString();
-	if (type == "chessclick")
-	{
-		int row = vmap.value("row").toInt();
-		int col = vmap.value("col").toInt();
-		int count = vmap.value("count").toInt();
-		RetroChessWindow* rcw = activeGames.value(peer_id.toStdString(), nullptr);
-		// Same turn gate as the GXS path: a remote click must not be able to
-		// drive our own pieces during our turn.
-		if (rcw && rcw->m_flag_finished == 0 && rcw->turn != rcw->m_localplayer_turn)
-			rcw->validate_tile(row,col,count);
+	const bool alreadyRequested = window->m_rematchRequested;
+	if (!alreadyRequested && QMessageBox::question(
+	        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?"))
+	        != QMessageBox::Yes) {
+		reply.insert("type", "game_action");
+		reply.insert("action", "rematch_decline");
+		rsRetroChess->qvm_msg_peer(peer_id, reply);
+		return;
 	}
-    else if(type == "player_status_message")
-    {
-        // show player left message
-		if( activeGames.find(peer_id.toStdString()) != activeGames.end())	// check has active games
-		{
-			RetroChessWindow* rcw = activeGames.value(peer_id.toStdString());
-			QString status_str = vmap.value("player_status").toString();
-
-			if( status_str == "leave")
-			{
-				rcw->showPlayerLeaveMsg();
-				removeActiveGame(QString::fromStdString(peer_id.toStdString()));
-			}
-		}
-    }
-	else if (type == "chess_invite")
-	{
-		ChatDialog::chatFriend(ChatId(peer_id));
-		rsRetroChess->gotInvite(peer_id);
-		mNotify->notifyChessInvite(peer_id);
+	if (!window) return;
+	if (!alreadyRequested) {
+		reply.insert("type", "chess_rematch");
+		reply.insert("color", window->m_localplayer_turn);
+		rsRetroChess->qvm_msg_peer(peer_id, reply);
 	}
-	else if (type == "chess_accept")
-	{
-		if (rsRetroChess->hasInviteTo(peer_id))
-		{
-			// We sent the invitation, so we are White and move first.
-			rsRetroChess->clearInvite(peer_id);
-			create_chess_window(peer_id.toStdString(), 0);
-		}
-	}
-	else if (type == "chess_rematch")
-	{
-		const std::string key = peer_id.toStdString();
-		if (!activeGames.contains(key)) {
-			QVariantMap decline;
-			decline.insert("type", "game_action");
-			decline.insert("action", "rematch_decline");
-			rsRetroChess->qvm_msg_peer(peer_id, decline);
-			return;
-		}
-		QPointer<RetroChessWindow> window = activeGames.value(key);
-		const bool alreadyRequested = window->m_rematchRequested;
-		if (!alreadyRequested && QMessageBox::question(
-		        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?")) != QMessageBox::Yes) {
-			QVariantMap decline;
-			decline.insert("type", "game_action");
-			decline.insert("action", "rematch_decline");
-			rsRetroChess->qvm_msg_peer(peer_id, decline);
-			return;
-		}
-		// Same nested-event-loop hazard as chessRematchGxs(): the window may
-		// have been destroyed while the question box was open.
-		if (!window)
-			return;
-		if (!alreadyRequested) {
-			QVariantMap accept;
-			accept.insert("type", "chess_rematch");
-			accept.insert("color", window->m_localplayer_turn);
-			rsRetroChess->qvm_msg_peer(peer_id, accept);
-		}
-		window->closeForRematch();
-		const int localColor = vmap.value("color").toInt() == 0 ? 1 : 0;
-		create_chess_window(key, localColor == 0 ? 1 : 0);
-	}
-	else if (type == "game_action")
-	{
-		const std::string key = peer_id.toStdString();
-		if (activeGames.contains(key))
-			activeGames.value(key)->applyGameAction(vmap.value("action").toString(), true);
-	}
+	window->closeForRematch();
+	const int localColor = remoteColor == 0 ? 1 : 0;
+	create_chess_window(key.toStdString(), localColor == 0 ? 1 : 0);
 }
 
 void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 {
-	if (RetroChessWindow *existing = activeGames.value(peer_id, nullptr)) {
+	const QString key = QString::fromStdString(peer_id);
+	if (RetroChessWindow *existing = mGameSessions->game(key)) {
 		if (existing->m_flag_finished == 0) {
 			// A game with this opponent is already running. Overwriting the
 			// map entry would orphan the old window (it stays open but stops
@@ -574,8 +606,17 @@ void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 	connect(rcw, SIGNAL(gameReadyForHistory()), this, SLOT(archiveFinishedGame()));
 	rcw->show();
 
-	activeGames.insert(peer_id, rcw);
-	ui->active_games->addItem(QString::fromStdString(peer_id));
+	mGameSessions->registerGame(
+	        key, RetroChessSessionService::PeerEndpoint, rcw);
+	RsRetroChessGameSession session;
+	session.endpointId = key;
+	session.localColor = player_id;
+	session.fen = rcw->sessionFen();
+	rsRetroChess->registerGameSession(session);
+	connect(rcw, &RetroChessWindow::sessionStateChanged, this,
+	        [key](const QString &fen, uint32_t sequence) {
+		rsRetroChess->updateGameSession(key, fen, sequence);
+	});
 }
 
 void NEMainpage::requestRematchPeer(QString peerId, int localColor)
@@ -585,16 +626,16 @@ void NEMainpage::requestRematchPeer(QString peerId, int localColor)
 	map.insert("color", localColor);
 	rsRetroChess->qvm_msg_peer(RsPeerId(peerId.toStdString()), map);
 
-	const std::string key = peerId.toStdString();
-	if (activeGames.contains(key)) {
-		activeGames.value(key)->m_rematchRequested = true;
-		activeGames.value(key)->showGameStatus(tr("Waiting for opponent to accept rematch"));
+	if (RetroChessWindow *window = mGameSessions->game(peerId)) {
+		window->m_rematchRequested = true;
+		window->showGameStatus(tr("Waiting for opponent to accept rematch"));
 	}
 }
 
 void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 {
-    if (RetroChessWindow *existing = activeGames.value(gxs_id.toStdString(), nullptr)) {
+	const QString key = QString::fromStdString(gxs_id.toStdString());
+    if (RetroChessWindow *existing = mGameSessions->game(key)) {
         if (existing->m_flag_finished == 0) {
             // Same as create_chess_window(): never orphan a running game.
             existing->raise();
@@ -614,9 +655,19 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
     win->show();
 
     // Track the game so GXS moves can be routed to it
-    std::string key = gxs_id.toStdString();
-    activeGames.insert(key, win);
-    ui->active_games->addItem(QString::fromStdString(key));
+	mGameSessions->registerGame(
+	        key, RetroChessSessionService::GxsEndpoint, win);
+	RsRetroChessGameSession session;
+	session.endpointId = key;
+	session.gxs = true;
+	session.localIdentityId = QString::fromStdString(win->mOwnGxsId.toStdString());
+	session.localColor = player_id;
+	session.fen = win->sessionFen();
+	rsRetroChess->registerGameSession(session);
+	connect(win, &RetroChessWindow::sessionStateChanged, this,
+	        [key](const QString &fen, uint32_t sequence) {
+		rsRetroChess->updateGameSession(key, fen, sequence);
+	});
 }
 
 void NEMainpage::archiveFinishedGame()
@@ -780,7 +831,7 @@ void NEMainpage::setupMenuActions()
 		if (dialog.exec() != QDialog::Accepted)
 			return;
 
-		for (RetroChessWindow *window : activeGames)
+		for (RetroChessWindow *window : mGameSessions->games())
 			if (window)
 				window->refreshBoardTheme();
 	});

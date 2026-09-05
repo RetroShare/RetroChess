@@ -2167,6 +2167,38 @@ void RetroChessWindow::recordBoardSnapshot(int fromTile, int toTile)
 	m_boardHistoryMoves.push_back(qMakePair(fromTile, toTile));
 	m_viewedHistoryPly = m_boardHistory.size() - 1;
 	updateHistoryControls();
+	emit sessionStateChanged(currentFen(), sessionMoveSequence());
+}
+
+QString RetroChessWindow::sessionFen() const
+{
+	return currentFen();
+}
+
+uint32_t RetroChessWindow::sessionMoveSequence() const
+{
+	return m_boardHistory.isEmpty()
+	        ? 0u : static_cast<uint32_t>(m_boardHistory.size() - 1);
+}
+
+bool RetroChessWindow::restoreSessionPosition(
+        const QString &fen, uint32_t moveSequence, QString *error)
+{
+	if (!m_position.loadFen(fen, error) || !loadFen(fen, error)) return false;
+	m_boardHistory.clear();
+	m_boardHistoryMoves.clear();
+	recordBoardSnapshot();
+	// Only the latest FEN is persisted. Preserve the protocol sequence so the
+	// next verified remote move is not rejected after restart.
+	while (sessionMoveSequence() < moveSequence) {
+		m_boardHistory.push_back(m_boardHistory.constLast());
+		m_boardHistoryMoves.push_back(qMakePair(-1, -1));
+	}
+	m_viewedHistoryPly = m_boardHistory.size() - 1;
+	updateHistoryControls();
+	emit sessionStateChanged(currentFen(), sessionMoveSequence());
+	showGameStatus(tr("Interrupted game restored"));
+	return true;
 }
 
 void RetroChessWindow::showHistoryPly(int ply)

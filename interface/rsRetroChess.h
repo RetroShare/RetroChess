@@ -32,6 +32,29 @@
 #include <QVariantMap>
 #include <QString>
 
+struct RsRetroChessGameSession
+{
+	RsRetroChessGameSession() = default;
+	QString endpointId;
+	QString localIdentityId;
+	bool gxs = false;
+	int localColor = 0;
+	QString fen;
+	uint32_t moveSequence = 0;
+	bool interrupted = false;
+};
+
+struct RsRetroChessAvailablePeer
+{
+	RsRetroChessAvailablePeer() = default;
+	RsRetroChessAvailablePeer(
+	        const QString &id, bool isGxs, bool ready)
+	    : endpointId(id), gxs(isGxs), tunnelReady(ready) {}
+	QString endpointId;
+	bool gxs = false;
+	bool tunnelReady = false;
+};
+
 class RsRetroChess ;
 extern RsRetroChess *rsRetroChess;
  
@@ -61,6 +84,7 @@ class RsRetroChess
 	virtual void player_leave_gxs(const RsGxsId &gxs_id) = 0;
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) = 0;
 	virtual void sendGxsInvite(const RsGxsId &gxsId) = 0;
+	virtual bool sendInviteToGxs(const RsGxsId &gxsId) = 0;
 	//virtual void addChessFriend(const RsGxsId &gxsId) = 0;
 	virtual void acceptedInviteGxs(const RsGxsId &gxsId) = 0;
 	virtual void clearInviteGxs(const RsGxsId &gxsId) = 0;
@@ -68,6 +92,13 @@ class RsRetroChess
 	virtual RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) = 0;
 	virtual bool sendRematchGxs(const RsGxsId &gxsId, int localColor) = 0;
 	virtual bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) = 0;
+	virtual void registerGameSession(const RsRetroChessGameSession &session) = 0;
+	virtual void updateGameSession(
+	        const QString &endpointId, const QString &fen,
+	        uint32_t moveSequence) = 0;
+	virtual void unregisterGameSession(const QString &endpointId) = 0;
+	virtual std::vector<RsRetroChessGameSession> gameSessions() = 0;
+	virtual std::vector<RsRetroChessAvailablePeer> availableChessPeers() = 0;
 
 	// Send invite via an *existing* distant chat tunnel (the right approach for distant chat)
 	virtual bool sendInvite_chat(const ChatId &chatId) = 0;
