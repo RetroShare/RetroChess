@@ -757,6 +757,12 @@ void RetroChessWindow::initChessBoard()
 	layoutChessBoard();
 }
 
+QString RetroChessWindow::activeGameDescription() const
+{
+	return tr("White: %1 — Black: %2")
+	        .arg(QString::fromUtf8(p2name.c_str()), QString::fromUtf8(p1name.c_str()));
+}
+
 void RetroChessWindow::activateBoardSquare(int square)
 {
 	if (square < 0 || square >= 64 || m_flag_finished

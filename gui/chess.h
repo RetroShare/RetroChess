@@ -75,6 +75,7 @@ public:
 	explicit RetroChessWindow(std::string peerid, int player = 0, QWidget *parent = 0);
 	explicit RetroChessWindow(const RsGxsId &gxsId, int player = 0, QWidget *parent = 0);
 	~RetroChessWindow();
+	QString activeGameDescription() const;
 	int currentplayer;
 	int myid;
 	RsGxsId mGxsId; // Store GXS identity if using a tunnel

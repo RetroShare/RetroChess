@@ -1,7 +1,7 @@
 /*******************************************************************************
  * gui/NEMainpage.cpp                                                          *
  *                                                                             *
- * Copyright (C) 2020 RetroShare Team <retroshare.project@gmail.com>           *
+ * Copyright (C) 2026 RetroShare Team <retroshare.project@gmail.com>           *
  *                                                                             *
  * This program is free software: you can redistribute it and/or modify        *
  * it under the terms of the GNU Affero General Public License as              *
@@ -75,9 +75,19 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	setupMenuActions();
 	connect(mGameSessions, &RetroChessSessionService::gameAdded,
 	        this, [this](const QString &key) {
-		if (ui->active_games->findItems(key, Qt::MatchExactly).isEmpty())
-			ui->active_games->addItem(key);
+		for (int row = 0; row < ui->active_games->topLevelItemCount(); ++row)
+			if (ui->active_games->topLevelItem(row)->data(0, Qt::UserRole).toString() == key)
+				return;
+		RetroChessWindow *window = mGameSessions->game(key);
+		QTreeWidgetItem *item = new QTreeWidgetItem(ui->active_games);
+		item->setText(0, window ? window->activeGameDescription() : key);
+		item->setText(1, key);
+		item->setData(0, Qt::UserRole, key);
+		if (window) item->setToolTip(0, window->windowTitle());
 	});
+	ui->active_games->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+	ui->active_games->header()->setSectionResizeMode(1, QHeaderView::Interactive);
+	ui->active_games->setColumnWidth(1, 260);
 	connect(mGameSessions, &RetroChessSessionService::gameRemoved,
 	        this, [this](const QString &key) {
 		removeActiveGameListing(key);
@@ -216,7 +226,7 @@ void NEMainpage::refreshAvailablePlayers()
 		        ui->availablePlayers);
 		item->setId(RsGxsId(peer.endpointId.toStdString()), 0, true);
 		item->setData(0, Qt::UserRole, peer.endpointId);
-		item->setText(1, tr("GXS identity"));
+		item->setText(3, tr("GXS identity"));
 		item->setText(2, peer.tunnelReady ? tr("Ready") : tr("Connecting"));
 		for (int column = 0; column < 4; ++column)
 			item->setSizeHint(column, QSize(32, 38));
@@ -226,7 +236,11 @@ void NEMainpage::refreshAvailablePlayers()
 		invite->setEnabled(peer.tunnelReady
 		        && !mGameSessions->contains(peer.endpointId));
 		if (mGameSessions->contains(peer.endpointId)) invite->setText(tr("Playing"));
-		ui->availablePlayers->setItemWidget(item, 3, invite);
+		QWidget *actionCell = new QWidget(ui->availablePlayers);
+		QHBoxLayout *actionLayout = new QHBoxLayout(actionCell);
+		actionLayout->setContentsMargins(0, 0, 0, 0);
+		actionLayout->addWidget(invite, 1, Qt::AlignVCenter);
+		ui->availablePlayers->setItemWidget(item, 1, actionCell);
 		connect(invite, &QPushButton::clicked, this, [this, peer]() {
 			bool sent = false;
 			sent = rsRetroChess->sendInviteToGxs(
@@ -481,9 +495,9 @@ void NEMainpage::removeActiveGame(QString gameId)
 
 void NEMainpage::removeActiveGameListing(QString gameId)
 {
-	for (int row = ui->active_games->count() - 1; row >= 0; --row) {
-		if (ui->active_games->item(row)->text() == gameId)
-			delete ui->active_games->takeItem(row);
+	for (int row = ui->active_games->topLevelItemCount() - 1; row >= 0; --row) {
+		if (ui->active_games->topLevelItem(row)->data(0, Qt::UserRole).toString() == gameId)
+			delete ui->active_games->takeTopLevelItem(row);
 	}
 }
 
