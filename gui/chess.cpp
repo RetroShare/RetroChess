@@ -624,7 +624,7 @@ void RetroChessWindow::initChessBoard()
 	boardLayout->setContentsMargins(0, 0, 0, 0);
 	boardLayout->setSpacing(0);
 	m_chessBoard = new ChessBoard(m_ui->m_chess_board);
-	boardLayout->addWidget(m_chessBoard);
+	boardLayout->addWidget(m_chessBoard, 0, Qt::AlignCenter);
 	QWidget *baseWidget = m_chessBoard;
 	m_chessBoard->setStateHandlers(
 	        [this]() { return m_position.fen(); },
@@ -2086,6 +2086,7 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
 void RetroChessWindow::resizeEvent(QResizeEvent *event)
 {
 	QWidget::resizeEvent(event);
+	layoutChessBoard();
 }
 
 bool RetroChessWindow::eventFilter(QObject *watched, QEvent *event)
@@ -2099,13 +2100,20 @@ void RetroChessWindow::layoutChessBoard()
 {
 	if (!m_ui || !m_chessBoard || !tile[0][0]) return;
 	QWidget *board = m_chessBoard;
-	const int desiredBoardWidth = qMax(BOARD_FULL_SIZE, board->height());
-	if (board->width() != desiredBoardWidth)
-		board->setFixedWidth(desiredBoardWidth);
+	QWidget *boardContainer = m_ui->m_chess_board;
+	const QMargins margins = m_ui->gridLayout->contentsMargins();
 	const int handlesWidth = 2 * m_ui->splitter->handleWidth();
+	const int availableBoardWidth = width() - margins.left() - margins.right()
+	        - PLAYER_PANEL_WIDTH - MOVES_PANEL_WIDTH - handlesWidth;
+	const int availableSide = qMax(
+	        BOARD_FULL_SIZE,
+	        qMin(availableBoardWidth, m_ui->splitter->height()));
+	if (boardContainer->width() != availableSide)
+		boardContainer->setFixedWidth(availableSide);
+	if (board->size() != QSize(availableSide, availableSide))
+		board->setFixedSize(availableSide, availableSide);
 	m_ui->splitter->setMaximumWidth(
-	        PLAYER_PANEL_WIDTH + desiredBoardWidth + MOVES_PANEL_WIDTH + handlesWidth);
-	const int availableSide = qMin(board->width(), board->height());
+	        PLAYER_PANEL_WIDTH + availableSide + MOVES_PANEL_WIDTH + handlesWidth);
 	const int tileSize = qMax(1, (availableSide - 2 * BORDER_SIZE) / 8);
 	const int boardSide = 2 * BORDER_SIZE + 8 * tileSize;
 	const int offsetX = (board->width() - boardSide) / 2;

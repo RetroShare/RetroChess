@@ -182,16 +182,16 @@
       </layout>
      </widget>
      <widget class="QWidget" name="m_chess_board" native="true">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>1</horstretch>
+        <verstretch>1</verstretch>
+       </sizepolicy>
+      </property>
       <property name="minimumSize">
        <size>
         <width>552</width>
         <height>552</height>
-       </size>
-      </property>
-      <property name="maximumSize">
-       <size>
-        <width>600</width>
-        <height>600</height>
        </size>
       </property>
      </widget>
