@@ -284,8 +284,7 @@ void RetroChessWindow::initAccessories()
 {
 	m_ui->frame_3->setFixedWidth(PLAYER_PANEL_WIDTH);
 	m_ui->moveHistoryFrame->setFixedWidth(MOVES_PANEL_WIDTH);
-	m_ui->splitter->setChildrenCollapsible(false);
-	m_ui->gridLayout->setAlignment(m_ui->splitter, Qt::AlignHCenter);
+	m_ui->gameAreaLayout->setAlignment(Qt::AlignCenter);
 
 	// display player's name
 	m_ui->m_player1_name->setText( p1name.c_str() );
@@ -487,7 +486,6 @@ void RetroChessWindow::initAccessories()
 	m_gameStatusBar = new QStatusBar(this);
 	m_gameStatusBar->setSizeGripEnabled(false);
 	m_gameStatusBar->setFixedHeight(24);
-	m_ui->m_status_bar->setStyleSheet(QString());
 	m_ui->m_status_bar->setAlignment(Qt::AlignCenter);
 	m_gameStatusBar->addWidget(m_ui->m_status_bar, 1);
 	m_ui->gridLayout->addWidget(m_gameStatusBar, 1, 0);
@@ -624,7 +622,7 @@ void RetroChessWindow::initChessBoard()
 	boardLayout->setContentsMargins(0, 0, 0, 0);
 	boardLayout->setSpacing(0);
 	m_chessBoard = new ChessBoard(m_ui->m_chess_board);
-	boardLayout->addWidget(m_chessBoard, 0, Qt::AlignCenter);
+	boardLayout->addWidget(m_chessBoard);
 	QWidget *baseWidget = m_chessBoard;
 	m_chessBoard->setStateHandlers(
 	        [this]() { return m_position.fen(); },
@@ -2102,19 +2100,22 @@ void RetroChessWindow::layoutChessBoard()
 	QWidget *board = m_chessBoard;
 	QWidget *boardContainer = m_ui->m_chess_board;
 	const QMargins margins = m_ui->gridLayout->contentsMargins();
-	const int handlesWidth = 2 * m_ui->splitter->handleWidth();
+	const int panelSpacing = 2 * m_ui->gameAreaLayout->spacing();
 	const int availableBoardWidth = width() - margins.left() - margins.right()
-	        - PLAYER_PANEL_WIDTH - MOVES_PANEL_WIDTH - handlesWidth;
+	        - PLAYER_PANEL_WIDTH - MOVES_PANEL_WIDTH - panelSpacing;
 	const int availableSide = qMax(
 	        BOARD_FULL_SIZE,
-	        qMin(availableBoardWidth, m_ui->splitter->height()));
-	if (boardContainer->width() != availableSide)
-		boardContainer->setFixedWidth(availableSide);
-	if (board->size() != QSize(availableSide, availableSide))
-		board->setFixedSize(availableSide, availableSide);
-	m_ui->splitter->setMaximumWidth(
-	        PLAYER_PANEL_WIDTH + availableSide + MOVES_PANEL_WIDTH + handlesWidth);
-	const int tileSize = qMax(1, (availableSide - 2 * BORDER_SIZE) / 8);
+	        qMin(availableBoardWidth, m_ui->gameArea->height()));
+	// Do not use setFixedWidth()/setFixedSize() here. Enlarging a fixed size while
+	// maximized propagates into the top-level minimum size hint and prevents the
+	// window from returning to its original restored geometry.
+	boardContainer->setMinimumSize(BOARD_FULL_SIZE, BOARD_FULL_SIZE);
+	boardContainer->setMaximumSize(availableSide, availableSide);
+	board->setMinimumSize(BOARD_FULL_SIZE, BOARD_FULL_SIZE);
+	board->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+	board->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	const int actualAvailableSide = qMin(board->width(), board->height());
+	const int tileSize = qMax(1, (actualAvailableSide - 2 * BORDER_SIZE) / 8);
 	const int boardSide = 2 * BORDER_SIZE + 8 * tileSize;
 	const int offsetX = (board->width() - boardSide) / 2;
 	const int offsetY = (board->height() - boardSide) / 2;

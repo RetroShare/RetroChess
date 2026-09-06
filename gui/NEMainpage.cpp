@@ -238,8 +238,8 @@ void NEMainpage::refreshAvailablePlayers()
 		});
 	}
 	ui->availablePlayersDescription->setText(peers.empty()
-	        ? tr("No RetroChess GXS identities are currently available.")
-	        : tr("Select a RetroChess GXS identity to invite."));
+	        ? tr("No RetroChess identities are currently available.")
+	        : tr("Select a RetroChess identity to invite."));
 	ui->availablePlayers->setSortingEnabled(true);
 }
 
