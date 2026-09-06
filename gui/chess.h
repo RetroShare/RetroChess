@@ -169,6 +169,8 @@ public:
 	QMediaPlayer *m_moveSound;
 	QMediaPlayer *m_captureSound;
 	QMediaPlayer *m_victorySound;
+	QMediaPlayer *m_drawSound;
+	QMediaPlayer *m_defeatSound;
 	QStatusBar *m_gameStatusBar;
 	ChessDebugWidget *m_debugWidget;
 	ChessBoard *m_chessBoard;

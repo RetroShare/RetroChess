@@ -180,7 +180,8 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent) : QDialog(pa
 	        tr("After a piece is captured"), "Capture.mp3",
 	        RetroChessSettings::captureSoundEnabled());
 	QCheckBox *resultSound = addSound(2, tr("Game result"),
-	        tr("When a non-draw game finishes"), "victory.mp3",
+	        tr("When a game ends with a win, draw, or defeat"),
+	        "victory.mp3 / Draw.mp3 / Defeat.mp3",
 	        RetroChessSettings::gameResultSoundEnabled());
 	QCheckBox *inviteSound = addSound(3, tr("Chess invitation"),
 	        tr("When an invitation toaster is received"), "ping.mp3",
