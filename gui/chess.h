@@ -75,6 +75,7 @@ public:
 	explicit RetroChessWindow(std::string peerid, int player = 0, QWidget *parent = 0);
 	explicit RetroChessWindow(const RsGxsId &gxsId, int player = 0, QWidget *parent = 0);
 	~RetroChessWindow();
+	QString activeGameDescription() const;
 	int currentplayer;
 	int myid;
 	RsGxsId mGxsId; // Store GXS identity if using a tunnel
@@ -101,6 +102,11 @@ public:
 	void disOrange();
 	void validate_tile(int row, int col, int c);
 	void showLivePosition();
+	QString sessionFen() const;
+	uint32_t sessionMoveSequence() const;
+	bool restoreSessionPosition(
+	        const QString &fen, uint32_t moveSequence,
+	        QString *error = nullptr);
 
 	int flag,retVal;
 	int chooser(Tile *temp);
@@ -163,6 +169,8 @@ public:
 	QMediaPlayer *m_moveSound;
 	QMediaPlayer *m_captureSound;
 	QMediaPlayer *m_victorySound;
+	QMediaPlayer *m_drawSound;
+	QMediaPlayer *m_defeatSound;
 	QStatusBar *m_gameStatusBar;
 	ChessDebugWidget *m_debugWidget;
 	ChessBoard *m_chessBoard;
@@ -207,6 +215,7 @@ signals:
 	void gameClosed(QString gameId);
 	void gameEnded(QString gameId);
 	void gameReadyForHistory();
+	void sessionStateChanged(const QString &fen, uint32_t moveSequence);
 };
 
 

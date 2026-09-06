@@ -21,10 +21,24 @@
   </property>
   <layout class="QGridLayout" name="gridLayout">
    <item row="0" column="0">
-    <widget class="QSplitter" name="splitter">
-     <property name="orientation">
-      <enum>Qt::Horizontal</enum>
-     </property>
+    <widget class="QWidget" name="gameArea" native="true">
+     <layout class="QHBoxLayout" name="gameAreaLayout">
+      <property name="spacing">
+       <number>4</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
      <widget class="QFrame" name="frame_3">
       <property name="sizePolicy">
        <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
@@ -105,10 +119,7 @@
         </spacer>
        </item>
        <item row="2" column="0">
-        <widget class="QLabel" name="m_status_bar">
-         <property name="styleSheet">
-          <string notr="true">font: 16pt; color: rgb(255, 0, 0);</string>
-         </property>
+       <widget class="QLabel" name="m_status_bar">
          <property name="text">
           <string>StatusBar</string>
          </property>
@@ -181,20 +192,24 @@
        </item>
       </layout>
      </widget>
+      </item>
+      <item>
      <widget class="QWidget" name="m_chess_board" native="true">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>1</horstretch>
+        <verstretch>1</verstretch>
+       </sizepolicy>
+      </property>
       <property name="minimumSize">
        <size>
         <width>552</width>
         <height>552</height>
        </size>
       </property>
-      <property name="maximumSize">
-       <size>
-        <width>600</width>
-        <height>600</height>
-       </size>
-      </property>
      </widget>
+      </item>
+      <item>
      <widget class="QFrame" name="moveHistoryFrame">
       <property name="minimumSize">
        <size>
@@ -236,6 +251,8 @@
        </item>
       </layout>
      </widget>
+      </item>
+     </layout>
     </widget>
    </item>
   </layout>

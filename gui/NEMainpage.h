@@ -45,6 +45,7 @@ class ChatWidget;
 class UserNotify;
 class QShowEvent;
 class QTreeWidgetItem;
+class RetroChessSessionService;
 
 namespace Ui
 {
@@ -72,6 +73,9 @@ signals:
 private slots:
 	void setupMenuActions();
 	void NeMsgArrived(const RsPeerId &peer_id, QString str);
+	void chessInvitePeer(const RsPeerId &peer_id);
+	void chessAcceptedPeer(const RsPeerId &peer_id);
+	void chessRematchPeer(const RsPeerId &peer_id, int remoteColor);
 	void chessStart(const RsPeerId &peer_id);
 	void chessStartGxs(const RsGxsId &gxs_id);
 	void chessStartGxsAsBlack(const RsGxsId &gxs_id);
@@ -88,14 +92,16 @@ private slots:
 	void autoJoinOfficialLobby();
 	void officialLobbyNewMessage(ChatWidget *chatWidget);
 	void archiveFinishedGame();
+	void refreshAvailablePlayers();
 private:
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
+	RetroChessSessionService *mGameSessions;
 	QTimer *mOfficialLobbyTimer;
+	QTimer *mAvailablePlayersTimer;
 	ChatDialog *mOfficialLobbyDialog;
 	unsigned int mLobbyUnreadCount;
 
-	QMap<std::string, RetroChessWindow*> activeGames;
 	QMap<QString, QTreeWidgetItem*> mPendingInvites;
 	QSet<QString> mUnreadInviteKeys;
 	void create_chess_window(std::string peer_id, int player_id);

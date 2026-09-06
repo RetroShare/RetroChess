@@ -111,12 +111,19 @@ public:
 	void player_leave_gxs(const RsGxsId &gxs_id);
 
 	void sendGxsInvite(const RsGxsId &toGxsId);
+	bool sendInviteToGxs(const RsGxsId &gxsId) override;
 	void acceptedInviteGxs(const RsGxsId &gxsId);
 	void clearInviteGxs(const RsGxsId &gxsId) override;
 	bool hasInviteFromGxs(const RsGxsId &gxsId) override;
 	RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) override;
 	bool sendRematchGxs(const RsGxsId &gxsId, int localColor) override;
 	bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) override;
+	void registerGameSession(const RsRetroChessGameSession &session) override;
+	void updateGameSession(const QString &endpointId, const QString &fen,
+	                       uint32_t moveSequence) override;
+	void unregisterGameSession(const QString &endpointId) override;
+	std::vector<RsRetroChessGameSession> gameSessions() override;
+	std::vector<RsRetroChessAvailablePeer> availableChessPeers() override;
 	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) override;
 
@@ -127,6 +134,7 @@ public:
 	void handleGxsTick(); // Called periodically by the core
 	void closePendingGxsTunnels();
 	void retryPendingDistantChatInvites(); // Retry invites queued before the tunnel was ready
+	void reconnectInterruptedSessions();
 	bool doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId); // Actually request tunnel + queue invite
 
 	virtual uint32_t getGxsTunnelServiceId() const { 
@@ -171,6 +179,8 @@ private:
 	// or the give-up deadline passes.
 	struct PendingDistantInvite { time_t queuedTS; time_t lastTryTS; };
 	std::map<DistantChatPeerId, PendingDistantInvite> mPendingDistantChatInvites;
+	std::map<std::string, RsRetroChessGameSession> mGameSessions;
+	std::map<std::string, time_t> mLastSessionReconnect;
 
 	RsGxsTunnelService *mGxsTunnels;
 	RsMutex mRetroChessMtx;

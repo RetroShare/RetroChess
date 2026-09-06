@@ -70,6 +70,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_moveSound(nullptr),
     m_captureSound(nullptr),
     m_victorySound(nullptr),
+    m_drawSound(nullptr),
+    m_defeatSound(nullptr),
     m_gameStatusBar(nullptr),
     m_debugWidget(nullptr),
     m_chessBoard(nullptr),
@@ -174,6 +176,8 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_moveSound(nullptr),
 	m_captureSound(nullptr),
 	m_victorySound(nullptr),
+	m_drawSound(nullptr),
+	m_defeatSound(nullptr),
 	m_gameStatusBar(nullptr),
 	m_debugWidget(nullptr),
 	m_chessBoard(nullptr),
@@ -284,8 +288,7 @@ void RetroChessWindow::initAccessories()
 {
 	m_ui->frame_3->setFixedWidth(PLAYER_PANEL_WIDTH);
 	m_ui->moveHistoryFrame->setFixedWidth(MOVES_PANEL_WIDTH);
-	m_ui->splitter->setChildrenCollapsible(false);
-	m_ui->gridLayout->setAlignment(m_ui->splitter, Qt::AlignHCenter);
+	m_ui->gameAreaLayout->setAlignment(Qt::AlignCenter);
 
 	// display player's name
 	m_ui->m_player1_name->setText( p1name.c_str() );
@@ -462,23 +465,35 @@ void RetroChessWindow::initAccessories()
 	m_moveSound = new QMediaPlayer(this);
 	m_captureSound = new QMediaPlayer(this);
 	m_victorySound = new QMediaPlayer(this);
+	m_drawSound = new QMediaPlayer(this);
+	m_defeatSound = new QMediaPlayer(this);
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	m_moveSound->setAudioOutput(new QAudioOutput(m_moveSound));
 	m_captureSound->setAudioOutput(new QAudioOutput(m_captureSound));
 	m_victorySound->setAudioOutput(new QAudioOutput(m_victorySound));
+	m_drawSound->setAudioOutput(new QAudioOutput(m_drawSound));
+	m_defeatSound->setAudioOutput(new QAudioOutput(m_defeatSound));
 	m_moveSound->setSource(QUrl("qrc:/sound/Move.mp3"));
 	m_captureSound->setSource(QUrl("qrc:/sound/Capture.mp3"));
 	m_victorySound->setSource(QUrl("qrc:/sound/victory.mp3"));
+	m_drawSound->setSource(QUrl("qrc:/sound/Draw.mp3"));
+	m_defeatSound->setSource(QUrl("qrc:/sound/Defeat.mp3"));
 	m_moveSound->audioOutput()->setVolume(0.7f);
 	m_captureSound->audioOutput()->setVolume(0.7f);
 	m_victorySound->audioOutput()->setVolume(0.8f);
+	m_drawSound->audioOutput()->setVolume(0.8f);
+	m_defeatSound->audioOutput()->setVolume(0.8f);
 #else
 	m_moveSound->setMedia(QUrl("qrc:/sound/Move.mp3"));
 	m_captureSound->setMedia(QUrl("qrc:/sound/Capture.mp3"));
 	m_victorySound->setMedia(QUrl("qrc:/sound/victory.mp3"));
+	m_drawSound->setMedia(QUrl("qrc:/sound/Draw.mp3"));
+	m_defeatSound->setMedia(QUrl("qrc:/sound/Defeat.mp3"));
 	m_moveSound->setVolume(70);
 	m_captureSound->setVolume(70);
 	m_victorySound->setVolume(80);
+	m_drawSound->setVolume(80);
+	m_defeatSound->setVolume(80);
 #endif
 
 	// Use a real bottom status bar so messages reserve layout space and never
@@ -487,7 +502,6 @@ void RetroChessWindow::initAccessories()
 	m_gameStatusBar = new QStatusBar(this);
 	m_gameStatusBar->setSizeGripEnabled(false);
 	m_gameStatusBar->setFixedHeight(24);
-	m_ui->m_status_bar->setStyleSheet(QString());
 	m_ui->m_status_bar->setAlignment(Qt::AlignCenter);
 	m_gameStatusBar->addWidget(m_ui->m_status_bar, 1);
 	m_ui->gridLayout->addWidget(m_gameStatusBar, 1, 0);
@@ -757,6 +771,12 @@ void RetroChessWindow::initChessBoard()
 	baseWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
 	m_ui->m_chess_board->installEventFilter(this);
 	layoutChessBoard();
+}
+
+QString RetroChessWindow::activeGameDescription() const
+{
+	return tr("White: %1 — Black: %2")
+	        .arg(QString::fromUtf8(p2name.c_str()), QString::fromUtf8(p1name.c_str()));
 }
 
 void RetroChessWindow::activateBoardSquare(int square)
@@ -2027,10 +2047,14 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
 	completeGameHistory(
 	        draw ? "1/2-1/2" : (winningColor == 1 ? "1-0" : "0-1"),
 	        !reason.isEmpty() ? reason : (draw ? tr("Draw") : tr("Resignation")));
-	if (!draw && m_victorySound && RetroChessSettings::gameResultSoundEnabled()) {
-		m_victorySound->stop();
-		m_victorySound->setPosition(0);
-		m_victorySound->play();
+	if (RetroChessSettings::gameResultSoundEnabled()) {
+		QMediaPlayer *resultSound = draw ? m_drawSound
+		        : (localWon ? m_victorySound : m_defeatSound);
+		if (resultSound) {
+			resultSound->stop();
+			resultSound->setPosition(0);
+			resultSound->play();
+		}
 	}
 
     QDialog *dialog = new QDialog(this);
@@ -2086,6 +2110,7 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
 void RetroChessWindow::resizeEvent(QResizeEvent *event)
 {
 	QWidget::resizeEvent(event);
+	layoutChessBoard();
 }
 
 bool RetroChessWindow::eventFilter(QObject *watched, QEvent *event)
@@ -2099,14 +2124,24 @@ void RetroChessWindow::layoutChessBoard()
 {
 	if (!m_ui || !m_chessBoard || !tile[0][0]) return;
 	QWidget *board = m_chessBoard;
-	const int desiredBoardWidth = qMax(BOARD_FULL_SIZE, board->height());
-	if (board->width() != desiredBoardWidth)
-		board->setFixedWidth(desiredBoardWidth);
-	const int handlesWidth = 2 * m_ui->splitter->handleWidth();
-	m_ui->splitter->setMaximumWidth(
-	        PLAYER_PANEL_WIDTH + desiredBoardWidth + MOVES_PANEL_WIDTH + handlesWidth);
-	const int availableSide = qMin(board->width(), board->height());
-	const int tileSize = qMax(1, (availableSide - 2 * BORDER_SIZE) / 8);
+	QWidget *boardContainer = m_ui->m_chess_board;
+	const QMargins margins = m_ui->gridLayout->contentsMargins();
+	const int panelSpacing = 2 * m_ui->gameAreaLayout->spacing();
+	const int availableBoardWidth = width() - margins.left() - margins.right()
+	        - PLAYER_PANEL_WIDTH - MOVES_PANEL_WIDTH - panelSpacing;
+	const int availableSide = qMax(
+	        BOARD_FULL_SIZE,
+	        qMin(availableBoardWidth, m_ui->gameArea->height()));
+	// Do not use setFixedWidth()/setFixedSize() here. Enlarging a fixed size while
+	// maximized propagates into the top-level minimum size hint and prevents the
+	// window from returning to its original restored geometry.
+	boardContainer->setMinimumSize(BOARD_FULL_SIZE, BOARD_FULL_SIZE);
+	boardContainer->setMaximumSize(availableSide, availableSide);
+	board->setMinimumSize(BOARD_FULL_SIZE, BOARD_FULL_SIZE);
+	board->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+	board->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	const int actualAvailableSide = qMin(board->width(), board->height());
+	const int tileSize = qMax(1, (actualAvailableSide - 2 * BORDER_SIZE) / 8);
 	const int boardSide = 2 * BORDER_SIZE + 8 * tileSize;
 	const int offsetX = (board->width() - boardSide) / 2;
 	const int offsetY = (board->height() - boardSide) / 2;
@@ -2167,6 +2202,38 @@ void RetroChessWindow::recordBoardSnapshot(int fromTile, int toTile)
 	m_boardHistoryMoves.push_back(qMakePair(fromTile, toTile));
 	m_viewedHistoryPly = m_boardHistory.size() - 1;
 	updateHistoryControls();
+	emit sessionStateChanged(currentFen(), sessionMoveSequence());
+}
+
+QString RetroChessWindow::sessionFen() const
+{
+	return currentFen();
+}
+
+uint32_t RetroChessWindow::sessionMoveSequence() const
+{
+	return m_boardHistory.isEmpty()
+	        ? 0u : static_cast<uint32_t>(m_boardHistory.size() - 1);
+}
+
+bool RetroChessWindow::restoreSessionPosition(
+        const QString &fen, uint32_t moveSequence, QString *error)
+{
+	if (!m_position.loadFen(fen, error) || !loadFen(fen, error)) return false;
+	m_boardHistory.clear();
+	m_boardHistoryMoves.clear();
+	recordBoardSnapshot();
+	// Only the latest FEN is persisted. Preserve the protocol sequence so the
+	// next verified remote move is not rejected after restart.
+	while (sessionMoveSequence() < moveSequence) {
+		m_boardHistory.push_back(m_boardHistory.constLast());
+		m_boardHistoryMoves.push_back(qMakePair(-1, -1));
+	}
+	m_viewedHistoryPly = m_boardHistory.size() - 1;
+	updateHistoryControls();
+	emit sessionStateChanged(currentFen(), sessionMoveSequence());
+	showGameStatus(tr("Interrupted game restored"));
+	return true;
 }
 
 void RetroChessWindow::showHistoryPly(int ply)
