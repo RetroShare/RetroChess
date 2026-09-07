@@ -113,6 +113,7 @@ public:
 	void sendGxsInvite(const RsGxsId &toGxsId);
 	bool sendInviteToGxs(const RsGxsId &gxsId) override;
 	void acceptedInviteGxs(const RsGxsId &gxsId);
+	bool rejectedInviteGxs(const RsGxsId &gxsId) override;
 	void clearInviteGxs(const RsGxsId &gxsId) override;
 	bool hasInviteFromGxs(const RsGxsId &gxsId) override;
 	RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) override;

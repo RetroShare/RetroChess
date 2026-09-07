@@ -605,6 +605,26 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
     }
 }
 
+bool p3RetroChess::rejectedInviteGxs(const RsGxsId &gxsId)
+{
+    RsGxsTunnelId tunnelId;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        if (mInvitesFromGxs.count(gxsId) == 0) return false;
+        auto it = mActiveTunnels.find(gxsId);
+        if (it == mActiveTunnels.end() || !mGxsTunnels) return false;
+        tunnelId = it->second;
+    }
+    const std::string reply = "{\"type\":\"chess_reject\"}";
+    // Keep the invitation available for retry if the transport cannot queue it.
+    if (!mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+            reinterpret_cast<const uint8_t*>(reply.data()), reply.size()))
+        return false;
+    clearInviteGxs(gxsId);
+    mNotify->notifyChessInviteClearedGxs(gxsId);
+    return true;
+}
+
 void p3RetroChess::clearInviteGxs(const RsGxsId &gxsId)
 {
     RsStackMutex stack(mRetroChessMtx);
@@ -855,13 +875,15 @@ void p3RetroChess::handleGxsTick()
             }
             ready.push_back(it->first);
         }
-        // Check for "Closed/Failed" status
-        else if (tinfo.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED ||
-                 tinfo.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) {
+        // TUNNEL_DN is also the engine's initial, still-connecting state.
+        // Keep the invitation queued until CAN_TALK; only an explicit remote
+        // close cancels a pending connection.
+        else if (tinfo.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED) {
             RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
             auto pit = mPendingTunnels.find(it->first);
             if (pit != mPendingTunnels.end() && pit->second == it->second) {
                 mPendingGxsInvites.erase(it->first); // discard queued invite
+                mInvitesToGxs.erase(it->first);
                 mPendingTunnels.erase(pit);
             }
         }
@@ -937,6 +959,19 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         }
         std::cout << "Chess: Received accept from GXS " << sender_id << std::endl;
         mNotify->notifyChessAcceptedGxs(sender_id);
+
+    } else if (type == "chess_reject") {
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            // Ignore unsolicited or duplicate replies. A rejection only
+            // resolves our outgoing invite, not a crossed incoming invite.
+            if (mInvitesToGxs.erase(sender_id) == 0) return;
+            auto pending = mPendingGxsInvites.find(sender_id);
+            if (pending != mPendingGxsInvites.end()
+                    && pending->second == "{\"type\":\"chess_invite\"}")
+                mPendingGxsInvites.erase(pending);
+        }
+        mNotify->notifyChessRejectedGxs(sender_id);
 
     } else if (type == "player_leave") {
         std::cout << "Chess: Remote GXS player left " << sender_id << std::endl;

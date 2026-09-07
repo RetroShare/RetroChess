@@ -79,6 +79,11 @@ void RetroChessNotify::notifyChessAcceptedGxs(const RsGxsId &gxs_id)
 	emit chessAcceptedGxs(gxs_id);
 }
 
+void RetroChessNotify::notifyChessRejectedGxs(const RsGxsId &gxs_id)
+{
+	emit chessRejectedGxs(gxs_id);
+}
+
 void RetroChessNotify::notifyGxsTunnelClosed(const RsGxsId &gxs_id)
 {
 	emit gxsTunnelClosed(gxs_id);

@@ -42,6 +42,11 @@ RetroChessToasterNotify::RetroChessToasterNotify(
         RetroChessNotify *notify, QObject *parent)
     : ToasterNotify(parent), mNotify(notify), mInviteSound(new QMediaPlayer(this))
 {
+	connect(mNotify, &RetroChessNotify::chessInviteClearedGxs, this,
+	        [this](const RsGxsId &gxsId) {
+		for (int i = mPending.size() - 1; i >= 0; --i)
+			if (mPending.at(i).gxsId == gxsId) mPending.removeAt(i);
+	});
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	mInviteSound->setAudioOutput(new QAudioOutput(mInviteSound));
 	mInviteSound->setSource(QUrl("qrc:/sound/ping.mp3"));
