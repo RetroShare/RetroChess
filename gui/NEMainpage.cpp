@@ -61,6 +61,9 @@
 
 #include "gui/chat/ChatDialog.h"
 #include <retroshare/rsidentity.h>
+#include <retroshare/rsevents.h>
+#include <retroshare/rschats.h>
+#include "util/qtthreadsutils.h"
 
 
 NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
@@ -68,10 +71,10 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui(new Ui::NEMainpage),
 	mNotify(notify),
 	mGameSessions(new RetroChessSessionService(this)),
-	mOfficialLobbyTimer(new QTimer(this)),
-	mAvailablePlayersTimer(new QTimer(this)),
 	mOfficialLobbyDialog(nullptr),
-	mLobbyUnreadCount(0)
+	mLobbyUnreadCount(0),
+	mEventHandlerId_identity(0),
+	mEventHandlerId_chat(0)
 {
 	ui->setupUi(this);
 	setupMenuActions();
@@ -135,9 +138,45 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	connect(mNotify, SIGNAL(chessRematchGxs(RsGxsId,int)), this, SLOT(chessRematchGxs(RsGxsId,int)));
 	connect(mNotify, SIGNAL(chessGameActionGxs(RsGxsId,QString)), this, SLOT(chessGameActionGxs(RsGxsId,QString)));
 
-	connect(mOfficialLobbyTimer, SIGNAL(timeout()), this, SLOT(autoJoinOfficialLobby()));
-	mOfficialLobbyTimer->setInterval(15000);
-	mOfficialLobbyTimer->start();
+	connect(mNotify, &RetroChessNotify::availablePeersChanged,
+	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	connect(mNotify, &RetroChessNotify::gxsTunnelReady,
+	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	connect(mNotify, &RetroChessNotify::gxsTunnelClosed,
+	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	connect(mNotify, &RetroChessNotify::chessInvitedGxs,
+	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	connect(mNotify, &RetroChessNotify::chessInviteClearedGxs,
+	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	connect(mGameSessions, &RetroChessSessionService::gameAdded,
+	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	connect(mGameSessions, &RetroChessSessionService::gameRemoved,
+	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+
+	if (rsEvents) {
+		mEventHandlerId_identity = 0;
+		rsEvents->registerEventsHandler(
+			[this](std::shared_ptr<const RsEvent> event) {
+				RsQThreadUtils::postToObject([this, event]() {
+					handleEvent_identity_main_thread(event);
+				}, this);
+			},
+			mEventHandlerId_identity,
+			RsEventType::GXS_IDENTITY
+		);
+
+		mEventHandlerId_chat = 0;
+		rsEvents->registerEventsHandler(
+			[this](std::shared_ptr<const RsEvent> event) {
+				RsQThreadUtils::postToObject([this, event]() {
+					handleEvent_chat_main_thread(event);
+				}, this);
+			},
+			mEventHandlerId_chat,
+			RsEventType::CHAT_SERVICE
+		);
+	}
+
 	QTimer::singleShot(0, this, SLOT(autoJoinOfficialLobby()));
 	ui->pendingInvites->header()->setSectionResizeMode(0, QHeaderView::Stretch);
 	ui->pendingInvites->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -163,16 +202,9 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui->availablePlayers->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 	ui->availablePlayers->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
 	ui->availablePlayers->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-	mAvailablePlayersTimer->setInterval(3000);
-	connect(mAvailablePlayersTimer, &QTimer::timeout,
-	        this, &NEMainpage::refreshAvailablePlayers);
-	connect(mAvailablePlayersTimer, &QTimer::timeout,
-	        this, &NEMainpage::refreshContacts);
-	mAvailablePlayersTimer->start();
 	connect(ui->tabWidget, &QTabWidget::currentChanged,
 	        this, [this](int) {
 		refreshAvailablePlayers();
-		mNextContactsRefresh = 0;
 		refreshContacts();
 	});
 	refreshContacts();
@@ -273,25 +305,8 @@ void NEMainpage::ContactsCustomPopupMenu(QPoint position)
 void NEMainpage::refreshContacts()
 {
 	if (!rsIdentity) return;
-	if (!mContactsRequestPending) {
-		if (QDateTime::currentMSecsSinceEpoch() < mNextContactsRefresh) return;
-		RsTokReqOptions options;
-		options.mReqType = GXS_REQUEST_TYPE_GROUP_META;
-		mContactsRequestPending = rsIdentity->requestGroupInfo(mContactsToken, options);
-		return;
-	}
-	const auto status = rsIdentity->getTokenService()->requestStatus(mContactsToken);
-	if (status != RsTokenService::COMPLETE) {
-		if (status == RsTokenService::FAILED || status == RsTokenService::CANCELLED) {
-			rsIdentity->getTokenService()->cancelRequest(mContactsToken);
-			mContactsRequestPending = false;
-		}
-		return;
-	}
-	mContactsRequestPending = false;
-	mNextContactsRefresh = QDateTime::currentMSecsSinceEpoch() + 30000;
 	std::list<RsGroupMetaData> identities;
-	if (!rsIdentity->getGroupSummary(mContactsToken, identities)) return;
+	if (!rsIdentity->getIdentitiesSummaries(identities)) return;
 	QMap<QString, RsGxsId> contacts;
 	for (const auto &identity : identities) {
 		const RsGxsId id(identity.mGroupId.toStdString());
@@ -398,8 +413,12 @@ void NEMainpage::refreshAvailablePlayers()
 
 NEMainpage::~NEMainpage()
 {
-	if (mContactsRequestPending && rsIdentity)
-		rsIdentity->getTokenService()->cancelRequest(mContactsToken);
+	if (rsEvents) {
+		if (mEventHandlerId_identity != 0)
+			rsEvents->unregisterEventsHandler(mEventHandlerId_identity);
+		if (mEventHandlerId_chat != 0)
+			rsEvents->unregisterEventsHandler(mEventHandlerId_chat);
+	}
 	mGameSessions->closeAll();
 	delete ui;
 }
@@ -422,7 +441,6 @@ void NEMainpage::autoJoinOfficialLobby()
 	              OFFICIAL_RETROCHESS_LOBBY_ID) != subscribedLobbies.end()) {
 		rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
 		ui->officialLobbyStatus->setText(tr("Connected to the official RetroChess lobby."));
-		mOfficialLobbyTimer->stop();
 		showOfficialLobby();
 		return;
 	}
@@ -466,7 +484,6 @@ void NEMainpage::autoJoinOfficialLobby()
 	if (rsChats->joinVisibleChatLobby(OFFICIAL_RETROCHESS_LOBBY_ID, joinIdentity)) {
 		rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
 		ui->officialLobbyStatus->setText(tr("Connected to the official RetroChess lobby."));
-		mOfficialLobbyTimer->stop();
 		showOfficialLobby();
 	} else {
 		ui->officialLobbyStatus->setText(tr("The official lobby was found, but joining failed. Retrying…"));
@@ -514,6 +531,9 @@ void NEMainpage::showEvent(QShowEvent *event)
 		emit lobbyUnreadCountChanged();
 	}
 	MainPage::showEvent(event);
+	refreshContacts();
+	refreshAvailablePlayers();
+	autoJoinOfficialLobby();
 }
 
 void NEMainpage::chessStart(const RsPeerId &peer_id)
@@ -999,3 +1019,38 @@ void NEMainpage::setupMenuActions()
 	});
 
 }
+
+void NEMainpage::handleEvent_identity_main_thread(std::shared_ptr<const RsEvent> event)
+{
+	if (!event || event->mType != RsEventType::GXS_IDENTITY) return;
+	const RsGxsIdentityEvent *idEvent = dynamic_cast<const RsGxsIdentityEvent*>(event.get());
+	if (!idEvent) return;
+
+	switch (idEvent->mIdentityEventCode) {
+	case RsGxsIdentityEventCode::NEW_IDENTITY:
+	case RsGxsIdentityEventCode::UPDATED_IDENTITY:
+	case RsGxsIdentityEventCode::DELETED_IDENTITY:
+		refreshContacts();
+		refreshAvailablePlayers();
+		break;
+	default:
+		break;
+	}
+}
+
+void NEMainpage::handleEvent_chat_main_thread(std::shared_ptr<const RsEvent> event)
+{
+	if (!event || event->mType != RsEventType::CHAT_SERVICE) return;
+	const RsChatLobbyEvent *lobbyEvent = dynamic_cast<const RsChatLobbyEvent*>(event.get());
+	if (!lobbyEvent) return;
+
+	switch (lobbyEvent->mEventCode) {
+	case RsChatLobbyEventCode::CHAT_LOBBY_LIST_CHANGED:
+	case RsChatLobbyEventCode::CHAT_LOBBY_INVITE_RECEIVED:
+		autoJoinOfficialLobby();
+		break;
+	default:
+		break;
+	}
+}
+

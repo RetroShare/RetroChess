@@ -108,3 +108,8 @@ void RetroChessNotify::notifyChessStartGxs(const RsGxsId &gxs_id)
 {
 	emit chessStartGxs(gxs_id);
 }
+
+void RetroChessNotify::notifyAvailablePeersChanged()
+{
+	emit availablePeersChanged();
+}

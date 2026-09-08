@@ -32,14 +32,15 @@
 #include <retroshare-gui/mainpage.h>
 #include <retroshare/rsfiles.h>
 #include <retroshare/rspeers.h>
+#include <retroshare/rsevents.h>
 #include "gui/RetroChessNotify.h"
 
 #include "gui/chess.h"
 
 #include <QWidget>
 #include <QSet>
+#include <memory>
 
-class QTimer;
 class ChatDialog;
 class ChatWidget;
 class UserNotify;
@@ -99,16 +100,15 @@ private:
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
 	RetroChessSessionService *mGameSessions;
-	QTimer *mOfficialLobbyTimer;
-	QTimer *mAvailablePlayersTimer;
 	ChatDialog *mOfficialLobbyDialog;
 	unsigned int mLobbyUnreadCount;
-	uint32_t mContactsToken = 0;
-	bool mContactsRequestPending = false;
-	qint64 mNextContactsRefresh = 0;
+	RsEventsHandlerId_t mEventHandlerId_identity = 0;
+	RsEventsHandlerId_t mEventHandlerId_chat = 0;
 
 	QMap<QString, QTreeWidgetItem*> mPendingInvites;
 	QSet<QString> mUnreadInviteKeys;
+	void handleEvent_identity_main_thread(std::shared_ptr<const RsEvent> event);
+	void handleEvent_chat_main_thread(std::shared_ptr<const RsEvent> event);
 	void create_chess_window(std::string peer_id, int player_id);
     void create_chess_window_gxs(const RsGxsId &gxs_id, int player_id);
 	void addGxsInvitation(const RsGxsId &gxs_id);
