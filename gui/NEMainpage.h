@@ -93,6 +93,8 @@ private slots:
 	void officialLobbyNewMessage(ChatWidget *chatWidget);
 	void archiveFinishedGame();
 	void refreshAvailablePlayers();
+	void refreshContacts();
+	void ContactsCustomPopupMenu(QPoint position);
 private:
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
@@ -101,6 +103,9 @@ private:
 	QTimer *mAvailablePlayersTimer;
 	ChatDialog *mOfficialLobbyDialog;
 	unsigned int mLobbyUnreadCount;
+	uint32_t mContactsToken = 0;
+	bool mContactsRequestPending = false;
+	qint64 mNextContactsRefresh = 0;
 
 	QMap<QString, QTreeWidgetItem*> mPendingInvites;
 	QSet<QString> mUnreadInviteKeys;

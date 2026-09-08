@@ -76,6 +76,14 @@ void ChessToaster::initialise(const QString &playerName, bool actionable)
 	connect(ui.toasterButton, &QPushButton::clicked,
 	        this, &ChessToaster::acceptInvite);
 	connect(ui.closeButton, &QPushButton::clicked, this, &QWidget::hide);
+	if (mNotify && !mGxsId.isNull())
+		connect(mNotify, &RetroChessNotify::chessInviteClearedGxs, this,
+		        [this](const RsGxsId &gxsId) {
+			if (gxsId == mGxsId) {
+				ui.toasterButton->setEnabled(false);
+				hide();
+			}
+		});
 }
 
 void ChessToaster::acceptInvite()
