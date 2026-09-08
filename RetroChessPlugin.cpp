@@ -197,7 +197,7 @@ MainPage *RetroChessPlugin::qt_page() const
 
 std::string RetroChessPlugin::getShortPluginDescription() const
 {
-	return "RetroChess";
+	return "RetroChess, play Chess with your Friends & Contacts.";
 }
 
 std::string RetroChessPlugin::getPluginName() const
