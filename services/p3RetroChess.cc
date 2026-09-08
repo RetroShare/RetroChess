@@ -552,9 +552,12 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
             to_gxs_id, from_gxs_id, tunnel_id,
             RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, error_code))
     {
-        RsStackMutex stack(mRetroChessMtx);
-        mPendingTunnels[to_gxs_id] = tunnel_id;
-        std::cout << "Chess Tunnel requested. Pending ID: " << tunnel_id << std::endl;
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            mPendingTunnels[to_gxs_id] = tunnel_id;
+            std::cout << "Chess Tunnel requested. Pending ID: " << tunnel_id << std::endl;
+        }
+        mNotify->notifyAvailablePeersChanged();
     }
 }
 
@@ -771,11 +774,14 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
     if (mGxsTunnels->requestSecuredTunnel(toId, ownId, tunnelId,
                                           RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, error_code))
     {
-        RsStackMutex stack(mRetroChessMtx);
-        mPendingTunnels[toId] = tunnelId;
-        mPendingGxsInvites[toId] = "{\"type\":\"chess_invite\"}";
-        mInvitesToGxs.insert(toId);
-        std::cout << "Chess: Tunnel requested (id=" << tunnelId << "), invite queued for " << toId << std::endl;
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            mPendingTunnels[toId] = tunnelId;
+            mPendingGxsInvites[toId] = "{\"type\":\"chess_invite\"}";
+            mInvitesToGxs.insert(toId);
+            std::cout << "Chess: Tunnel requested (id=" << tunnelId << "), invite queued for " << toId << std::endl;
+        }
+        mNotify->notifyAvailablePeersChanged();
         return true;
     } else {
         std::cerr << "Chess: doSendInviteOverGxs: requestSecuredTunnel failed, error=" << error_code << std::endl;
@@ -852,6 +858,7 @@ void p3RetroChess::handleGxsTick()
 
     std::list<std::pair<RsGxsTunnelId, std::string> > flushes;
     std::list<RsGxsId> ready;
+    bool pendingChanged = false;
 
     for (auto it = pending.begin(); it != pending.end(); ++it) {
         RsGxsTunnelService::GxsTunnelInfo tinfo;
@@ -866,6 +873,7 @@ void p3RetroChess::handleGxsTick()
                 continue; // changed concurrently, handle on next tick
             mActiveTunnels[it->first] = it->second;
             mPendingTunnels.erase(pit);
+            pendingChanged = true;
 
             // Flush any queued invite for this peer
             auto inviteIt = mPendingGxsInvites.find(it->first);
@@ -885,6 +893,7 @@ void p3RetroChess::handleGxsTick()
                 mPendingGxsInvites.erase(it->first); // discard queued invite
                 mInvitesToGxs.erase(it->first);
                 mPendingTunnels.erase(pit);
+                pendingChanged = true;
             }
         }
     }
@@ -896,6 +905,8 @@ void p3RetroChess::handleGxsTick()
     }
     for (auto it = ready.begin(); it != ready.end(); ++it)
         mNotify->notifyGxsTunnelReady(*it);
+    if (!ready.empty() || pendingChanged)
+        mNotify->notifyAvailablePeersChanged();
 }
 
 
@@ -1077,6 +1088,7 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
         if (!gxs_id.isNull()) {
             std::cout << "Chess: Tunnel closed for GXS " << gxs_id << std::endl;
             mNotify->notifyGxsTunnelClosed(gxs_id);
+            mNotify->notifyAvailablePeersChanged();
         }
     }
 }

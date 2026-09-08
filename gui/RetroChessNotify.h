@@ -53,6 +53,7 @@ public:
 	void notifyChessAcceptedGxs(const RsGxsId &gxs_id);
 	void notifyChessRejectedGxs(const RsGxsId &gxs_id);
 
+
 	/** Notify the UI that a GXS tunnel has been closed/lost */
 	void notifyGxsTunnelClosed(const RsGxsId &gxs_id);
 	void notifyChessPlayerLeftGxs(const RsGxsId &gxs_id);
@@ -60,6 +61,7 @@ public:
 	void notifyChessGameActionGxs(const RsGxsId &gxs_id, QString action);
 
 	void notifyChessStartGxs(const RsGxsId &gxs_id); 
+	void notifyAvailablePeersChanged();
 
 signals:
 	void NeMsgArrived(const RsPeerId &peer_id, QString str) ; // emitted when the peer gets a msg
@@ -79,6 +81,7 @@ signals:
 	void chessInvitedGxs(const RsGxsId &gxs_id);
 	void chessInviteClearedGxs(const RsGxsId &gxs_id);
 	void chessStartGxs(const RsGxsId &gxs_id);
+	void availablePeersChanged();
 
 };
 
