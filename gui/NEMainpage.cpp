@@ -77,6 +77,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	mEventHandlerId_chat(0)
 {
 	ui->setupUi(this);
+	connect(ui->closeInfoFrameButton, &QToolButton::clicked,
+	        ui->info_Frame, &QWidget::hide);
 	setupMenuActions();
 	connect(mGameSessions, &RetroChessSessionService::gameAdded,
 	        this, [this](const QString &key) {
@@ -148,6 +150,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
 	connect(mNotify, &RetroChessNotify::chessInviteClearedGxs,
 	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	connect(mNotify, &RetroChessNotify::chessInviteClearedGxs,
+	        this, &NEMainpage::chessTunnelClosed, Qt::QueuedConnection);
 	connect(mGameSessions, &RetroChessSessionService::gameAdded,
 	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
 	connect(mGameSessions, &RetroChessSessionService::gameRemoved,
@@ -183,7 +187,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui->pendingInvites->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
 	QFontMetricsF fontMetrics(ui->contactstreeWidget->font());
 
-	int iconHeight = fontMetrics.height() * 2.0;
+	int iconHeight = fontMetrics.height() * 1.5;
 	ui->availablePlayers->setIconSize(QSize(iconHeight, iconHeight));
 	ui->pendingInvites->setIconSize(QSize(iconHeight, iconHeight));
 
@@ -202,6 +206,22 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	ui->availablePlayers->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 	ui->availablePlayers->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
 	ui->availablePlayers->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+	ui->availablePlayers->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(ui->availablePlayers, &QTreeWidget::customContextMenuRequested,
+	        this, [this](const QPoint &position) {
+		const QTreeWidgetItem *item = ui->availablePlayers->itemAt(position);
+		if (!item) return;
+		const RsGxsId id(item->data(0, Qt::UserRole).toString().toStdString());
+		if (!rsRetroChess->hasInviteToGxs(id)) return;
+		QMenu menu(this);
+		QAction *cancel = menu.addAction(tr("Cancel invitation"));
+		if (menu.exec(ui->availablePlayers->viewport()->mapToGlobal(position)) == cancel) {
+			if (!rsRetroChess->cancelInviteToGxs(id))
+				QMessageBox::warning(this, tr("Chess invitation"),
+				        tr("The invitation could not be cancelled. It may have already been accepted or declined."));
+			refreshAvailablePlayers();
+		}
+	});
 	connect(ui->tabWidget, &QTabWidget::currentChanged,
 	        this, [this](int) {
 		refreshAvailablePlayers();
@@ -383,11 +403,13 @@ void NEMainpage::refreshAvailablePlayers()
 		if (detailsAvailable) item->setToolTip(0, GxsIdDetails::getComment(details));
 		item->setData(0, Qt::UserRole, peer.endpointId);
 		item->setText(3, tr("GXS identity"));
-		item->setText(2, peer.tunnelReady ? tr("Ready") : tr("Connecting"));
+		const bool outgoingInvite = rsRetroChess->hasInviteToGxs(id);
+		item->setText(2, outgoingInvite ? tr("Invitation sent")
+		        : (peer.tunnelReady ? tr("Ready") : tr("Connecting")));
 
-		QPushButton *invite = new QPushButton(tr("Invite"), ui->availablePlayers);
+		QPushButton *invite = new QPushButton(outgoingInvite ? tr("Cancel") : tr("Invite"), ui->availablePlayers);
 		invite->setFixedHeight(28);
-		invite->setEnabled(peer.tunnelReady
+		invite->setEnabled((peer.tunnelReady || outgoingInvite)
 		        && !mGameSessions->contains(peer.endpointId));
 		if (mGameSessions->contains(peer.endpointId)) invite->setText(tr("Playing"));
 		QWidget *actionCell = new QWidget(ui->availablePlayers);
@@ -395,18 +417,21 @@ void NEMainpage::refreshAvailablePlayers()
 		actionLayout->setContentsMargins(0, 0, 0, 0);
 		actionLayout->addWidget(invite, 1, Qt::AlignVCenter);
 		ui->availablePlayers->setItemWidget(item, 1, actionCell);
-		connect(invite, &QPushButton::clicked, this, [this, peer]() {
-			bool sent = false;
-			sent = rsRetroChess->sendInviteToGxs(
-			        RsGxsId(peer.endpointId.toStdString()));
-			if (!sent)
+		connect(invite, &QPushButton::clicked, this, [this, id, outgoingInvite]() {
+			const bool succeeded = outgoingInvite
+			        ? rsRetroChess->cancelInviteToGxs(id)
+			        : rsRetroChess->sendInviteToGxs(id);
+			if (!succeeded)
 				QMessageBox::warning(
 				        this, tr("Chess invitation"),
-				        tr("The chess invitation could not be sent."));
+				        outgoingInvite
+				        ? tr("The invitation could not be cancelled. It may have already been accepted or declined.")
+				        : tr("The chess invitation could not be sent."));
+			QTimer::singleShot(0, this, [this]() { refreshAvailablePlayers(); });
 		});
 	}
 	ui->availablePlayersDescription->setText(peers.empty()
-	        ? tr("No RetroChess identities are currently available.")
+	        ? tr("No RetroChess identities are currently available. Please ensure your contact has the plugin installed before inviting them, as RetroChess cannot detect this yet.")
 	        : tr("Select a RetroChess identity to invite."));
 	ui->availablePlayers->setSortingEnabled(true);
 }
@@ -558,6 +583,28 @@ void NEMainpage::chessStartGxsAsBlack(const RsGxsId &gxs_id)
 
 namespace
 {
+class InvitationIdentityItem : public GxsIdRSTreeWidgetItem
+{
+public:
+	explicit InvitationIdentityItem(QTreeWidget *parent)
+	    : GxsIdRSTreeWidgetItem(nullptr, GxsIdDetails::ICON_TYPE_AVATAR, true, parent)
+	{}
+
+	QVariant data(int column, int role) const override
+	{
+		const QVariant value = GxsIdRSTreeWidgetItem::data(column, role);
+		// The shared identity item supplies a font-sized pixmap, which the
+		// default delegate does not resize to the tree's configured icon size.
+		if (column == idColumn() && role == Qt::DecorationRole && treeWidget()) {
+			const QPixmap pixmap = value.value<QPixmap>();
+			if (!pixmap.isNull())
+				return pixmap.scaled(treeWidget()->iconSize(),
+				        Qt::KeepAspectRatio, Qt::SmoothTransformation);
+		}
+		return value;
+	}
+};
+
 QString invitationButtonStyle()
 {
 	return "QPushButton { border: 1px solid #199909; font-size: 11pt;"
@@ -586,14 +633,9 @@ void NEMainpage::addGxsInvitation(const RsGxsId &gxs_id)
 	const QString key = "gxs:" + QString::fromStdString(gxs_id.toStdString());
 
 	removePendingInvitation(key);
-	GxsIdRSTreeWidgetItem *item = new GxsIdRSTreeWidgetItem(
-	        nullptr, GxsIdDetails::ICON_TYPE_AVATAR, true, ui->pendingInvites);
-	QFont identityFont = item->font(0);
-	identityFont.setPointSize(qMax(identityFont.pointSize() + 4, 18));
-	item->setFont(0, identityFont);
+	GxsIdRSTreeWidgetItem *item = new InvitationIdentityItem(ui->pendingInvites);
 	item->setId(gxs_id, 0, true);
 	item->setText(1, QLocale().toString(QDateTime::currentDateTime(), QLocale::ShortFormat));
-	item->setSizeHint(0, QSize(44, 48));
 
 	QWidget *actions = new QWidget(ui->pendingInvites);
 	QHBoxLayout *actionsLayout = new QHBoxLayout(actions);
@@ -601,9 +643,7 @@ void NEMainpage::addGxsInvitation(const RsGxsId &gxs_id)
 	actionsLayout->setSpacing(5);
 	QPushButton *accept = new QPushButton(tr("Accept"), actions);
 	accept->setStyleSheet(invitationButtonStyle());
-	accept->setFixedHeight(28);
 	QPushButton *reject = new QPushButton(tr("Reject"), actions);
-	reject->setFixedHeight(28);
 	actionsLayout->addWidget(accept);
 	actionsLayout->addWidget(reject);
 	ui->pendingInvites->setItemWidget(item, 2, actions);

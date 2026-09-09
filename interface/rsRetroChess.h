@@ -85,6 +85,8 @@ class RsRetroChess
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) = 0;
 	virtual void sendGxsInvite(const RsGxsId &gxsId) = 0;
 	virtual bool sendInviteToGxs(const RsGxsId &gxsId) = 0;
+	virtual bool hasInviteToGxs(const RsGxsId &gxsId) = 0;
+	virtual bool cancelInviteToGxs(const RsGxsId &gxsId) = 0;
 	//virtual void addChessFriend(const RsGxsId &gxsId) = 0;
 	virtual void acceptedInviteGxs(const RsGxsId &gxsId) = 0;
 	virtual bool rejectedInviteGxs(const RsGxsId &gxsId) = 0;

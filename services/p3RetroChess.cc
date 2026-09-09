@@ -578,6 +578,41 @@ bool p3RetroChess::sendInviteToGxs(const RsGxsId &gxsId)
 	return doSendInviteOverGxs(gxsId, ownId);
 }
 
+bool p3RetroChess::hasInviteToGxs(const RsGxsId &gxsId)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    return mInvitesToGxs.count(gxsId) != 0;
+}
+
+bool p3RetroChess::cancelInviteToGxs(const RsGxsId &gxsId)
+{
+    RsGxsTunnelId tunnelId;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        if (mInvitesToGxs.count(gxsId) == 0) return false;
+        auto pending = mPendingGxsInvites.find(gxsId);
+        if (pending != mPendingGxsInvites.end()
+                && pending->second == "{\"type\":\"chess_invite\"}") {
+            mPendingGxsInvites.erase(pending);
+            mInvitesToGxs.erase(gxsId);
+        } else {
+            auto active = mActiveTunnels.find(gxsId);
+            if (active == mActiveTunnels.end() || !mGxsTunnels) return false;
+            tunnelId = active->second;
+        }
+    }
+    if (!tunnelId.isNull()) {
+        const std::string message = "{\"type\":\"chess_cancel\"}";
+        if (!mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                reinterpret_cast<const uint8_t*>(message.data()), message.size()))
+            return false;
+        RsStackMutex stack(mRetroChessMtx);
+        if (mInvitesToGxs.erase(gxsId) == 0) return false;
+    }
+    mNotify->notifyAvailablePeersChanged();
+    return true;
+}
+
 void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
 {
     std::cout << "Chess: acceptedInviteGxs from " << gxsId << std::endl;
@@ -902,6 +937,22 @@ void p3RetroChess::handleGxsTick()
         std::cout << "Chess: Tunnel ready, flushing queued invite" << std::endl;
         mGxsTunnels->sendData(it->first, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
                               (const uint8_t*)it->second.c_str(), it->second.size());
+        // Cancellation can race with an invite already copied into flushes.
+        // Send cancellation after that invite so it cannot remain pending remotely.
+        if (it->second == "{\"type\":\"chess_invite\"}") {
+            bool cancelled = false;
+            {
+                RsStackMutex stack(mRetroChessMtx);
+                for (const auto &entry : pending)
+                    if (entry.second == it->first)
+                        cancelled = mInvitesToGxs.count(entry.first) == 0;
+            }
+            if (cancelled) {
+                const std::string cancel = "{\"type\":\"chess_cancel\"}";
+                mGxsTunnels->sendData(it->first, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                        reinterpret_cast<const uint8_t*>(cancel.data()), cancel.size());
+            }
+        }
     }
     for (auto it = ready.begin(); it != ready.end(); ++it)
         mNotify->notifyGxsTunnelReady(*it);
@@ -971,6 +1022,13 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         std::cout << "Chess: Received accept from GXS " << sender_id << std::endl;
         mNotify->notifyChessAcceptedGxs(sender_id);
 
+    } else if (type == "chess_cancel") {
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            if (mInvitesFromGxs.erase(sender_id) == 0) return;
+        }
+        mNotify->notifyChessInviteClearedGxs(sender_id);
+
     } else if (type == "chess_reject") {
         {
             RsStackMutex stack(mRetroChessMtx);
@@ -983,6 +1041,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
                 mPendingGxsInvites.erase(pending);
         }
         mNotify->notifyChessRejectedGxs(sender_id);
+        mNotify->notifyAvailablePeersChanged();
 
     } else if (type == "player_leave") {
         std::cout << "Chess: Remote GXS player left " << sender_id << std::endl;
