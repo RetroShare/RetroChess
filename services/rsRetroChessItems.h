@@ -84,9 +84,9 @@ public:
 class RsRetroChessDataItem: public RsRetroChessItem
 {
 public:
-	// flags and data_size must not stay uninitialized: serialise() writes
-	// both to the wire, which leaked 4 bytes of heap garbage per packet.
-	RsRetroChessDataItem() :RsRetroChessItem(RS_PKT_SUBTYPE_RetroChess_DATA), flags(0), data_size(0) {}
+	// flags must not stay uninitialized: serialise() writes
+	// it to the wire, which leaked 4 bytes of heap garbage per packet.
+	RsRetroChessDataItem() :RsRetroChessItem(RS_PKT_SUBTYPE_RetroChess_DATA), flags(0) {}
 	RsRetroChessDataItem(void *data,uint32_t size) ; // de-serialization
 
 	virtual bool serialise(void *data,uint32_t& size) ;
@@ -98,7 +98,6 @@ public:
 	virtual std::ostream& print(std::ostream &out, uint16_t indent = 0);
 
 	uint32_t flags ;
-	uint32_t data_size ;
 	std::string m_msg;
 
 };

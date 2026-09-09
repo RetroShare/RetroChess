@@ -222,7 +222,6 @@ void p3RetroChess::raw_msg_peer(RsPeerId peerID, std::string msg)
 	RsRetroChessDataItem *pingPkt = new RsRetroChessDataItem();
 	pingPkt->PeerId(peerID);
 	pingPkt->m_msg = msg;
-	pingPkt->data_size = msg.size();
 	//pingPkt->mSeqNo = mCounter;
 	//pingPkt->mPingTS = convertTsTo64bits(ts);
 
@@ -264,7 +263,7 @@ void p3RetroChess::msg_all(std::string msg)
 
 void p3RetroChess::ping_all()
 {
-	//TODO ping all!
+	// Required override of RsRetroChess pure virtual — no-op.
 }
 
 void p3RetroChess::broadcast_paint(int x, int y)
@@ -319,7 +318,9 @@ bool	p3RetroChess::recvItem(RsItem *item)
 		// handleData() only forwards the message string to the notifier and
 		// does not take ownership, so the item must not be kept: keeping it
 		// leaked one item per received message.
-		handleData(dynamic_cast<RsRetroChessDataItem*>(item));
+		if (RsRetroChessDataItem* chess_item = dynamic_cast<RsRetroChessDataItem*>(item)) {
+			handleData(chess_item);
+		}
 		break;
 	/*case RS_PKT_SUBTYPE_RetroChess_INVITE:
 		if (invites.find(item->PeerId()!=invites.end())){
@@ -984,12 +985,12 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
     }
 
     // All messages are JSON
-    std::string msg((const char*)data, data_size);
 #ifdef DEBUG_RetroChess
-    std::cout << "Chess::handleRawData: received from " << sender_id << ": " << msg << std::endl;
+    std::cout << "Chess::handleRawData: received from " << sender_id << ": "
+              << std::string((const char*)data, data_size) << std::endl;
 #endif
 
-    QJsonDocument jsondoc = QJsonDocument::fromJson(QByteArray::fromStdString(msg));
+    QJsonDocument jsondoc = QJsonDocument::fromJson(QByteArray((const char*)data, data_size));
     QVariantMap map = jsondoc.toVariant().toMap();
     QString type = map.value("type").toString();
 
@@ -1061,7 +1062,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
 
     } else {
         // Chess move: format "col,row,count"
-        QStringList parts = QString::fromStdString(msg).split(",");
+        QStringList parts = QString::fromUtf8((const char*)data, data_size).split(",");
         if (parts.size() == 3) {
             int col   = parts[0].toInt();
             int row   = parts[1].toInt();
