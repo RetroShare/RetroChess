@@ -119,12 +119,12 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
         
         // Use non-blocking lookup with fallback for unknown identities
         RsIdentityDetails d1, d2;
-        if (rsIdentity->getIdDetails(mOwnGxsId, d1)) {
+        if (rsIdentity && rsIdentity->getIdDetails(mOwnGxsId, d1)) {
             p1name = d1.mNickname;
         } else {
             p1name = mOwnGxsId.isNull() ? "Local GXS identity" : mOwnGxsId.toStdString().substr(0, 8) + "...";
         }
-        if (rsIdentity->getIdDetails(gxsId, d2)) {
+        if (rsIdentity && rsIdentity->getIdDetails(gxsId, d2)) {
             p2name = d2.mNickname;
         } else {
             p2name = gxsId.toStdString().substr(0, 8) + "...";
@@ -134,12 +134,12 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
         m_localplayer_turn = 1;
 
         RsIdentityDetails d1, d2;
-        if (rsIdentity->getIdDetails(gxsId, d1)) {
+        if (rsIdentity && rsIdentity->getIdDetails(gxsId, d1)) {
             p1name = d1.mNickname;
         } else {
             p1name = gxsId.toStdString().substr(0, 8) + "...";
         }
-        if (rsIdentity->getIdDetails(mOwnGxsId, d2)) {
+        if (rsIdentity && rsIdentity->getIdDetails(mOwnGxsId, d2)) {
             p2name = d2.mNickname;
         } else {
             p2name = mOwnGxsId.isNull() ? "Local GXS identity" : mOwnGxsId.toStdString().substr(0, 8) + "...";
@@ -212,7 +212,7 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	QString player_str;
     if (player )	// local player as black
 	{
-		p1id = rsPeers->getOwnId();
+		p1id = rsPeers ? rsPeers->getOwnId() : RsPeerId();
 		p2id = RsPeerId(peerid);
 		player_str = " (1)";
 
@@ -221,14 +221,14 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
     else	// local player as white
 	{
 		p1id = RsPeerId(peerid);
-		p2id = rsPeers->getOwnId();
+		p2id = rsPeers ? rsPeers->getOwnId() : RsPeerId();
 		player_str = " (2)";
 
         m_localplayer_turn = 1;
     }
 
-	p1name = rsPeers->getPeerName(p1id);
-	p2name = rsPeers->getPeerName(p2id);
+	p1name = rsPeers ? rsPeers->getPeerName(p1id) : "";
+	p2name = rsPeers ? rsPeers->getPeerName(p2id) : "";
 
 	const std::string &localName = m_localplayer_turn == 0 ? p1name : p2name;
 	const std::string &opponentName = m_localplayer_turn == 0 ? p2name : p1name;
@@ -513,27 +513,29 @@ void RetroChessWindow::initAccessories()
 		// remote peers, while our own node avatar comes from getOwnAvatar().
 		QPixmap p1avatar;
 		QPixmap p2avatar;
-		const RsPeerId ownId = rsPeers->getOwnId();
-		auto loadPeerAvatar = [&ownId](const RsPeerId &id, QPixmap &avatar) {
-			if (id != ownId) {
-				AvatarDefs::getAvatarFromSslId(id, avatar);
-				return;
-			}
+		if (rsPeers && rsChats) {
+			const RsPeerId ownId = rsPeers->getOwnId();
+			auto loadPeerAvatar = [&ownId](const RsPeerId &id, QPixmap &avatar) {
+				if (id != ownId) {
+					AvatarDefs::getAvatarFromSslId(id, avatar);
+					return;
+				}
 
-			unsigned char *avatarData = nullptr;
-			int avatarSize = 0;
-			rsChats->getOwnNodeAvatarData(avatarData, avatarSize);
-			if (avatarData)
-				free(avatarData);
-			if (avatarSize > 0)
-				AvatarDefs::getOwnAvatar(avatar);
-			else
-				// Generate the familiar per-peer coloured fallback instead of
-				// RetroShare's static blue missing-avatar image.
-				AvatarDefs::getAvatarFromSslId(ownId, avatar);
-		};
-		loadPeerAvatar(p1id, p1avatar);
-		loadPeerAvatar(p2id, p2avatar);
+				unsigned char *avatarData = nullptr;
+				int avatarSize = 0;
+				rsChats->getOwnNodeAvatarData(avatarData, avatarSize);
+				if (avatarData)
+					free(avatarData);
+				if (avatarSize > 0)
+					AvatarDefs::getOwnAvatar(avatar);
+				else
+					// Generate the familiar per-peer coloured fallback instead of
+					// RetroShare's static blue missing-avatar image.
+					AvatarDefs::getAvatarFromSslId(ownId, avatar);
+			};
+			loadPeerAvatar(p1id, p1avatar);
+			loadPeerAvatar(p2id, p2avatar);
+		}
 
 		const QSize avatarSize(128, 128);
 		auto setPeerAvatar = [&avatarSize](QLabel *label, const QPixmap &avatar) {
@@ -825,6 +827,7 @@ void RetroChessWindow::activateBoardSquare(int square)
 
 int RetroChessWindow::chooser(Tile *tile_p)
 {
+	int flag = 0;
 	switch(tile_p->pieceName)
 	{
 	case 'P':
@@ -878,7 +881,7 @@ int RetroChessWindow::validatePawn(Tile *tile_p)
 
 	row=tile_p->row;
 	col=tile_p->col;
-	retVal=0;
+	int retVal=0;
 
 	//White Pawn
 	if(tile_p->pieceColor)
@@ -980,7 +983,7 @@ int RetroChessWindow::validateRook(Tile *tile_p)
 {
 	int r,c;
 
-	retVal=0;
+	int retVal=0;
 
 	r=tile_p->row;
 	c=tile_p->col;
@@ -1075,7 +1078,7 @@ int RetroChessWindow::validateRook(Tile *tile_p)
 int RetroChessWindow::validateHorse(Tile *tile_p)
 {
 	int r,c;
-	retVal=0;
+	int retVal=0;
 
 	r=tile_p->row;
 	c=tile_p->col;
@@ -1160,7 +1163,7 @@ int RetroChessWindow::validateHorse(Tile *tile_p)
 int RetroChessWindow::validateKing(Tile *tile_p)
 {
 	int r,c;
-	retVal=0;
+	int retVal=0;
 
 	r=tile_p->row;
 	c=tile_p->col;
@@ -1257,7 +1260,7 @@ int RetroChessWindow::validateQueen(Tile *tile_p)
 {
 	int r,c;
 
-	retVal=0;
+	int retVal=0;
 
 	r=tile_p->row;
 	c=tile_p->col;
@@ -1435,7 +1438,7 @@ int RetroChessWindow::validateQueen(Tile *tile_p)
 int RetroChessWindow::validateBishop(Tile *tile_p)
 {
 	int r,c;
-	retVal=0;
+	int retVal=0;
 
 	r=tile_p->row;
 	c=tile_p->col;

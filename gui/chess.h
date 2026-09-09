@@ -108,7 +108,6 @@ public:
 	        const QString &fen, uint32_t moveSequence,
 	        QString *error = nullptr);
 
-	int flag,retVal;
 	int chooser(Tile *temp);
 	int validateBishop(Tile *temp);
 	int validateQueen(Tile *temp);

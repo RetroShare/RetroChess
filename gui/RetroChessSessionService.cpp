@@ -88,7 +88,7 @@ void RetroChessSessionService::closeAll()
 	const auto sessions = m_sessions;
 	m_sessions.clear();
 	for (const Session &session : sessions)
-		if (session.window) session.window->deleteLater();
+		if (session.window) delete session.window;
 }
 
 bool RetroChessSessionService::routeMove(

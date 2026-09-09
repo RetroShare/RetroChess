@@ -185,8 +185,10 @@ private:
 	std::map<std::string, RsRetroChessGameSession> mGameSessions;
 	std::map<std::string, time_t> mLastSessionReconnect;
 
-	RsGxsTunnelService *mGxsTunnels;
 	RsMutex mRetroChessMtx;
+	RsServiceControl *mServiceControl;
+	RetroChessNotify *mNotify ;
+	RsGxsTunnelService *mGxsTunnels;
 
 	//RsPeerId mPeerID;
 
@@ -194,8 +196,5 @@ private:
 	static RsTlvKeyValue push_int_value(const std::string& key,int value) ;
 	static int pop_int_value(const std::string& s) ;
 
-
-	RsServiceControl *mServiceControl;
-	RetroChessNotify *mNotify ;
 
 };
