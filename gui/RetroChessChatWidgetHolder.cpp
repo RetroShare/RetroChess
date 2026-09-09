@@ -88,7 +88,7 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 {
 	QIcon icon(cropTransparentPadding(QPixmap(IMAGE_RetroChess)));
 
-	playChessButton = new QToolButton ;
+	playChessButton = new QToolButton(mChatWidget);
 	playChessButton->setIcon(icon) ;
 	playChessButton->setToolTip(tr("Invite to Chess"));
 	playChessButton->setAutoRaise(true) ;
@@ -129,7 +129,7 @@ RetroChessChatWidgetHolder::~RetroChessChatWidgetHolder()
 void RetroChessChatWidgetHolder::clearInviteButtons()
 {
 	for (RSButtonOnText *button : buttonMapTakeChess)
-		if (button) button->clear();
+		if (button) button->deleteLater();
 	buttonMapTakeChess.clear();
 }
 
@@ -166,8 +166,9 @@ void RetroChessChatWidgetHolder::inviteClearedGxs(const RsGxsId &gxs_id)
 
 void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
 {
+	if (!mChatWidget->getChatId().isPeerId()) return;
 	RsPeerId peer_id =  mChatWidget->getChatId().toPeerId();//TODO support GXSID
-	//if (peer_id!=from_peer_id)return;//invite from another chat
+	if (peer_id != from_peer_id) return;//invite from another chat
 	if (rsRetroChess->hasInviteFrom(peer_id))
 	{
 		if (mChatWidget)
@@ -356,9 +357,11 @@ void RetroChessChatWidgetHolder::chessPressed()
 		rsRetroChess->sendInvite(peer_id);
 
 		peerName = QString::fromUtf8(rsPeers->getPeerName(peer_id).c_str());
+		mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
+		                        , tr("You're now inviting %1 to play Chess").arg(peerName), ChatWidget::MSGTYPE_SYSTEM);
+	} else {
+		return;
 	}
-	mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime()
-	                        , tr("You're now inviting %1 to play Chess").arg(peerName), ChatWidget::MSGTYPE_SYSTEM);
 }
 
 

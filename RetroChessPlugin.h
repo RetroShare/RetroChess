@@ -40,7 +40,7 @@ class RetroChessPlugin: public RsPlugin
 {
 public:
 	RetroChessPlugin() ;
-	virtual ~RetroChessPlugin() {}
+	virtual ~RetroChessPlugin();
 
 	virtual p3Service      *p3_service() 			const	;
 	virtual uint16_t        rs_service_id()         const

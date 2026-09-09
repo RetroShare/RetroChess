@@ -460,6 +460,8 @@ const ChatLobbyId OFFICIAL_RETROCHESS_LOBBY_ID = 0x0174BD3E49231CDAULL;
 
 void NEMainpage::autoJoinOfficialLobby()
 {
+	if (!rsChats || !rsIdentity) return;
+
 	std::list<ChatLobbyId> subscribedLobbies;
 	rsChats->getChatLobbyList(subscribedLobbies);
 	if (std::find(subscribedLobbies.begin(), subscribedLobbies.end(),
@@ -786,7 +788,7 @@ void NEMainpage::chessRematchPeer(const RsPeerId &peer_id, int remoteColor)
 	}
 	const bool alreadyRequested = window->m_rematchRequested;
 	if (!alreadyRequested && QMessageBox::question(
-	        window, tr("Rematch"), tr("Your opponent requests a rematch. Accept?"))
+	        this, tr("Rematch"), tr("Your opponent requests a rematch. Accept?"))
 	        != QMessageBox::Yes) {
 		reply.insert("type", "game_action");
 		reply.insert("action", "rematch_decline");
