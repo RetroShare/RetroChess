@@ -2250,10 +2250,8 @@ void RetroChessWindow::showHistoryPly(int ply)
 	}
 
 	const QPair<int, int> move = m_boardHistoryMoves.at(ply);
-	const QString highlightStyle = QString("QLabel { background-color: %1; }")
-	        .arg(RetroChessSettings::boardTheme().lastMove.name());
-	if (move.first >= 0) tile[move.first / 8][move.first % 8]->setStyleSheet(highlightStyle);
-	if (move.second >= 0) tile[move.second / 8][move.second % 8]->setStyleSheet(highlightStyle);
+	if (move.first >= 0) tile[move.first / 8][move.first % 8]->displayLastMove();
+	if (move.second >= 0) tile[move.second / 8][move.second % 8]->displayLastMove();
 
 	if (ply == 0) m_moveTable->clearSelection();
 	else {
@@ -2770,15 +2768,13 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 
 void RetroChessWindow::drawLastMove()
 {
-    const QString highlightStyle = QString("QLabel { background-color: %1; }")
-            .arg(RetroChessSettings::boardTheme().lastMove.name());
     // draw last move
     for( QQueue<int>::iterator it = this->m_last_move_que.begin();
          it != this->m_last_move_que.end();
          ++it)
     {
         int tile_num = *it;
-        tile[ tile_num / 8][ tile_num % 8]->setStyleSheet(highlightStyle);
+        tile[ tile_num / 8][ tile_num % 8]->displayLastMove();
     }
 }
 

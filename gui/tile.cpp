@@ -273,6 +273,20 @@ void Tile::tileDisplay()
 	        .arg(color.name(), hover.name()));
 }
 
+void Tile::displayLastMove()
+{
+	const RetroChessBoardTheme theme = RetroChessSettings::boardTheme();
+	const QColor base = tileColor ? theme.dark : theme.light;
+	// Composite over the square itself: a translucent stylesheet background
+	// would reveal the parent widget instead of the original square color.
+	const qreal opacity = 0.90;
+	const QColor blended(
+	        qRound(base.red() * (1.0 - opacity) + theme.lastMove.red() * opacity),
+	        qRound(base.green() * (1.0 - opacity) + theme.lastMove.green() * opacity),
+	        qRound(base.blue() * (1.0 - opacity) + theme.lastMove.blue() * opacity));
+	setStyleSheet(QString("QLabel { background-color: %1; }").arg(blended.name()));
+}
+
 void Tile::pawnLevelupCheck()
 {
     if( this->pieceName != 'P')
