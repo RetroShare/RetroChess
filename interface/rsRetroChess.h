@@ -23,6 +23,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <ctime>
 #include <string>
 #include <list>
 #include <vector>
@@ -53,6 +54,10 @@ struct RsRetroChessAvailablePeer
 	QString endpointId;
 	bool gxs = false;
 	bool tunnelReady = false;
+	// Presence is confirmed by a versioned chess reply, never by tunnel state alone.
+	bool savedContact = false;
+	QString status = "unknown";
+	time_t lastSeen = 0;
 };
 
 class RsRetroChess ;
@@ -102,6 +107,13 @@ class RsRetroChess
 	virtual void unregisterGameSession(const QString &endpointId) = 0;
 	virtual std::vector<RsRetroChessGameSession> gameSessions() = 0;
 	virtual std::vector<RsRetroChessAvailablePeer> availableChessPeers() = 0;
+	virtual bool addChessContact(const RsGxsId &id) = 0;
+	virtual void removeChessContact(const RsGxsId &id) = 0;
+	virtual std::list<RsGxsId> chessIdentities() = 0;
+	virtual RsGxsId preferredChessIdentity() = 0;
+	virtual void setChessIdentities(const std::list<RsGxsId> &ids, const RsGxsId &preferred) = 0;
+	virtual bool chessBusy() = 0;
+	virtual void setChessBusy(bool busy) = 0;
 
 	// Send invite via an *existing* distant chat tunnel (the right approach for distant chat)
 	virtual bool sendInvite_chat(const ChatId &chatId) = 0;

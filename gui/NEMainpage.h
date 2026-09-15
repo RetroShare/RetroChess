@@ -46,6 +46,7 @@ class ChatWidget;
 class UserNotify;
 class QShowEvent;
 class QTreeWidgetItem;
+class QTreeWidget;
 class RetroChessSessionService;
 
 namespace Ui
@@ -94,8 +95,6 @@ private slots:
 	void officialLobbyNewMessage(ChatWidget *chatWidget);
 	void archiveFinishedGame();
 	void refreshAvailablePlayers();
-	void refreshContacts();
-	void ContactsCustomPopupMenu(QPoint position);
 private:
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
@@ -119,6 +118,10 @@ private:
 	void reviewSelectedGame();
 	void exportSelectedGame();
 	void deleteSelectedGame();
+	void saveContactsToSettings();
+	void loadLayoutSettings();
+	void saveLayoutSettings();
+	void setupPlayersTab();
 	void showEvent(QShowEvent *event) override;
 };
 
