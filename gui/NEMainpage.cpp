@@ -261,6 +261,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		historyHeader->resizeSection(4, 75);
 		historyHeader->setSortIndicator(0, Qt::DescendingOrder);
 	}
+	// Apply the date-last layout after restoring older saved column orders.
+	historyHeader->moveSection(historyHeader->visualIndex(0), historyHeader->count() - 1);
 	historyHeader->setStretchLastSection(true);
 	connect(historyHeader, &QHeaderView::sectionResized, this,
 	        [historyHeader](int, int, int) {
