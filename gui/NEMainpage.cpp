@@ -613,30 +613,35 @@ public:
 class InvitationIdentityItem : public GxsIdRSTreeWidgetItem
 {
 public:
-	explicit InvitationIdentityItem(QTreeWidget *parent)
-	    : GxsIdRSTreeWidgetItem(nullptr, GxsIdDetails::ICON_TYPE_AVATAR, true, parent)
+	explicit InvitationIdentityItem(const RsGxsId &id, QTreeWidget *parent)
+	    : GxsIdRSTreeWidgetItem(nullptr, GxsIdDetails::ICON_TYPE_AVATAR, true, parent),
+	      mGxsId(id)
 	{}
 
 	QVariant data(int column, int role) const override
 	{
-		const QVariant value = GxsIdRSTreeWidgetItem::data(column, role);
-		// The shared identity item supplies a font-sized pixmap, which the
-		// default delegate does not resize to the tree's configured icon size.
-		if (column == idColumn() && role == Qt::DecorationRole && treeWidget()) {
-			const QPixmap pixmap = value.value<QPixmap>();
-			if (!pixmap.isNull())
-				return pixmap.scaled(treeWidget()->iconSize(),
-				        Qt::KeepAspectRatio, Qt::SmoothTransformation);
+		if (column == idColumn() && role == Qt::DecorationRole) {
+			RsIdentityDetails details;
+			const bool known = rsIdentity && rsIdentity->getIdDetails(mGxsId, details);
+			QPixmap avatar;
+			if (!known || !details.mAvatar.mSize || !GxsIdDetails::loadPixmapFromData(
+			        details.mAvatar.mData, details.mAvatar.mSize, avatar, GxsIdDetails::MEDIUM)) {
+				avatar = GxsIdDetails::makeDefaultIcon(mGxsId, GxsIdDetails::MEDIUM);
+			}
+			return QIcon(avatar);
 		}
-		return value;
+		return GxsIdRSTreeWidgetItem::data(column, role);
 	}
+
+private:
+	RsGxsId mGxsId;
 };
 
 QString invitationButtonStyle()
 {
-	return "QPushButton { border: 1px solid #199909; font-size: 11pt;"
-	       " color: white; padding: 3px 12px; min-height: 22px;"
-	       " border-radius: 6px; background-color: qlineargradient("
+	return "QPushButton { border: 1px solid #199909;"
+	       " color: white; padding: 1px 12px;"
+	       " border-radius: 4px; background-color: qlineargradient("
 	       " x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #22c70d,"
 	       " stop: 1 #116a06); }"
 	       " QPushButton:hover { border-color: #35d51f; }"
@@ -660,7 +665,7 @@ void NEMainpage::addGxsInvitation(const RsGxsId &gxs_id)
 	const QString key = "gxs:" + QString::fromStdString(gxs_id.toStdString());
 
 	removePendingInvitation(key);
-	GxsIdRSTreeWidgetItem *item = new InvitationIdentityItem(ui->pendingInvites);
+	GxsIdRSTreeWidgetItem *item = new InvitationIdentityItem(gxs_id, ui->pendingInvites);
 	item->setId(gxs_id, 0, true);
 	item->setText(1, QLocale().toString(QDateTime::currentDateTime(), QLocale::ShortFormat));
 
@@ -671,6 +676,10 @@ void NEMainpage::addGxsInvitation(const RsGxsId &gxs_id)
 	QPushButton *accept = new QPushButton(tr("Accept"), actions);
 	accept->setStyleSheet(invitationButtonStyle());
 	QPushButton *reject = new QPushButton(tr("Reject"), actions);
+	accept->setFont(reject->font());
+	const int buttonHeight = reject->sizeHint().height();
+	accept->setFixedHeight(buttonHeight);
+	reject->setFixedHeight(buttonHeight);
 	actionsLayout->addWidget(accept);
 	actionsLayout->addWidget(reject);
 	ui->pendingInvites->setItemWidget(item, 2, actions);
@@ -1111,6 +1120,9 @@ void NEMainpage::handleEvent_identity_main_thread(std::shared_ptr<const RsEvent>
 	case RsGxsIdentityEventCode::UPDATED_IDENTITY:
 	case RsGxsIdentityEventCode::DELETED_IDENTITY:
 		refreshAvailablePlayers();
+		if (ui->pendingInvites) {
+			ui->pendingInvites->viewport()->update();
+		}
 		break;
 	default:
 		break;
