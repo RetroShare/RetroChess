@@ -599,14 +599,7 @@ void NEMainpage::refreshAvailablePlayers()
             if (!retained.contains(it.key())) delete it.value();
         tree->setSortingEnabled(true);
     }
-    const QString contactQuery = ui->contactSearchEdit ? ui->contactSearchEdit->text().trimmed() : QString();
-    for (int i = 0; i < ui->savedContacts->topLevelItemCount(); ++i) {
-        QTreeWidgetItem *item = ui->savedContacts->topLevelItem(i);
-        const bool match = contactQuery.isEmpty()
-                || item->text(0).contains(contactQuery, Qt::CaseInsensitive)
-                || item->data(0, Qt::UserRole).toString().contains(contactQuery, Qt::CaseInsensitive);
-        item->setHidden(!match);
-    }
+    filterSavedContacts();
     ui->availablePlayersDescription->setText(tr("Saved chess contacts keeps all saved players, including offline contacts. Available or invited players shows players ready for a game and incoming or outgoing invitations. Right-click or double-click a player for actions."));
     emit lobbyUnreadCountChanged();
 }
@@ -1279,6 +1272,25 @@ void NEMainpage::saveContactsToSettings()
 	Settings->sync();
 }
 
+void NEMainpage::filterSavedContacts()
+{
+	if (!ui || !ui->savedContacts) return;
+	const QString contactQuery = ui->contactSearchEdit ? ui->contactSearchEdit->text().trimmed() : QString();
+	const bool onlyOnline = ui->showOnlineplayersButton && ui->showOnlineplayersButton->isChecked();
+
+	for (int i = 0; i < ui->savedContacts->topLevelItemCount(); ++i) {
+		QTreeWidgetItem *item = ui->savedContacts->topLevelItem(i);
+		if (!item) continue;
+		const bool matchQuery = contactQuery.isEmpty()
+		        || item->text(0).contains(contactQuery, Qt::CaseInsensitive)
+		        || item->data(0, Qt::UserRole).toString().contains(contactQuery, Qt::CaseInsensitive);
+		const QString status = item->data(1, Qt::UserRole + 1).toString();
+		const bool isOnline = (status == "available" || status == "playing" || status == "busy");
+		const bool match = matchQuery && (!onlyOnline || isOnline);
+		item->setHidden(!match);
+	}
+}
+
 void NEMainpage::loadLayoutSettings()
 {
 	ui->playersSplitter->setChildrenCollapsible(false);
@@ -1341,6 +1353,12 @@ void NEMainpage::loadLayoutSettings()
 	if (ui->availablePlayers->columnWidth(1) < 130) ui->availablePlayers->setColumnWidth(1, 130);
 	if (ui->availablePlayers->columnWidth(2) < 130) ui->availablePlayers->setColumnWidth(2, 130);
 
+	const bool onlyOnline = Settings->valueFromGroup("RetroChess", "ShowOnlyOnlineContacts", false).toBool();
+	ui->showOnlineplayersButton->setChecked(onlyOnline);
+	ui->showOnlineplayersButton->setToolTip(onlyOnline
+	        ? tr("Show all chess players")
+	        : tr("Show only online chess players"));
+
 	connect(ui->savedContacts->header(), &QHeaderView::sectionResized,
 	        this, &NEMainpage::saveLayoutSettings);
 	connect(ui->availablePlayers->header(), &QHeaderView::sectionResized,
@@ -1355,6 +1373,7 @@ void NEMainpage::saveLayoutSettings()
 	Settings->setValueToGroup("RetroChess", "SavedContactsHeaderState", ui->savedContacts->header()->saveState());
 	Settings->setValueToGroup("RetroChess", "AvailablePlayersHeaderState", ui->availablePlayers->header()->saveState());
 	Settings->setValueToGroup("RetroChess", "GameHistoryHeaderState", ui->gameHistory->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "ShowOnlyOnlineContacts", ui->showOnlineplayersButton->isChecked());
 
 	QVariantList savedWidths;
 	for (int col = 0; col < ui->savedContacts->columnCount(); ++col) {
@@ -1447,18 +1466,23 @@ void NEMainpage::setupPlayersTab()
 		dialog.exec();
 		refreshAvailablePlayers();
 	});
-	auto filterContacts = [this]() {
-		const QString query = ui->contactSearchEdit->text().trimmed();
-		for (int i = 0; i < ui->savedContacts->topLevelItemCount(); ++i) {
-			QTreeWidgetItem *item = ui->savedContacts->topLevelItem(i);
-			const bool match = query.isEmpty()
-			        || item->text(0).contains(query, Qt::CaseInsensitive)
-			        || item->data(0, Qt::UserRole).toString().contains(query, Qt::CaseInsensitive);
-			item->setHidden(!match);
-		}
-	};
-	connect(ui->contactSearchEdit, &QLineEdit::textChanged, this, [filterContacts](const QString &) {
-		filterContacts();
+	ui->showOnlineplayersButton->setIcon(QIcon(":/images/cable-tag.png"));
+	ui->showOnlineplayersButton->setIconSize(QSize(24, 24));
+	ui->showOnlineplayersButton->setCheckable(true);
+	ui->showOnlineplayersButton->setAutoRaise(true);
+	ui->showOnlineplayersButton->setToolTip(ui->showOnlineplayersButton->isChecked()
+	        ? tr("Show all chess players")
+	        : tr("Show only online chess players"));
+
+	connect(ui->contactSearchEdit, &QLineEdit::textChanged, this, [this](const QString &) {
+		filterSavedContacts();
+	});
+	connect(ui->showOnlineplayersButton, &QToolButton::toggled, this, [this](bool checked) {
+		ui->showOnlineplayersButton->setToolTip(checked
+		        ? tr("Show all chess players")
+		        : tr("Show only online chess players"));
+		filterSavedContacts();
+		saveLayoutSettings();
 	});
 	connect(ui->addChessPlayerButton, &QToolButton::clicked, this, [this]() {
 		QDialog dialog(this);

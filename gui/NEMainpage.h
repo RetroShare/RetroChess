@@ -122,6 +122,7 @@ private:
 	void exportSelectedGame();
 	void deleteSelectedGame();
 	void saveContactsToSettings();
+	void filterSavedContacts();
 	void loadLayoutSettings();
 	void saveLayoutSettings();
 	void setupPlayersTab();
