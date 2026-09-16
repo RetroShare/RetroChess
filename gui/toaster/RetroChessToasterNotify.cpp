@@ -112,6 +112,7 @@ void RetroChessToasterNotify::chessInvited(const RsPeerId &peerId)
 	if (!notifyEnabled() || peerId.isNull()) return;
 	Invitation invitation; invitation.peerId = peerId; mPending.push_back(invitation);
 	playInviteSound();
+	emit toasterAvailable();
 }
 
 void RetroChessToasterNotify::chessInvitedGxs(const RsGxsId &gxsId)
@@ -119,4 +120,5 @@ void RetroChessToasterNotify::chessInvitedGxs(const RsGxsId &gxsId)
 	if (!notifyEnabled() || gxsId.isNull()) return;
 	Invitation invitation; invitation.gxsId = gxsId; mPending.push_back(invitation);
 	playInviteSound();
+	emit toasterAvailable();
 }

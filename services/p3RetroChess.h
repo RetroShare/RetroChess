@@ -127,6 +127,13 @@ public:
 	void unregisterGameSession(const QString &endpointId) override;
 	std::vector<RsRetroChessGameSession> gameSessions() override;
 	std::vector<RsRetroChessAvailablePeer> availableChessPeers() override;
+	bool addChessContact(const RsGxsId &id) override;
+	void removeChessContact(const RsGxsId &id) override;
+	std::list<RsGxsId> chessIdentities() override;
+	RsGxsId preferredChessIdentity() override;
+	void setChessIdentities(const std::list<RsGxsId> &ids, const RsGxsId &preferred) override;
+	bool chessBusy() override;
+	void setChessBusy(bool busy) override;
 	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) override;
 
@@ -153,6 +160,24 @@ public:
 	virtual bool acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side) override;
 
 private:
+	void tickChessPresence();
+	bool handleChessPresence(const RsGxsId &sender, const RsGxsTunnelId &tunnel, const QVariantMap &message);
+	bool chessIdentityEnabled(const RsGxsId &id);
+	RsGxsId selectChessIdentity(const RsGxsId &peer);
+	struct ChessContact {
+		time_t lastSeen = 0;
+		time_t nextProbe = 0;
+		time_t deadline = 0;
+		unsigned int failures = 0;
+		QString status = "unknown";
+		QString nonce;
+		RsGxsTunnelId probeTunnel;
+	};
+	std::map<RsGxsId, ChessContact> mChessContacts;
+	std::set<RsGxsId> mChessIdentities;
+	RsGxsId mPreferredChessIdentity;
+	bool mChessIdentitiesConfigured = false;
+	bool mChessBusy = false;
 	// Helper to find which friend sent the data based on the tunnel ID
 	RsGxsId findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id);
 
@@ -185,8 +210,10 @@ private:
 	std::map<std::string, RsRetroChessGameSession> mGameSessions;
 	std::map<std::string, time_t> mLastSessionReconnect;
 
-	RsGxsTunnelService *mGxsTunnels;
 	RsMutex mRetroChessMtx;
+	RsServiceControl *mServiceControl;
+	RetroChessNotify *mNotify ;
+	RsGxsTunnelService *mGxsTunnels;
 
 	//RsPeerId mPeerID;
 
@@ -194,8 +221,5 @@ private:
 	static RsTlvKeyValue push_int_value(const std::string& key,int value) ;
 	static int pop_int_value(const std::string& s) ;
 
-
-	RsServiceControl *mServiceControl;
-	RetroChessNotify *mNotify ;
 
 };

@@ -53,7 +53,7 @@ class RetroChessSettingsDialog : public QDialog
 {
 	Q_OBJECT
 public:
-	explicit RetroChessSettingsDialog(QWidget *parent = nullptr);
+	explicit RetroChessSettingsDialog(QWidget *parent = nullptr, bool identitiesPage = false);
 };
 
 #endif

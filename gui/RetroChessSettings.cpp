@@ -21,6 +21,10 @@
 #include "RetroChessSettings.h"
 
 #include <QButtonGroup>
+#include <QComboBox>
+#include <algorithm>
+#include <retroshare/rsidentity.h>
+#include "interface/rsRetroChess.h"
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QGridLayout>
@@ -38,6 +42,7 @@
 #endif
 
 #include "gui/settings/rsharesettings.h"
+#include "gui/common/AvatarDefs.h"
 
 namespace {
 
@@ -187,8 +192,9 @@ void RetroChessSettings::setSoundOptions(
 	Settings->sync();
 }
 
-RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent) : QDialog(parent)
+RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identitiesPage) : QDialog(parent)
 {
+	Q_UNUSED(identitiesPage);
 	setWindowTitle(tr("RetroChess Settings"));
 	setMinimumSize(780, 480);
 
@@ -196,6 +202,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent) : QDialog(pa
 	QHBoxLayout *content = new QHBoxLayout;
 	QListWidget *navigation = new QListWidget(this);
 	navigation->setFixedWidth(145);
+	navigation->addItem(tr("Chess profile"));
 	navigation->addItem(tr("Board colours"));
 	navigation->addItem(tr("Sounds"));
 
@@ -204,13 +211,63 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent) : QDialog(pa
 	content->addWidget(pages, 1);
 	root->addLayout(content, 1);
 
+	// --- Chess Profile Page ---
+	QWidget *identityPage = new QWidget(pages);
+	QVBoxLayout *identityRoot = new QVBoxLayout(identityPage);
+	QLabel *identityTitle = new QLabel(tr("Chess profile"), identityPage);
+	QFont titleFont = identityTitle->font();
+	titleFont.setPointSize(titleFont.pointSize() + 3);
+	titleFont.setBold(true);
+	identityTitle->setFont(titleFont);
+	identityRoot->addWidget(identityTitle);
+
+	QLabel *identityHelp = new QLabel(tr("Enable the identities that can receive chess requests. Choose the identity used for new connections."), identityPage);
+	identityHelp->setWordWrap(true);
+	identityRoot->addWidget(identityHelp);
+	QListWidget *identityList = new QListWidget(identityPage);
+	QFontMetricsF fontMetrics(identityList->font());
+	int avatarSize = std::max(24, (int)(fontMetrics.height() * 1.5));
+	identityList->setIconSize(QSize(avatarSize, avatarSize));
+	identityRoot->addWidget(identityList);
+	identityRoot->addWidget(new QLabel(tr("Preferred playing identity:"), identityPage));
+	QComboBox *preferred = new QComboBox(identityPage);
+	preferred->setIconSize(QSize(avatarSize, avatarSize));
+	identityRoot->addWidget(preferred);
+	const auto enabled = rsRetroChess->chessIdentities();
+	const QString preferredId = QString::fromStdString(rsRetroChess->preferredChessIdentity().toStdString());
+	std::list<RsGxsId> ownIds;
+	if (rsIdentity) rsIdentity->getOwnIds(ownIds);
+	for (const auto &id : ownIds) {
+		RsIdentityDetails details;
+		const QString key = QString::fromStdString(id.toStdString());
+		const QString name = rsIdentity->getIdDetails(id, details) && !details.mNickname.empty()
+		        ? QString::fromUtf8(details.mNickname.c_str()) : key;
+		QPixmap avatar;
+		AvatarDefs::getAvatarFromGxsId(id, avatar);
+		QListWidgetItem *item = new QListWidgetItem(QIcon(avatar), name + " (" + key + ")", identityList);
+		item->setData(Qt::UserRole, key);
+		item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+		item->setCheckState(std::find(enabled.begin(), enabled.end(), id) != enabled.end() ? Qt::Checked : Qt::Unchecked);
+	}
+	auto updatePreferred = [identityList, preferred, preferredId]() {
+		QString selected = preferred->currentData().toString();
+		if (selected.isEmpty()) selected = preferredId;
+		preferred->clear();
+		for (int row = 0; row < identityList->count(); ++row) {
+			const QListWidgetItem *item = identityList->item(row);
+			if (item->checkState() == Qt::Checked) preferred->addItem(item->icon(), item->text(), item->data(Qt::UserRole));
+		}
+		const int index = preferred->findData(selected);
+		if (index >= 0) preferred->setCurrentIndex(index);
+	};
+	updatePreferred();
+	connect(identityList, &QListWidget::itemChanged, this, [updatePreferred](QListWidgetItem *) { updatePreferred(); });
+	pages->addWidget(identityPage);
+
 	// --- Board Colours Page ---
 	QWidget *boardPage = new QWidget(pages);
 	QVBoxLayout *boardRoot = new QVBoxLayout(boardPage);
 	QLabel *title = new QLabel(tr("Board colours"), boardPage);
-	QFont titleFont = title->font();
-	titleFont.setPointSize(titleFont.pointSize() + 3);
-	titleFont.setBold(true);
 	title->setFont(titleFont);
 	boardRoot->addWidget(title);
 	boardRoot->addWidget(new QLabel(
@@ -391,7 +448,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent) : QDialog(pa
 
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 	connect(buttons, &QDialogButtonBox::accepted, this,
-	        [this, group, moveSound, captureSound, resultSound, inviteSound]() {
+	        [this, group, moveSound, captureSound, resultSound, inviteSound, identityList, preferred]() {
 		if (group->checkedButton()) {
 			RetroChessSettings::setBoardThemeId(
 			        group->checkedButton()->property("themeId").toString());
@@ -399,6 +456,12 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent) : QDialog(pa
 		RetroChessSettings::setSoundOptions(
 		        moveSound->isChecked(), captureSound->isChecked(),
 		        resultSound->isChecked(), inviteSound->isChecked());
+        std::list<RsGxsId> enabledIds;
+        for (int row = 0; row < identityList->count(); ++row) {
+            const QListWidgetItem *item = identityList->item(row);
+            if (item->checkState() == Qt::Checked) enabledIds.push_back(RsGxsId(item->data(Qt::UserRole).toString().toStdString()));
+        }
+        rsRetroChess->setChessIdentities(enabledIds, RsGxsId(preferred->currentData().toString().toStdString()));
 		accept();
 	});
 }

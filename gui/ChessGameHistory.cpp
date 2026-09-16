@@ -70,7 +70,15 @@ ChessGameRecord fromJson(const QJsonObject &object)
 	ChessGameRecord game;
 	game.id = object["id"].toString();
 	game.startedAt = QDateTime::fromString(object["started"].toString(), Qt::ISODateWithMs);
+	if (!game.startedAt.isValid())
+		game.startedAt = QDateTime::fromString(object["started"].toString(), Qt::ISODate);
+	if (!game.startedAt.isValid())
+		game.startedAt = QDateTime::fromString(object["started"].toString());
 	game.endedAt = QDateTime::fromString(object["ended"].toString(), Qt::ISODateWithMs);
+	if (!game.endedAt.isValid())
+		game.endedAt = QDateTime::fromString(object["ended"].toString(), Qt::ISODate);
+	if (!game.endedAt.isValid())
+		game.endedAt = QDateTime::fromString(object["ended"].toString());
 	game.whitePlayer = object["white"].toString();
 	game.blackPlayer = object["black"].toString();
 	game.whiteGxsId = object["whiteGxsId"].toString();

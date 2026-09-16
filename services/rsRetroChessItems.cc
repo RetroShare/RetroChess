@@ -41,7 +41,7 @@ std::ostream& RsRetroChessDataItem::print(std::ostream &out, uint16_t indent)
 	out << "flags: " << flags << std::endl;
 
 	printIndent(out, int_Indent);
-	out << "data size: " << std::hex << data_size << std::dec << std::endl;
+	out << "msg size: " << m_msg.size() << std::endl;
 
 	printRsItemEnd(out, "RsRetroChessDataItem", indent);
 	return out;
@@ -52,7 +52,7 @@ uint32_t RsRetroChessDataItem::serial_size() const
 {
 	uint32_t s = 8; /* header */
 	s += 4; /* flags */
-	s += 4; /* data_size  */
+	s += 4; /* legacy data_size field */
 	//s += m_msg.length()+HOLLERITH_LEN_SPEC; /* data */
 	s += getRawStringSize(m_msg);
 
@@ -84,7 +84,8 @@ bool RsRetroChessDataItem::serialise(void *data, uint32_t& pktsize)
 
 	/* add mandatory parts first */
 	ok &= setRawUInt32(data, tlvsize, &offset, flags);
-	ok &= setRawUInt32(data, tlvsize, &offset, data_size);
+	// Retain the original wire layout; derive the redundant size from the message.
+	ok &= setRawUInt32(data, tlvsize, &offset, static_cast<uint32_t>(m_msg.size()));
 
 
 	ok &= setRawString(data, tlvsize, &offset, m_msg );
@@ -129,7 +130,9 @@ RsRetroChessDataItem::RsRetroChessDataItem(void *data, uint32_t pktsize)
 
 	/* get mandatory parts first */
 	ok &= getRawUInt32(data, rssize, &offset, &flags);
-	ok &= getRawUInt32(data, rssize, &offset, &data_size);
+	// Older peers include this field, but the raw string carries its own length.
+	uint32_t legacyDataSize = 0;
+	ok &= getRawUInt32(data, rssize, &offset, &legacyDataSize);
 
 
 	ok &= getRawString(data, rssize, &offset, m_msg );
@@ -147,6 +150,8 @@ RsItem* RsRetroChessSerialiser::deserialise(void *data, uint32_t *pktsize)
 #ifdef RSSERIAL_DEBUG
 	std::cerr << "RsRetroChessSerialiser::deserialise()" << std::endl;
 #endif
+
+	if (!data || *pktsize < 8) return NULL;
 
 	/* get the type and size */
 	uint32_t rstype = getRsItemId(data);

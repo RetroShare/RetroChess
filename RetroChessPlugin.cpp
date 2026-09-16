@@ -94,6 +94,13 @@ RetroChessPlugin::RetroChessPlugin()
 	mRetroChessNotify = new RetroChessNotify;
 }
 
+RetroChessPlugin::~RetroChessPlugin()
+{
+	delete mRetroChessToasterNotify;
+	delete mRetroChessNotify;
+	delete mIcon;
+}
+
 void RetroChessPlugin::setInterfaces(RsPlugInInterfaces &interfaces)
 {
 	mPeers = interfaces.mPeers;
@@ -150,10 +157,13 @@ ChatWidgetHolder *RetroChessPlugin::qt_get_chat_widget_holder(ChatWidget *chatWi
 	return NULL;
 }
 
+#include <mutex>
+
+static std::once_flag mRetroChessInitOnce;
+
 p3Service *RetroChessPlugin::p3_service() const
 {
-    if(mRetroChess == NULL)
-    {
+    std::call_once(mRetroChessInitOnce, [this]() {
         // Create the service
         rsRetroChess = mRetroChess = new p3RetroChess(mPlugInHandler, mRetroChessNotify);
 
@@ -161,7 +171,15 @@ p3Service *RetroChessPlugin::p3_service() const
         if (mGxsTunnels) {
             mRetroChess->connectToGxsTunnelService(mGxsTunnels);
         }
-    }
+    });
+    return mRetroChess;
+}
+
+p3Config *RetroChessPlugin::p3_config() const
+{
+    // The plugin manager discovers saved configuration through this hook,
+    // independently of the network service. Ensure both hooks share one instance.
+    p3_service();
     return mRetroChess;
 }
 
