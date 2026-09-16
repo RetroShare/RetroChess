@@ -101,7 +101,7 @@ public:
             if (rd1 != rd2) return rd1 < rd2;
             return QString::localeAwareCompare(text(0), other.text(0)) < 0;
         }
-        if (column == 4 && treeWidget()->columnCount() == 7) {
+        if (column == 4 && treeWidget()->columnCount() >= 7) {
             const int rd1 = data(4, Qt::UserRole).toInt();
             const int rd2 = other.data(4, Qt::UserRole).toInt();
             if (rd1 != rd2) return rd1 < rd2;
@@ -111,8 +111,11 @@ public:
             return QString::localeAwareCompare(text(0), other.text(0)) < 0;
         }
         const bool isLastSeen = (treeWidget()->columnCount() == 3 && column == 2)
-                             || (treeWidget()->columnCount() == 7 && column == 5);
+                             || (treeWidget()->columnCount() >= 7 && column == 5);
         if (isLastSeen) return data(column, Qt::UserRole).toLongLong() < other.data(column, Qt::UserRole).toLongLong();
+        if (column == 7) {
+            return data(7, Qt::UserRole).toInt() < other.data(7, Qt::UserRole).toInt();
+        }
         return QTreeWidgetItem::operator<(other);
     }
 };
@@ -270,11 +273,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	}
 
 	QTimer::singleShot(0, this, SLOT(autoJoinOfficialLobby()));
-	ui->pendingInvites->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-	ui->pendingInvites->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-	ui->pendingInvites->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     const int iconHeight = QFontMetricsF(ui->availablePlayers->font()).height() * 1.5;
-    ui->pendingInvites->setIconSize(QSize(iconHeight, iconHeight));
     ui->savedContacts->setIconSize(QSize(iconHeight, iconHeight));
     ui->availablePlayers->setIconSize(QSize(iconHeight, iconHeight));
 
@@ -452,7 +451,7 @@ void NEMainpage::refreshAvailablePlayers()
 
                         const QString endpoint = peer.endpointId;
                         if (actionState == 1) {
-                            actionBtn->setText(tr("Invited"));
+                            actionBtn->setText(tr("Accept"));
                             actionBtn->setToolTip(tr("Invited by player. Click to accept and start the game."));
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
@@ -463,17 +462,16 @@ void NEMainpage::refreshAvailablePlayers()
                                 "QPushButton:hover { border-color: #35d51f; }"
                                 "QPushButton:pressed { background-color: #116a06; }"
                             );
-                            connect(actionBtn, &QPushButton::clicked, this, [this, id, endpoint]() {
+                            connect(actionBtn, &QPushButton::clicked, this, [this, id]() {
                                 if (rsRetroChess->hasInviteFromGxs(id)) {
                                     rsRetroChess->acceptedInviteGxs(id);
-                                    removePendingInvitation("gxs:" + endpoint);
                                     mNotify->notifyChessStartGxs(id);
                                 }
                                 refreshAvailablePlayers();
                             });
                         } else if (actionState == 2) {
-                            actionBtn->setText(tr("Cancel"));
-                            actionBtn->setToolTip(tr("Cancel invitation"));
+                            actionBtn->setText(tr("Pending..."));
+                            actionBtn->setToolTip(tr("Click to cancel invitation"));
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
                                 "  border: 1px solid #991919; color: white; padding: 1px 8px; border-radius: 4px;"
@@ -552,6 +550,49 @@ void NEMainpage::refreshAvailablePlayers()
                 item->setData(5, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
                 item->setText(6, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
                         : incoming ? tr("Received") : QString());
+
+                if (incoming) {
+                    if (!tree->itemWidget(item, 7)) {
+                        QWidget *rejectWidget = new QWidget(tree);
+                        QHBoxLayout *rejectLayout = new QHBoxLayout(rejectWidget);
+                        rejectLayout->setContentsMargins(2, 1, 2, 1);
+                        rejectLayout->setAlignment(Qt::AlignCenter);
+
+                        QPushButton *rejectBtn = new QPushButton(rejectWidget);
+                        rejectBtn->setFont(tree->font());
+                        rejectBtn->setFixedHeight(22);
+                        rejectBtn->setText(tr("Reject"));
+                        rejectBtn->setToolTip(tr("Reject chess invitation"));
+                        rejectBtn->setStyleSheet(
+                            "QPushButton {"
+                            "  border: 1px solid #991919; color: white; padding: 1px 8px; border-radius: 4px;"
+                            "  background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #c72222, stop: 1 #6a1111);"
+                            "}"
+                            "QPushButton:hover { border-color: #d53535; }"
+                            "QPushButton:pressed { background-color: #6a1111; }"
+                        );
+
+                        connect(rejectBtn, &QPushButton::clicked, this, [this, id]() {
+                            if (rsRetroChess->hasInviteFromGxs(id)) {
+                                if (!rsRetroChess->rejectedInviteGxs(id)) {
+                                    QMessageBox::warning(this, tr("Chess invitation"),
+                                            tr("The rejection could not be sent. Please try again."));
+                                }
+                            }
+                            refreshAvailablePlayers();
+                        });
+                        rejectLayout->addWidget(rejectBtn);
+                        tree->setItemWidget(item, 7, rejectWidget);
+                    }
+                    item->setData(7, Qt::UserRole, 1);
+                    item->setText(7, QString());
+                } else {
+                    if (tree->itemWidget(item, 7)) {
+                        tree->removeItemWidget(item, 7);
+                    }
+                    item->setData(7, Qt::UserRole, 0);
+                    item->setText(7, QString());
+                }
             }
         }
         for (auto it = rows.constBegin(); it != rows.constEnd(); ++it)
@@ -567,6 +608,7 @@ void NEMainpage::refreshAvailablePlayers()
         item->setHidden(!match);
     }
     ui->availablePlayersDescription->setText(tr("Saved chess contacts keeps all saved players, including offline contacts. Available or invited players shows players ready for a game and incoming or outgoing invitations. Right-click or double-click a player for actions."));
+    emit lobbyUnreadCountChanged();
 }
 
 
@@ -701,9 +743,8 @@ void NEMainpage::refreshLeaderboard()
 
 void NEMainpage::showEvent(QShowEvent *event)
 {
-	if (mLobbyUnreadCount || !mUnreadInviteKeys.isEmpty()) {
+	if (mLobbyUnreadCount) {
 		mLobbyUnreadCount = 0;
-		mUnreadInviteKeys.clear();
 		emit lobbyUnreadCountChanged();
 	}
 	MainPage::showEvent(event);
@@ -726,7 +767,6 @@ void NEMainpage::chessStartGxs(const RsGxsId &gxs_id)
 
 void NEMainpage::chessStartGxsAsBlack(const RsGxsId &gxs_id)
 {
-	removePendingInvitation("gxs:" + QString::fromStdString(gxs_id.toStdString()));
 	// We accepted the remote participant's invitation: we are Black.
 	create_chess_window_gxs(gxs_id, 1);
 }
@@ -774,114 +814,32 @@ public:
 	}
 };
 
-class InvitationIdentityItem : public GxsIdRSTreeWidgetItem
-{
-public:
-	explicit InvitationIdentityItem(const RsGxsId &id, QTreeWidget *parent)
-	    : GxsIdRSTreeWidgetItem(nullptr, GxsIdDetails::ICON_TYPE_AVATAR, true, parent),
-	      mGxsId(id)
-	{}
-
-	QVariant data(int column, int role) const override
-	{
-		if (column == idColumn() && role == Qt::DecorationRole) {
-			RsIdentityDetails details;
-			const bool known = rsIdentity && rsIdentity->getIdDetails(mGxsId, details);
-			QPixmap avatar;
-			if (!known || !details.mAvatar.mSize || !GxsIdDetails::loadPixmapFromData(
-			        details.mAvatar.mData, details.mAvatar.mSize, avatar, GxsIdDetails::MEDIUM)) {
-				avatar = GxsIdDetails::makeDefaultIcon(mGxsId, GxsIdDetails::MEDIUM);
-			}
-			return QIcon(avatar);
-		}
-		return GxsIdRSTreeWidgetItem::data(column, role);
-	}
-
-private:
-	RsGxsId mGxsId;
-};
-
-QString invitationButtonStyle()
-{
-	return "QPushButton { border: 1px solid #199909;"
-	       " color: white; padding: 1px 12px;"
-	       " border-radius: 4px; background-color: qlineargradient("
-	       " x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #22c70d,"
-	       " stop: 1 #116a06); }"
-	       " QPushButton:hover { border-color: #35d51f; }"
-	       " QPushButton:pressed { background-color: #116a06; }";
-}
 }
 
 void NEMainpage::chessInviteReceivedGxs(const RsGxsId &gxs_id)
 {
-	addGxsInvitation(gxs_id);
+	Q_UNUSED(gxs_id);
+	refreshAvailablePlayers();
 }
 
 void NEMainpage::chessTunnelClosed(const RsGxsId &gxs_id)
 {
-	removePendingInvitation("gxs:" + QString::fromStdString(gxs_id.toStdString()));
+	Q_UNUSED(gxs_id);
+	refreshAvailablePlayers();
 }
 
-void NEMainpage::addGxsInvitation(const RsGxsId &gxs_id)
+unsigned int NEMainpage::incomingInviteCount() const
 {
-	if (!rsRetroChess || !rsRetroChess->hasInviteFromGxs(gxs_id)) return;
-	const QString key = "gxs:" + QString::fromStdString(gxs_id.toStdString());
-
-	removePendingInvitation(key);
-	GxsIdRSTreeWidgetItem *item = new InvitationIdentityItem(gxs_id, ui->pendingInvites);
-	item->setId(gxs_id, 0, true);
-	item->setText(1, QLocale().toString(QDateTime::currentDateTime(), QLocale::ShortFormat));
-
-	QWidget *actions = new QWidget(ui->pendingInvites);
-	QHBoxLayout *actionsLayout = new QHBoxLayout(actions);
-	actionsLayout->setContentsMargins(2, 0, 2, 0);
-	actionsLayout->setSpacing(5);
-	QPushButton *accept = new QPushButton(tr("Accept"), actions);
-	accept->setStyleSheet(invitationButtonStyle());
-	QPushButton *reject = new QPushButton(tr("Reject"), actions);
-	accept->setFont(reject->font());
-	const int buttonHeight = reject->sizeHint().height();
-	accept->setFixedHeight(buttonHeight);
-	reject->setFixedHeight(buttonHeight);
-	actionsLayout->addWidget(accept);
-	actionsLayout->addWidget(reject);
-	ui->pendingInvites->setItemWidget(item, 2, actions);
-	mPendingInvites.insert(key, item);
-	ui->pendingInvitesBox->show();
-	if (!isVisible()) mUnreadInviteKeys.insert(key);
-	emit lobbyUnreadCountChanged();
-	connect(accept, &QPushButton::clicked, this, [this, gxs_id, key]() {
-		if (!rsRetroChess->hasInviteFromGxs(gxs_id)) {
-			removePendingInvitation(key);
-			return;
+	unsigned int count = 0;
+	if (ui && ui->availablePlayers) {
+		for (int i = 0; i < ui->availablePlayers->topLevelItemCount(); ++i) {
+			QTreeWidgetItem *item = ui->availablePlayers->topLevelItem(i);
+			if (item && item->data(7, Qt::UserRole).toInt() == 1) {
+				++count;
+			}
 		}
-		rsRetroChess->acceptedInviteGxs(gxs_id);
-		removePendingInvitation(key);
-		mNotify->notifyChessStartGxs(gxs_id);
-	});
-	connect(reject, &QPushButton::clicked, this, [this, gxs_id, key]() {
-		if (!rsRetroChess->hasInviteFromGxs(gxs_id)) {
-			removePendingInvitation(key);
-			return;
-		}
-		if (!rsRetroChess->rejectedInviteGxs(gxs_id)) {
-			QMessageBox::warning(this, tr("Chess invitation"),
-			        tr("The rejection could not be sent. Please try again."));
-			return;
-		}
-		removePendingInvitation(key);
-	});
-}
-
-void NEMainpage::removePendingInvitation(const QString &key)
-{
-	QTreeWidgetItem *item = mPendingInvites.take(key);
-	const bool wasUnread = mUnreadInviteKeys.remove(key) > 0;
-	if (item) {
-		delete item;
-		emit lobbyUnreadCountChanged();
-	} else if (wasUnread) emit lobbyUnreadCountChanged();
+	}
+	return count;
 }
 
 void NEMainpage::chessMoveGxs(const RsGxsId &gxs_id, int col, int row, int count)
@@ -1288,9 +1246,6 @@ void NEMainpage::handleEvent_identity_main_thread(std::shared_ptr<const RsEvent>
 	case RsGxsIdentityEventCode::UPDATED_IDENTITY:
 	case RsGxsIdentityEventCode::DELETED_IDENTITY:
 		refreshAvailablePlayers();
-		if (ui->pendingInvites) {
-			ui->pendingInvites->viewport()->update();
-		}
 		break;
 	default:
 		break;
@@ -1374,14 +1329,17 @@ void NEMainpage::loadLayoutSettings()
 			}
 		} else {
 			ui->availablePlayers->setColumnWidth(0, 180);
-			ui->availablePlayers->setColumnWidth(1, 85);
-			ui->availablePlayers->setColumnWidth(2, 90);
+			ui->availablePlayers->setColumnWidth(1, 130);
+			ui->availablePlayers->setColumnWidth(2, 130);
 			ui->availablePlayers->setColumnWidth(3, 70);
 			ui->availablePlayers->setColumnWidth(4, 60);
 			ui->availablePlayers->setColumnWidth(5, 120);
 			ui->availablePlayers->setColumnWidth(6, 100);
+			ui->availablePlayers->setColumnWidth(7, 85);
 		}
 	}
+	if (ui->availablePlayers->columnWidth(1) < 130) ui->availablePlayers->setColumnWidth(1, 130);
+	if (ui->availablePlayers->columnWidth(2) < 130) ui->availablePlayers->setColumnWidth(2, 130);
 
 	connect(ui->savedContacts->header(), &QHeaderView::sectionResized,
 	        this, &NEMainpage::saveLayoutSettings);
@@ -1450,10 +1408,9 @@ void NEMainpage::setupPlayersTab()
 				saveContactsToSettings();
 			} else if (chosen == accept && rsRetroChess->hasInviteFromGxs(id)) {
 				rsRetroChess->acceptedInviteGxs(id);
-				removePendingInvitation("gxs:" + endpoint);
 				mNotify->notifyChessStartGxs(id);
 			} else if (chosen == decline && rsRetroChess->hasInviteFromGxs(id)) {
-				if (rsRetroChess->rejectedInviteGxs(id)) removePendingInvitation("gxs:" + endpoint);
+				rsRetroChess->rejectedInviteGxs(id);
 			} else if (chosen == invite) {
 				const bool ok = outgoing ? rsRetroChess->cancelInviteToGxs(id) : rsRetroChess->sendInviteToGxs(id);
 				if (!ok) QMessageBox::warning(this, tr("Chess invitation"), tr("The invitation could not be updated."));
@@ -1468,7 +1425,6 @@ void NEMainpage::setupPlayersTab()
 			const bool incoming = rsRetroChess->hasInviteFromGxs(id);
 			if (incoming) {
 				rsRetroChess->acceptedInviteGxs(id);
-				removePendingInvitation("gxs:" + endpoint);
 				mNotify->notifyChessStartGxs(id);
 				refreshAvailablePlayers();
 				return;

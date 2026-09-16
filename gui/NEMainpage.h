@@ -66,10 +66,10 @@ public:
 	~NEMainpage();
 	UserNotify *createUserNotify(QObject *parent) override;
 	unsigned int lobbyUnreadCount() const { return mLobbyUnreadCount; }
+	unsigned int incomingInviteCount() const;
 	unsigned int notificationCount() const
 	{
-		return mLobbyUnreadCount
-		        + static_cast<unsigned int>(mUnreadInviteKeys.size());
+		return mLobbyUnreadCount + incomingInviteCount();
 	}
 
 signals:
@@ -111,14 +111,10 @@ private:
 	RsEventsHandlerId_t mEventHandlerId_identity = 0;
 	RsEventsHandlerId_t mEventHandlerId_chat = 0;
 
-	QMap<QString, QTreeWidgetItem*> mPendingInvites;
-	QSet<QString> mUnreadInviteKeys;
 	void handleEvent_identity_main_thread(std::shared_ptr<const RsEvent> event);
 	void handleEvent_chat_main_thread(std::shared_ptr<const RsEvent> event);
 	void create_chess_window(std::string peer_id, int player_id);
     void create_chess_window_gxs(const RsGxsId &gxs_id, int player_id);
-	void addGxsInvitation(const RsGxsId &gxs_id);
-	void removePendingInvitation(const QString &key);
 	void showOfficialLobby();
 	void refreshGameHistory();
 	bool selectedHistoryGame(ChessGameRecord &game) const;
