@@ -13,6 +13,8 @@
 #include <retroshare/rsidentity.h>
 #include "interface/rsRetroChess.h"
 #include "gui/settings/rsharesettings.h"
+#include "gui/gxs/GxsIdTreeWidgetItem.h"
+#include "util/HandleRichText.h"
 
 namespace {
 constexpr double kScale = 173.7178;
@@ -166,17 +168,59 @@ void RetroChessLeaderboard::recompute()
 	}
 }
 
+bool RetroChessLeaderboard::getPlayer(const RsGxsId &id, Player &player) const
+{
+	const QString key = QString::fromStdString(id.toStdString());
+	auto it = mPlayers.find(key);
+	if (it != mPlayers.end()) {
+		player = it.value();
+		return true;
+	}
+	return false;
+}
+
 void RetroChessLeaderboard::populate(QTableWidget *table) const
 {
 	QList<Player> players = mPlayers.values();
 	std::sort(players.begin(), players.end(), [](const Player &a, const Player &b) { return a.rating == b.rating ? a.id < b.id : a.rating > b.rating; });
 	table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	table->setSortingEnabled(false); table->setRowCount(players.size()); table->setColumnCount(10);
+	table->setIconSize(QSize(32, 32));
+	table->verticalHeader()->setDefaultSectionSize(36);
 	table->setHorizontalHeaderLabels({tr("#"), tr("Player"), tr("Rating"), tr("RD"), tr("Games"),
 	                                  tr("W"), tr("D"), tr("L"), tr("Status"), tr("Last played")});
 	for (int row = 0; row < players.size(); ++row) {
 		const Player &p = players.at(row);
-		const QStringList values{QString::number(row + 1), p.name, QString::number(qRound(p.rating)),
+		RsIdentityDetails details;
+		const bool known = rsIdentity && rsIdentity->getIdDetails(p.id, details);
+		QPixmap avatar;
+		if (!known || !details.mAvatar.mSize || !GxsIdDetails::loadPixmapFromData(
+		        details.mAvatar.mData, details.mAvatar.mSize, avatar, GxsIdDetails::MEDIUM))
+			avatar = GxsIdDetails::makeDefaultIcon(p.id, GxsIdDetails::MEDIUM);
+		const QString playerName = known && !details.mNickname.empty()
+		        ? QString::fromUtf8(details.mNickname.c_str())
+		        : (p.name.isEmpty() ? QString::fromStdString(p.id.toStdString()).left(12) : p.name);
+
+		QPixmap tooltipPixmap;
+		if (!known || details.mAvatar.mSize == 0
+		        || !GxsIdDetails::loadPixmapFromData(
+		                details.mAvatar.mData, details.mAvatar.mSize,
+		                tooltipPixmap, GxsIdDetails::LARGE))
+			tooltipPixmap = GxsIdDetails::makeDefaultIcon(p.id, GxsIdDetails::LARGE);
+		QString playerTooltip = known ? GxsIdDetails::getComment(details) : QString();
+		if (playerTooltip.isEmpty())
+			playerTooltip = tr("Identity name: %1<br/>Identity Id: %2")
+			        .arg(playerName.toHtmlEscaped(), QString::fromStdString(p.id.toStdString()).toHtmlEscaped());
+		QString embeddedImage;
+		if (RsHtml::makeEmbeddedImage(
+		        tooltipPixmap.scaled(
+		                QSize(96, 96), Qt::KeepAspectRatio,
+		                Qt::SmoothTransformation).toImage(),
+		        embeddedImage, -1))
+			playerTooltip = QString("<table><tr><td>%1</td><td>%2</td></tr></table>")
+			        .arg(embeddedImage, playerTooltip);
+
+		const QStringList values{QString::number(row + 1), playerName, QString::number(qRound(p.rating)),
 		                         QString::number(qRound(p.rd)), QString::number(p.games()),
 		                         QString::number(p.wins), QString::number(p.draws), QString::number(p.losses),
 		                         p.provisional() ? tr("Provisional") : tr("Rated"),
@@ -184,12 +228,20 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 		for (int col = 0; col < values.size(); ++col) {
             auto *item = new QTableWidgetItem(values.at(col));
             if (col == 0 || (col >= 2 && col <= 7)) item->setData(Qt::DisplayRole, values.at(col).toInt());
-            item->setToolTip(QString::fromStdString(p.id.toStdString()));
+            if (col == 1) {
+                item->setIcon(QIcon(avatar));
+                item->setToolTip(playerTooltip);
+            } else {
+                item->setToolTip(QString::fromStdString(p.id.toStdString()));
+            }
             table->setItem(row, col, item);
         }
 	}
-	table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-	table->resizeColumnsToContents(); table->setSortingEnabled(true);
+	table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+	table->resizeColumnsToContents();
+	table->setColumnWidth(1, std::max(200, table->columnWidth(1)));
+	table->horizontalHeader()->setStretchLastSection(true);
+	table->setSortingEnabled(true);
 }
 
 void RetroChessLeaderboard::load()

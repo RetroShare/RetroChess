@@ -36,6 +36,7 @@ public:
 	                   const RsGxsId &white, const RsGxsId &black,
 	                   const QString &result, qint64 finishedAt);
 	void populate(QTableWidget *table) const;
+	bool getPlayer(const RsGxsId &id, Player &player) const;
 
 public slots:
 	void handleTunnelData(const RsGxsId &sender, const QByteArray &data);

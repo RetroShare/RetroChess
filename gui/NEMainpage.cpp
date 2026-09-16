@@ -92,8 +92,26 @@ public:
             if (rank != otherRank) return rank < otherRank;
             return QString::localeAwareCompare(text(0), other.text(0)) < 0;
         }
+        if (column == 3) {
+            const int r1 = data(3, Qt::UserRole).toInt();
+            const int r2 = other.data(3, Qt::UserRole).toInt();
+            if (r1 != r2) return r1 < r2;
+            const int rd1 = data(4, Qt::UserRole).toInt();
+            const int rd2 = other.data(4, Qt::UserRole).toInt();
+            if (rd1 != rd2) return rd1 < rd2;
+            return QString::localeAwareCompare(text(0), other.text(0)) < 0;
+        }
+        if (column == 4 && treeWidget()->columnCount() == 7) {
+            const int rd1 = data(4, Qt::UserRole).toInt();
+            const int rd2 = other.data(4, Qt::UserRole).toInt();
+            if (rd1 != rd2) return rd1 < rd2;
+            const int r1 = data(3, Qt::UserRole).toInt();
+            const int r2 = other.data(3, Qt::UserRole).toInt();
+            if (r1 != r2) return r1 < r2;
+            return QString::localeAwareCompare(text(0), other.text(0)) < 0;
+        }
         const bool isLastSeen = (treeWidget()->columnCount() == 3 && column == 2)
-                             || (treeWidget()->columnCount() == 6 && column == 4);
+                             || (treeWidget()->columnCount() == 7 && column == 5);
         if (isLastSeen) return data(column, Qt::UserRole).toLongLong() < other.data(column, Qt::UserRole).toLongLong();
         return QTreeWidgetItem::operator<(other);
     }
@@ -121,7 +139,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	mLeaderboardInfo->setWordWrap(true);
 	leaderboardLayout->addWidget(mLeaderboardInfo);
 	leaderboardLayout->addWidget(mLeaderboardTable);
-	ui->tabWidget->insertTab(1, leaderboardPage, tr("Leaderboard"));
+	ui->tabWidget->addTab(leaderboardPage, tr("Leaderboard"));
 	connect(mLeaderboard, SIGNAL(changed()), this, SLOT(refreshLeaderboard()));
 	if (mNotify) {
 		connect(mNotify, &RetroChessNotify::gxsTunnelReady, mLeaderboard, &RetroChessLeaderboard::handleTunnelReady);
@@ -510,11 +528,29 @@ void NEMainpage::refreshAvailablePlayers()
                     item->setText(2, QString());
                 }
 
-                item->setText(3, tr("Unrated"));
-                item->setToolTip(3, tr("Game results are saved, but ratings are not calculated yet."));
-                item->setText(4, lastSeenText);
-                item->setData(4, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
-                item->setText(5, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
+                RetroChessLeaderboard::Player p;
+                if (mLeaderboard && mLeaderboard->getPlayer(id, p)) {
+                    item->setText(3, QString::number(qRound(p.rating)));
+                    item->setData(3, Qt::UserRole, qRound(p.rating));
+                    item->setText(4, QString::number(qRound(p.rd)));
+                    item->setData(4, Qt::UserRole, qRound(p.rd));
+                    item->setToolTip(3, tr("Rating: %1 (%2, %3 games)")
+                            .arg(qRound(p.rating))
+                            .arg(p.provisional() ? tr("Provisional") : tr("Rated"))
+                            .arg(p.games()));
+                    item->setToolTip(4, tr("Rating Deviation: %1 (lower means more reliable)")
+                            .arg(qRound(p.rd)));
+                } else {
+                    item->setText(3, tr("1500"));
+                    item->setData(3, Qt::UserRole, 1500);
+                    item->setText(4, tr("350"));
+                    item->setData(4, Qt::UserRole, 350);
+                    item->setToolTip(3, tr("Default rating: 1500 (Provisional, no games recorded yet)"));
+                    item->setToolTip(4, tr("Default RD: 350 (Provisional)"));
+                }
+                item->setText(5, lastSeenText);
+                item->setData(5, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
+                item->setText(6, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
                         : incoming ? tr("Received") : QString());
             }
         }
@@ -660,6 +696,7 @@ void NEMainpage::refreshLeaderboard()
 	mLeaderboard->populate(mLeaderboardTable);
 	mLeaderboardInfo->setText(
 	        tr("Standard Glicko-2 ratings synchronized via GXS tunnels. Games count after both players exchange matching signed receipts."));
+	refreshAvailablePlayers();
 }
 
 void NEMainpage::showEvent(QShowEvent *event)
@@ -1338,8 +1375,9 @@ void NEMainpage::loadLayoutSettings()
 			ui->availablePlayers->setColumnWidth(1, 85);
 			ui->availablePlayers->setColumnWidth(2, 90);
 			ui->availablePlayers->setColumnWidth(3, 70);
-			ui->availablePlayers->setColumnWidth(4, 120);
-			ui->availablePlayers->setColumnWidth(5, 100);
+			ui->availablePlayers->setColumnWidth(4, 60);
+			ui->availablePlayers->setColumnWidth(5, 120);
+			ui->availablePlayers->setColumnWidth(6, 100);
 		}
 	}
 

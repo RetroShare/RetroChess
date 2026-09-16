@@ -517,6 +517,11 @@
              </column>
              <column>
               <property name="text">
+               <string>RD</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
                <string>Last seen</string>
               </property>
              </column>
