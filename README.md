@@ -105,3 +105,23 @@ game window.
 based on: https://github.com/Texas-C/RetroChess
 
 based on: https://github.com/chozabu/RetroChess
+
+### Leaderboard
+
+The Leaderboard tab ranks GXS identities using Glicko-2 (initial rating 1500,
+rating deviation 350, volatility 0.06; each confirmed game is a rating period).
+It shows ratings, rating deviation, games, wins, draws, losses and last played.
+Players remain provisional until they have ten games and RD is at most 110.
+
+Completed GXS games exchange identity-signed result receipts over secure
+GXS tunnels directly between players and through connected peers (gossip sync). Both
+players must report the same game ID, colors and result before it counts.
+Results and receipts are saved locally and synchronized over active GXS tunnels.
+Conflicting claims exclude the game; repeated receipts cannot count it twice.
+Rematches receive separate game IDs. Direct-peer games, aborted games and games
+with older clients that do not exchange game IDs are unrated. The ledger
+contains public player identities and game results. Ratings may change as
+additional signed results arrive; they do not prevent collusion.
+
+Run `python tests/leaderboard.py` with a C++ compiler, Qt 5 Core development
+files and pkg-config available to check the production rating and receipt logic.

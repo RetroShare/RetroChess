@@ -45,6 +45,9 @@ class ChatDialog;
 class ChatWidget;
 class UserNotify;
 class QShowEvent;
+class RetroChessLeaderboard;
+class QTableWidget;
+class QLabel;
 class QTreeWidgetItem;
 class QTreeWidget;
 class RetroChessSessionService;
@@ -73,6 +76,7 @@ signals:
 	void lobbyUnreadCountChanged();
 
 private slots:
+	void refreshLeaderboard();
 	void setupMenuActions();
 	void NeMsgArrived(const RsPeerId &peer_id, QString str);
 	void chessInvitePeer(const RsPeerId &peer_id);
@@ -96,6 +100,9 @@ private slots:
 	void archiveFinishedGame();
 	void refreshAvailablePlayers();
 private:
+	RetroChessLeaderboard *mLeaderboard;
+	QTableWidget *mLeaderboardTable;
+	QLabel *mLeaderboardInfo;
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
 	RetroChessSessionService *mGameSessions;

@@ -19,6 +19,9 @@
  *******************************************************************************/
 
 #include "NEMainpage.h"
+#include "RetroChessLeaderboard.h"
+#include <QTableWidget>
+#include <QLabel>
 #include "ui_NEMainpage.h"
 
 #include "services/p3RetroChess.h"
@@ -108,6 +111,24 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	mEventHandlerId_chat(0)
 {
 	ui->setupUi(this);
+	mLeaderboard = new RetroChessLeaderboard(this);
+	mLeaderboardTable = new QTableWidget(this);
+	QWidget *leaderboardPage = new QWidget(ui->tabWidget);
+	QVBoxLayout *leaderboardLayout = new QVBoxLayout(leaderboardPage);
+	mLeaderboardInfo = new QLabel(
+	        tr("Standard Glicko-2 rating. A game is counted after both players publish the same signed result."),
+	        leaderboardPage);
+	mLeaderboardInfo->setWordWrap(true);
+	leaderboardLayout->addWidget(mLeaderboardInfo);
+	leaderboardLayout->addWidget(mLeaderboardTable);
+	ui->tabWidget->insertTab(1, leaderboardPage, tr("Leaderboard"));
+	connect(mLeaderboard, SIGNAL(changed()), this, SLOT(refreshLeaderboard()));
+	if (mNotify) {
+		connect(mNotify, &RetroChessNotify::gxsTunnelReady, mLeaderboard, &RetroChessLeaderboard::handleTunnelReady);
+		connect(mNotify, &RetroChessNotify::leaderboardDataGxs, mLeaderboard, &RetroChessLeaderboard::handleTunnelData);
+	}
+	refreshLeaderboard();
+
     const QStringList savedContacts = Settings->valueFromGroup("RetroChess", "SavedChessContacts", QStringList()).toStringList();
     for (const QString &idStr : savedContacts) {
         rsRetroChess->addChessContact(RsGxsId(idStr.toStdString()));
@@ -634,6 +655,13 @@ void NEMainpage::officialLobbyNewMessage(ChatWidget *)
 	emit lobbyUnreadCountChanged();
 }
 
+void NEMainpage::refreshLeaderboard()
+{
+	mLeaderboard->populate(mLeaderboardTable);
+	mLeaderboardInfo->setText(
+	        tr("Standard Glicko-2 ratings synchronized via GXS tunnels. Games count after both players exchange matching signed receipts."));
+}
+
 void NEMainpage::showEvent(QShowEvent *event)
 {
 	if (mLobbyUnreadCount || !mUnreadInviteKeys.isEmpty()) {
@@ -846,6 +874,7 @@ void NEMainpage::removeActiveGameListing(QString gameId)
 
 void NEMainpage::requestRematchGxs(const RsGxsId &gxs_id, int localColor)
 {
+	rsRetroChess->startNewGameIdForPeer(gxs_id);
 	if (!rsRetroChess->sendRematchGxs(gxs_id, localColor))
 		return;
 
@@ -1004,6 +1033,7 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 
     // Open the window with the GXS constructor
     RetroChessWindow *win = new RetroChessWindow(gxs_id, player_id);
+    connect(win, &RetroChessWindow::ratedResult, mLeaderboard, &RetroChessLeaderboard::submitResult);
     connect(win, SIGNAL(rematchRequested(RsGxsId,int)),
             this, SLOT(requestRematchGxs(RsGxsId,int)));
     connect(win, SIGNAL(gameClosed(QString)), this, SLOT(removeActiveGame(QString)));

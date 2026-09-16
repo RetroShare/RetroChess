@@ -118,6 +118,8 @@ public:
 	bool rejectedInviteGxs(const RsGxsId &gxsId) override;
 	void clearInviteGxs(const RsGxsId &gxsId) override;
 	bool hasInviteFromGxs(const RsGxsId &gxsId) override;
+	QString gameIdForPeer(const RsGxsId &gxsId) override;
+	void startNewGameIdForPeer(const RsGxsId &gxsId) override;
 	RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) override;
 	bool sendRematchGxs(const RsGxsId &gxsId, int localColor) override;
 	bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) override;
@@ -139,6 +141,11 @@ public:
 
 	// Send invite via existing distant chat tunnel (correct approach)
 	virtual bool sendInvite_chat(const ChatId &chatId) override;
+
+	// Leaderboard data exchange over GXS tunnels
+	bool sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray &data) override;
+	void broadcastLeaderboardDataGxs(const QByteArray &data) override;
+	std::vector<RsGxsId> activeGxsTunnels() override;
 
 	// Async tunnel management
 	void handleGxsTick(); // Called periodically by the core
@@ -200,6 +207,8 @@ private:
 	std::map<RsGxsTunnelId, RsGxsId> mTunnelToGxsIdMap;
 	// Exact local identity used to communicate with each remote GXS identity.
 	std::map<RsGxsId, RsGxsId> mOwnGxsIdByPeer;
+	std::map<RsGxsId, QString> mGameIdByPeer;
+	std::map<RsGxsId, QString> mRematchIdByPeer;
 	// Leave messages get a short delivery window before their tunnel is closed.
 	std::map<RsGxsId, time_t> mPendingGxsCloses;
 	// DistantChatIds for which sendInvite_chat() was called but getDistantChatStatus()

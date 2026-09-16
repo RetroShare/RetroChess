@@ -30,6 +30,7 @@
 #include <retroshare/rstypes.h>
 
 #include <QObject>
+#include <QByteArray>
 
 class RetroChessNotify : public QObject
 {
@@ -62,6 +63,7 @@ public:
 
 	void notifyChessStartGxs(const RsGxsId &gxs_id); 
 	void notifyAvailablePeersChanged();
+	void notifyLeaderboardDataGxs(const RsGxsId &gxs_id, const QByteArray &data);
 
 signals:
 	void NeMsgArrived(const RsPeerId &peer_id, QString str) ; // emitted when the peer gets a msg
@@ -82,6 +84,7 @@ signals:
 	void chessInviteClearedGxs(const RsGxsId &gxs_id);
 	void chessStartGxs(const RsGxsId &gxs_id);
 	void availablePeersChanged();
+	void leaderboardDataGxs(const RsGxsId &gxs_id, const QByteArray &data);
 
 };
 
