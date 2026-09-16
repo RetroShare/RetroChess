@@ -1521,10 +1521,10 @@ bool p3RetroChess::acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId
         RsStackMutex stack(mRetroChessMtx);
         // Store the mapping so receiveData / handleRawData can identify the sender
         mTunnelToGxsIdMap[tunnel_id] = gxs_id;
-        // Presence arriving on another enabled identity must not change the
-        // local identity of an existing game or outgoing connection.
-        if (mOwnGxsIdByPeer.count(gxs_id) == 0 && !tunnelInfo.source_gxs_id.isNull())
-            mOwnGxsIdByPeer[gxs_id] = tunnelInfo.source_gxs_id;
+        // A presence-only visitor needs no persistent peer-to-local identity
+        // entry. Incoming invitations and outgoing tunnel requests record the
+        // local identity themselves. Otherwise probe-only peers accumulate here
+        // because they never enter mActiveTunnels' disconnect cleanup path.
     }
     return true;
 }

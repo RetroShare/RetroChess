@@ -232,6 +232,11 @@ int main()
     assert(empty.mChessContacts.empty());
     assert(empty.mChessIdentitiesConfigured && empty.mChessIdentities.empty());
 
+    p3RetroChess visitor;
+    assert(visitor.acceptDataFromPeer(2, 102, false));
+    assert(visitor.mTunnelToGxsIdMap.count(102));
+    assert(visitor.mOwnGxsIdByPeer.empty()); // Presence-only visitors do not accumulate identity entries.
+
     p3RetroChess disabled;
     disabled.enabled = false;
     assert(disabled.acceptDataFromPeer(2, 102, false));

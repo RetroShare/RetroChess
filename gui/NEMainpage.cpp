@@ -445,7 +445,10 @@ void NEMainpage::autoJoinOfficialLobby()
 	rsChats->getChatLobbyList(subscribedLobbies);
 	if (std::find(subscribedLobbies.begin(), subscribedLobbies.end(),
 	              OFFICIAL_RETROCHESS_LOBBY_ID) != subscribedLobbies.end()) {
-		rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
+        // The setter emits CHAT_LOBBY_LIST_CHANGED even if already enabled.
+        // Writing it unconditionally creates an endless queued GUI event loop.
+        if (!rsChats->getLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID))
+            rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
 		ui->officialLobbyStatus->setText(tr("Connected to the official RetroChess lobby."));
 		showOfficialLobby();
 		return;
@@ -488,7 +491,10 @@ void NEMainpage::autoJoinOfficialLobby()
 	}
 
 	if (rsChats->joinVisibleChatLobby(OFFICIAL_RETROCHESS_LOBBY_ID, joinIdentity)) {
-		rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
+        // The setter emits CHAT_LOBBY_LIST_CHANGED even if already enabled.
+        // Writing it unconditionally creates an endless queued GUI event loop.
+        if (!rsChats->getLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID))
+            rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
 		ui->officialLobbyStatus->setText(tr("Connected to the official RetroChess lobby."));
 		showOfficialLobby();
 	} else {
