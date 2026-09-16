@@ -89,7 +89,8 @@ public:
             if (rank != otherRank) return rank < otherRank;
             return QString::localeAwareCompare(text(0), other.text(0)) < 0;
         }
-        const bool isLastSeen = (column == 3) || (treeWidget()->columnCount() == 3 && column == 2);
+        const bool isLastSeen = (treeWidget()->columnCount() == 3 && column == 2)
+                             || (treeWidget()->columnCount() == 6 && column == 4);
         if (isLastSeen) return data(column, Qt::UserRole).toLongLong() < other.data(column, Qt::UserRole).toLongLong();
         return QTreeWidgetItem::operator<(other);
     }
@@ -390,11 +391,109 @@ void NEMainpage::refreshAvailablePlayers()
                 item->setText(2, lastSeenText);
                 item->setData(2, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
             } else {
-                item->setText(2, tr("Unrated"));
-                item->setToolTip(2, tr("Game results are saved, but ratings are not calculated yet."));
-                item->setText(3, lastSeenText);
-                item->setData(3, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
-                item->setText(4, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
+                int actionState = 0;
+                if (incoming) {
+                    actionState = 1; // Invited
+                } else if (outgoing) {
+                    actionState = 2; // Cancel
+                } else if (status == "available" && (!game || game->m_flag_finished != 0)) {
+                    actionState = 3; // Invite
+                }
+
+                if (actionState != 0) {
+                    if (item->data(2, Qt::UserRole).toInt() != actionState || !tree->itemWidget(item, 2)) {
+                        QWidget *actionWidget = new QWidget(tree);
+                        QHBoxLayout *actionLayout = new QHBoxLayout(actionWidget);
+                        actionLayout->setContentsMargins(2, 1, 2, 1);
+                        actionLayout->setAlignment(Qt::AlignCenter);
+
+                        QPushButton *actionBtn = new QPushButton(actionWidget);
+                        actionBtn->setFont(tree->font());
+                        actionBtn->setFixedHeight(22);
+
+                        const QString endpoint = peer.endpointId;
+                        if (actionState == 1) {
+                            actionBtn->setText(tr("Invited"));
+                            actionBtn->setToolTip(tr("Invited by player. Click to accept and start the game."));
+                            actionBtn->setStyleSheet(
+                                "QPushButton {"
+                                "  border: 1px solid #199909; color: white; padding: 1px 8px; border-radius: 4px;"
+                                "  background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #22c70d, stop: 1 #116a06);"
+                                "  font-weight: bold;"
+                                "}"
+                                "QPushButton:hover { border-color: #35d51f; }"
+                                "QPushButton:pressed { background-color: #116a06; }"
+                            );
+                            connect(actionBtn, &QPushButton::clicked, this, [this, id, endpoint]() {
+                                if (rsRetroChess->hasInviteFromGxs(id)) {
+                                    rsRetroChess->acceptedInviteGxs(id);
+                                    removePendingInvitation("gxs:" + endpoint);
+                                    mNotify->notifyChessStartGxs(id);
+                                }
+                                refreshAvailablePlayers();
+                            });
+                        } else if (actionState == 2) {
+                            actionBtn->setText(tr("Cancel"));
+                            actionBtn->setToolTip(tr("Cancel invitation"));
+                            actionBtn->setStyleSheet(
+                                "QPushButton {"
+                                "  border: 1px solid #991919; color: white; padding: 1px 8px; border-radius: 4px;"
+                                "  background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #c72222, stop: 1 #6a1111);"
+                                "}"
+                                "QPushButton:hover { border-color: #d53535; }"
+                                "QPushButton:pressed { background-color: #6a1111; }"
+                            );
+                            connect(actionBtn, &QPushButton::clicked, this, [this, id]() {
+                                if (rsRetroChess->hasInviteToGxs(id)) {
+                                    if (!rsRetroChess->cancelInviteToGxs(id)) {
+                                        QMessageBox::warning(this, tr("Chess invitation"), tr("The invitation could not be updated."));
+                                    }
+                                }
+                                refreshAvailablePlayers();
+                            });
+                        } else if (actionState == 3) {
+                            actionBtn->setText(tr("Invite"));
+                            actionBtn->setToolTip(tr("Invite to chess"));
+                            actionBtn->setStyleSheet(
+                                "QPushButton {"
+                                "  border: 1px solid #2365a6; color: white; padding: 1px 8px; border-radius: 4px;"
+                                "  background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #3488db, stop: 1 #1f5f99);"
+                                "}"
+                                "QPushButton:hover { border-color: #5dade2; }"
+                                "QPushButton:pressed { background-color: #1f5f99; }"
+                            );
+                            connect(actionBtn, &QPushButton::clicked, this, [this, id]() {
+                                if (rsRetroChess->preferredChessIdentity().isNull()) {
+                                    QMessageBox::information(this, tr("Chess invitation"),
+                                        tr("Please select your chess identity in Chess profile before inviting players."));
+                                    RetroChessSettingsDialog dialog(this, true);
+                                    dialog.exec();
+                                    refreshAvailablePlayers();
+                                    return;
+                                }
+                                if (!rsRetroChess->sendInviteToGxs(id)) {
+                                    QMessageBox::warning(this, tr("Chess invitation"), tr("The chess invitation could not be sent."));
+                                }
+                                refreshAvailablePlayers();
+                            });
+                        }
+                        actionLayout->addWidget(actionBtn);
+                        tree->setItemWidget(item, 2, actionWidget);
+                        item->setData(2, Qt::UserRole, actionState);
+                    }
+                } else {
+                    if (tree->itemWidget(item, 2)) {
+                        tree->removeItemWidget(item, 2);
+                    }
+                    item->setData(2, Qt::UserRole, 0);
+                    item->setText(2, QString());
+                }
+
+                item->setText(3, tr("Unrated"));
+                item->setToolTip(3, tr("Game results are saved, but ratings are not calculated yet."));
+                item->setText(4, lastSeenText);
+                item->setData(4, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
+                item->setText(5, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
                         : incoming ? tr("Received") : QString());
             }
         }
@@ -1195,21 +1294,22 @@ void NEMainpage::loadLayoutSettings()
 
 	const QByteArray availableHeader = Settings->valueFromGroup("RetroChess", "AvailablePlayersHeaderState", QByteArray()).toByteArray();
 	bool restoredAvailable = false;
-	if (!availableHeader.isEmpty()) {
+	const QVariantList availableWidths = Settings->valueFromGroup("RetroChess", "AvailablePlayersColumnWidths", QVariantList()).toList();
+	if (!availableHeader.isEmpty() && availableWidths.size() == ui->availablePlayers->columnCount()) {
 		restoredAvailable = ui->availablePlayers->header()->restoreState(availableHeader);
 	}
 	if (!restoredAvailable) {
-		const QVariantList availableWidths = Settings->valueFromGroup("RetroChess", "AvailablePlayersColumnWidths", QVariantList()).toList();
 		if (availableWidths.size() == ui->availablePlayers->columnCount()) {
 			for (int col = 0; col < availableWidths.size(); ++col) {
 				ui->availablePlayers->setColumnWidth(col, availableWidths[col].toInt());
 			}
 		} else {
-			ui->availablePlayers->setColumnWidth(0, 200);
-			ui->availablePlayers->setColumnWidth(1, 90);
-			ui->availablePlayers->setColumnWidth(2, 70);
-			ui->availablePlayers->setColumnWidth(3, 130);
-			ui->availablePlayers->setColumnWidth(4, 110);
+			ui->availablePlayers->setColumnWidth(0, 180);
+			ui->availablePlayers->setColumnWidth(1, 85);
+			ui->availablePlayers->setColumnWidth(2, 90);
+			ui->availablePlayers->setColumnWidth(3, 70);
+			ui->availablePlayers->setColumnWidth(4, 120);
+			ui->availablePlayers->setColumnWidth(5, 100);
 		}
 	}
 
