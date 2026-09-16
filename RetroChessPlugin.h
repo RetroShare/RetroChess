@@ -43,6 +43,7 @@ public:
 	virtual ~RetroChessPlugin();
 
 	virtual p3Service      *p3_service() 			const	;
+	p3Config *p3_config() const override;
 	virtual uint16_t        rs_service_id()         const
 	{
 		return RS_SERVICE_TYPE_RetroChess_PLUGIN ;

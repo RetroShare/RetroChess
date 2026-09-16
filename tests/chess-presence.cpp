@@ -212,7 +212,8 @@ int main()
     contacts.mChessContacts[2].status = "available";
     contacts.mChessIdentitiesConfigured = true;
     contacts.mChessIdentities.insert(1);
-    contacts.mPreferredChessIdentity = 1;
+    contacts.mChessIdentities.insert(9);
+    contacts.mPreferredChessIdentity = 9; // Preferred identity need not sort first.
     contacts.mChessBusy = true;
     std::list<RsItem *> saved;
     bool cleanup = false;
@@ -223,7 +224,8 @@ int main()
     assert(restored.mChessContacts.at(2).lastSeen == clockNow);
     assert(restored.mChessContacts.at(2).status == "unknown");
     assert(restored.mChessIdentitiesConfigured && restored.mChessIdentities.count(1));
-    assert(restored.mPreferredChessIdentity == Id(1) && restored.mChessBusy);
+    assert(restored.mChessIdentities.size() == 2 && restored.mChessIdentities.count(9));
+    assert(restored.mPreferredChessIdentity == Id(9) && restored.mChessBusy);
     restored.removeChessContact(2);
     restored.mChessIdentities.clear();
     restored.saveList(cleanup, saved);

@@ -175,6 +175,14 @@ p3Service *RetroChessPlugin::p3_service() const
     return mRetroChess;
 }
 
+p3Config *RetroChessPlugin::p3_config() const
+{
+    // The plugin manager discovers saved configuration through this hook,
+    // independently of the network service. Ensure both hooks share one instance.
+    p3_service();
+    return mRetroChess;
+}
+
 void RetroChessPlugin::setPlugInHandler(RsPluginHandler *pgHandler)
 {
     mPlugInHandler = pgHandler;
