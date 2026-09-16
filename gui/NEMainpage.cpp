@@ -1220,8 +1220,10 @@ void NEMainpage::reviewSelectedGame()
 {
 	ChessGameRecord game;
 	if (!selectedHistoryGame(game)) return;
-	ChessGameReviewDialog dialog(game, this);
-	dialog.exec();
+	ChessGameReviewDialog *dialog = new ChessGameReviewDialog(game, this);
+	dialog->show();
+	dialog->raise();
+	dialog->activateWindow();
 }
 
 void NEMainpage::exportSelectedGame()
