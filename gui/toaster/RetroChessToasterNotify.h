@@ -38,6 +38,9 @@ public:
 	ToasterItem *toasterItem() override;
 	ToasterItem *testToasterItem() override;
 
+signals:
+	void toasterAvailable();
+
 private slots:
 	void chessInvited(const RsPeerId &peerId);
 	void chessInvitedGxs(const RsGxsId &gxsId);
