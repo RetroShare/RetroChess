@@ -118,6 +118,7 @@ private:
 	void showOfficialLobby();
 	void refreshGameHistory();
 	bool selectedHistoryGame(ChessGameRecord &game) const;
+	QVector<ChessGameRecord> selectedHistoryGames() const;
 	void reviewSelectedGame();
 	void exportSelectedGame();
 	void deleteSelectedGame();

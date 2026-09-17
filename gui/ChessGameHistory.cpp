@@ -25,7 +25,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSet>
 #include <QUuid>
+#include <algorithm>
 
 namespace
 {
@@ -130,15 +132,23 @@ bool ChessGameHistory::addGame(const ChessGameRecord &value)
 	return saveGames(all);
 }
 
+bool ChessGameHistory::removeGames(const QStringList &ids)
+{
+	if (ids.isEmpty()) return false;
+	const QSet<QString> idSet(ids.begin(), ids.end());
+	QVector<ChessGameRecord> all = games();
+	const int oldSize = all.size();
+	all.erase(std::remove_if(all.begin(), all.end(),
+	        [&idSet](const ChessGameRecord &game) { return idSet.contains(game.id); }),
+	        all.end());
+	if (all.size() != oldSize)
+		return saveGames(all);
+	return false;
+}
+
 bool ChessGameHistory::removeGame(const QString &id)
 {
-	QVector<ChessGameRecord> all = games();
-	for (int index = 0; index < all.size(); ++index)
-		if (all[index].id == id) {
-			all.remove(index);
-			return saveGames(all);
-		}
-	return false;
+	return removeGames(QStringList{id});
 }
 
 QString ChessGameHistory::toPgn(const ChessGameRecord &game)

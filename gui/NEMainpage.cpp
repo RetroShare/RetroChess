@@ -37,7 +37,7 @@
 #include <string>
 #include <QMenu>
 #include <QMessageBox>
-#include <QMessageBox>
+#include <QShortcut>
 #include <QToolButton>
 #include <QTimer>
 #include <QShowEvent>
@@ -319,7 +319,20 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		        "RetroChess", "GameHistoryHeaderState", historyHeader->saveState());
 	});
 	ui->gameHistory->setIconSize(QSize(32, 32));
+	ui->gameHistory->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	ui->gameHistory->setContextMenuPolicy(Qt::CustomContextMenu);
+
+	QShortcut *deleteHistoryShortcut = new QShortcut(QKeySequence::Delete, ui->gameHistory);
+	connect(deleteHistoryShortcut, &QShortcut::activated,
+	        this, &NEMainpage::deleteSelectedGame);
+
+	connect(ui->gameHistory, &QTreeWidget::itemSelectionChanged, this, [this]() {
+		const int selectedCount = ui->gameHistory->selectedItems().size();
+		ui->reviewGameButton->setEnabled(selectedCount == 1);
+		ui->exportGameButton->setEnabled(selectedCount >= 1);
+		ui->deleteGameButton->setEnabled(selectedCount >= 1);
+	});
+
 	connect(ui->reviewGameButton, &QPushButton::clicked,
 	        this, &NEMainpage::reviewSelectedGame);
 	connect(ui->exportGameButton, &QPushButton::clicked,
@@ -332,12 +345,23 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	        this, [this](const QPoint &position) {
 		QTreeWidgetItem *item = ui->gameHistory->itemAt(position);
 		if (!item) return;
-		ui->gameHistory->setCurrentItem(item);
+		if (!item->isSelected()) {
+			ui->gameHistory->clearSelection();
+			item->setSelected(true);
+			ui->gameHistory->setCurrentItem(item);
+		}
+		const auto selectedGames = selectedHistoryGames();
+		if (selectedGames.isEmpty()) return;
+
 		QMenu menu(ui->gameHistory);
 		QAction *review = menu.addAction(tr("Review"));
+		review->setEnabled(selectedGames.size() == 1);
 		QAction *exportPgn = menu.addAction(tr("Export PGN"));
 		menu.addSeparator();
-		QAction *remove = menu.addAction(tr("Delete"));
+		QAction *remove = menu.addAction(
+		        selectedGames.size() > 1
+		                ? tr("Delete (%1 games)").arg(selectedGames.size())
+		                : tr("Delete"));
 		QAction *selected = menu.exec(ui->gameHistory->viewport()->mapToGlobal(position));
 		if (selected == review) reviewSelectedGame();
 		else if (selected == exportPgn) exportSelectedGame();
@@ -1147,16 +1171,20 @@ void NEMainpage::refreshGameHistory()
 	ui->gameHistoryDescription->setText(hasGames
 	        ? tr("Double-click a saved game to replay every position.")
 	        : tr("No saved games yet. Finished and interrupted games will appear here."));
-	ui->reviewGameButton->setEnabled(hasGames);
-	ui->exportGameButton->setEnabled(hasGames);
-	ui->deleteGameButton->setEnabled(hasGames);
-	if (hasGames)
+	if (hasGames) {
 		ui->gameHistory->setCurrentItem(ui->gameHistory->topLevelItem(0));
+	} else {
+		ui->reviewGameButton->setEnabled(false);
+		ui->exportGameButton->setEnabled(false);
+		ui->deleteGameButton->setEnabled(false);
+	}
 }
 
 bool NEMainpage::selectedHistoryGame(ChessGameRecord &selected) const
 {
 	QTreeWidgetItem *item = ui->gameHistory->currentItem();
+	if (!item && !ui->gameHistory->selectedItems().isEmpty())
+		item = ui->gameHistory->selectedItems().first();
 	if (!item) return false;
 	const QString id = item->data(0, Qt::UserRole).toString();
 	for (const ChessGameRecord &game : ChessGameHistory::games())
@@ -1165,6 +1193,22 @@ bool NEMainpage::selectedHistoryGame(ChessGameRecord &selected) const
 			return true;
 		}
 	return false;
+}
+
+QVector<ChessGameRecord> NEMainpage::selectedHistoryGames() const
+{
+	QList<QTreeWidgetItem *> items = ui->gameHistory->selectedItems();
+	if (items.isEmpty() && ui->gameHistory->currentItem())
+		items.append(ui->gameHistory->currentItem());
+	if (items.isEmpty()) return {};
+	QSet<QString> selectedIds;
+	for (QTreeWidgetItem *item : items)
+		selectedIds.insert(item->data(0, Qt::UserRole).toString());
+	QVector<ChessGameRecord> selected;
+	for (const ChessGameRecord &game : ChessGameHistory::games())
+		if (selectedIds.contains(game.id))
+			selected.append(game);
+	return selected;
 }
 
 void NEMainpage::reviewSelectedGame()
@@ -1179,16 +1223,32 @@ void NEMainpage::reviewSelectedGame()
 
 void NEMainpage::exportSelectedGame()
 {
-	ChessGameRecord game;
-	if (!selectedHistoryGame(game)) return;
+	const QVector<ChessGameRecord> games = selectedHistoryGames();
+	if (games.isEmpty()) return;
+
+	QString defaultFileName;
+	if (games.size() == 1) {
+		defaultFileName = QString("%1-vs-%2.pgn")
+		        .arg(games.first().whitePlayer, games.first().blackPlayer);
+	} else {
+		defaultFileName = QString("chess-games-%1.pgn").arg(games.size());
+	}
+
 	const QString path = QFileDialog::getSaveFileName(
 	        this, tr("Export chess game"),
-	        QString("%1-vs-%2.pgn").arg(game.whitePlayer, game.blackPlayer),
+	        defaultFileName,
 	        tr("Portable Game Notation (*.pgn)"));
 	if (path.isEmpty()) return;
+
+	QString pgnContent;
+	for (const ChessGameRecord &game : games) {
+		if (!pgnContent.isEmpty()) pgnContent += "\n\n";
+		pgnContent += ChessGameHistory::toPgn(game);
+	}
+
 	QSaveFile file(path);
 	if (!file.open(QIODevice::WriteOnly)
-	        || file.write(ChessGameHistory::toPgn(game).toUtf8()) < 0
+	        || file.write(pgnContent.toUtf8()) < 0
 	        || !file.commit())
 		QMessageBox::warning(
 		        this, tr("Export chess game"),
@@ -1197,14 +1257,30 @@ void NEMainpage::exportSelectedGame()
 
 void NEMainpage::deleteSelectedGame()
 {
-	ChessGameRecord game;
-	if (!selectedHistoryGame(game)) return;
-	if (QMessageBox::question(
-	        this, tr("Delete saved game"),
-	        tr("Delete the saved game between %1 and %2?")
-	                .arg(game.whitePlayer, game.blackPlayer)) != QMessageBox::Yes)
-		return;
-	ChessGameHistory::removeGame(game.id);
+	const QVector<ChessGameRecord> games = selectedHistoryGames();
+	if (games.isEmpty()) return;
+
+	if (games.size() == 1) {
+		const auto &game = games.first();
+		if (QMessageBox::question(
+		        this, tr("Delete saved game"),
+		        tr("Delete the saved game between %1 and %2?")
+		                .arg(game.whitePlayer, game.blackPlayer)) != QMessageBox::Yes)
+			return;
+	} else {
+		if (QMessageBox::question(
+		        this, tr("Delete saved games"),
+		        tr("Delete the %1 selected saved games?")
+		                .arg(games.size())) != QMessageBox::Yes)
+			return;
+	}
+
+	QStringList ids;
+	ids.reserve(games.size());
+	for (const ChessGameRecord &game : games)
+		ids.append(game.id);
+
+	ChessGameHistory::removeGames(ids);
 	refreshGameHistory();
 }
 

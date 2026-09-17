@@ -49,6 +49,7 @@ public:
 	static QVector<ChessGameRecord> games();
 	static bool addGame(const ChessGameRecord &game);
 	static bool removeGame(const QString &id);
+	static bool removeGames(const QStringList &ids);
 	static QString toPgn(const ChessGameRecord &game);
 };
 
