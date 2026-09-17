@@ -683,7 +683,9 @@ void p3RetroChess::tickChessPresence()
     {
         RsStackMutex stack(mRetroChessMtx);
         unsigned int inFlight = 0;
-        for (const auto &entry : mChessContacts) if (entry.second.deadline) ++inFlight;
+        // Bound expensive tunnel discovery, not heartbeats on working tunnels.
+        for (const auto &entry : mChessContacts)
+            if (entry.second.deadline && !mActiveTunnels.count(entry.first)) ++inFlight;
         for (auto &entry : mChessContacts) {
             const RsGxsId &id = entry.first;
             ChessContact &contact = entry.second;
@@ -693,8 +695,9 @@ void p3RetroChess::tickChessPresence()
                 contact.nonce.clear();
                 contact.status = "offline";
                 contact.failures = std::min(contact.failures + 1, 4u);
-                contact.nextProbe = now + std::min(600u, 30u << contact.failures);
-                --inFlight;
+                // Keep offline discovery responsive instead of backing off for eight minutes.
+                contact.nextProbe = now + std::min(60u, 15u << (contact.failures - 1));
+                if (!mActiveTunnels.count(id)) --inFlight;
                 changed = true;
                 // Presence failures must never tear down an invitation or game.
                 if (!mGameSessions.count(id.toStdString()) && !mInvitesToGxs.count(id)
@@ -718,10 +721,12 @@ void p3RetroChess::tickChessPresence()
                 contact.status = "offline";
                 changed = true;
             }
-            if (enabled && !contact.deadline && now >= contact.nextProbe && inFlight < 4) {
-                contact.deadline = now + 45;
+            if (enabled && !contact.deadline && now >= contact.nextProbe
+                    && (mActiveTunnels.count(id) || inFlight < 4)) {
+                // GXS discovery and its key exchange need their own connection budget.
+                contact.deadline = now + 120;
                 contact.nonce.clear();
-                ++inFlight;
+                if (!mActiveTunnels.count(id)) ++inFlight;
                 if (contact.status == "unknown" || contact.status == "offline") {
                     contact.status = "checking";
                     changed = true;
@@ -732,6 +737,9 @@ void p3RetroChess::tickChessPresence()
             if (enabled && contact.deadline && contact.nonce.isEmpty() && active != mActiveTunnels.end()) {
                 contact.nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
                 contact.probeTunnel = active->second;
+                // Start the reply timeout when the probe is actually sent, not
+                // when the asynchronous tunnel connection was requested.
+                contact.deadline = now + 45;
                 QVariantMap message;
                 message["type"] = "chess_presence_request";
                 message["version"] = 1;
@@ -762,17 +770,55 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         reply["version"] = 1;
         reply["nonce"] = nonce;
         QString state = "available";
+        QByteArray reciprocalProbe;
         {
             RsStackMutex stack(mRetroChessMtx);
             if (mChessBusy) state = "busy";
             for (const auto &entry : mGameSessions)
                 if (entry.second.gxs && entry.second.localIdentityId == QString::fromStdString(info.source_gxs_id.toStdString()))
                     state = "playing";
+            // A saved contact reaching us has a working tunnel already. Probe
+            // back on it now instead of waiting through an offline retry delay.
+            // Still require a nonce-matched reply before displaying availability.
+            auto contactIt = mChessContacts.find(sender);
+            auto active = mActiveTunnels.find(sender);
+            auto pending = mPendingTunnels.find(sender);
+            auto own = mOwnGxsIdByPeer.find(sender);
+            const bool sameIdentity = own == mOwnGxsIdByPeer.end() || own->second == info.source_gxs_id;
+            const bool sameTunnel = (active == mActiveTunnels.end() || active->second == tunnel)
+                    && (pending == mPendingTunnels.end() || pending->second == tunnel);
+            if (contactIt != mChessContacts.end() && sameTunnel && sameIdentity) {
+                ChessContact &contact = contactIt->second;
+                const time_t now = time(nullptr);
+                const bool awaitingReply = contact.deadline > now && !contact.nonce.isEmpty();
+                if (!awaitingReply && (contact.deadline || now >= contact.nextProbe
+                        || contact.status == "offline" || contact.status == "checking"
+                        || contact.status == "unknown")) {
+                    mActiveTunnels[sender] = tunnel;
+                    mPendingTunnels.erase(sender);
+                    mOwnGxsIdByPeer[sender] = info.source_gxs_id;
+                    contact.deadline = now + 45;
+                    contact.nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                    contact.probeTunnel = tunnel;
+                    if (contact.status == "offline" || contact.status == "unknown")
+                        contact.status = "checking";
+                    QVariantMap probe;
+                    probe["type"] = "chess_presence_request";
+                    probe["version"] = 1;
+                    probe["nonce"] = contact.nonce;
+                    reciprocalProbe = QJsonDocument::fromVariant(probe).toJson(QJsonDocument::Compact);
+                }
+            }
         }
         reply["status"] = state;
         const QByteArray bytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
         mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
                 reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+        if (!reciprocalProbe.isEmpty()) {
+            mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                    reinterpret_cast<const uint8_t*>(reciprocalProbe.constData()), reciprocalProbe.size());
+            mNotify->notifyAvailablePeersChanged();
+        }
     } else {
         const QString state = message.value("status").toString();
         if (state != "available" && state != "playing" && state != "busy") return true;
