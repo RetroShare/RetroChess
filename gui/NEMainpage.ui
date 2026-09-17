@@ -791,6 +791,11 @@ border-image: url(:/images/closepressed.png)
          </column>
          <column>
           <property name="text">
+           <string>Review</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
            <string>Moves</string>
           </property>
          </column>

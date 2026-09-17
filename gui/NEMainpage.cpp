@@ -294,14 +294,17 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	historyHeader->setMinimumSectionSize(45);
 	const QByteArray historyHeaderState = Settings->valueFromGroup(
 	        "RetroChess", "GameHistoryHeaderState", QByteArray()).toByteArray();
-	if (!historyHeaderState.isEmpty())
-		historyHeader->restoreState(historyHeaderState);
-	else {
+	if (!historyHeaderState.isEmpty() && historyHeader->restoreState(historyHeaderState)) {
+		if (historyHeader->sectionSize(4) < 50) {
+			historyHeader->resizeSection(4, 90);
+		}
+	} else {
 		historyHeader->resizeSection(0, 165);
 		historyHeader->resizeSection(1, 210);
 		historyHeader->resizeSection(2, 210);
 		historyHeader->resizeSection(3, 85);
-		historyHeader->resizeSection(4, 75);
+		historyHeader->resizeSection(4, 90);
+		historyHeader->resizeSection(5, 75);
 		historyHeader->setSortIndicator(0, Qt::DescendingOrder);
 	}
 	// Apply the date-last layout after restoring older saved column orders.
@@ -904,9 +907,12 @@ public:
 				} else if (m_endedAt.isValid() != otherItem->m_endedAt.isValid()) {
 					return !m_endedAt.isValid();
 				}
-			} else if (column == 4) {
+			} else if (column == 5) {
 				if (m_movesCount != otherItem->m_movesCount)
 					return m_movesCount < otherItem->m_movesCount;
+				if (m_endedAt != otherItem->m_endedAt)
+					return m_endedAt < otherItem->m_endedAt;
+			} else if (column == 4) {
 				if (m_endedAt != otherItem->m_endedAt)
 					return m_endedAt < otherItem->m_endedAt;
 			}
@@ -1237,11 +1243,35 @@ void NEMainpage::refreshGameHistory()
 			if (!avatar.isNull()) item->setIcon(2, QIcon(avatar));
 		}
 		item->setText(3, game.result);
-		item->setText(4, QString::number(game.moves.size()));
+		item->setText(4, QString());
+		item->setText(5, QString::number(game.moves.size()));
 		item->setToolTip(3, game.reason);
 		for (int column = 0; column < ui->gameHistory->columnCount(); ++column)
 			item->setSizeHint(column, QSize(32, 40));
 		ui->gameHistory->addTopLevelItem(item);
+
+		QWidget *reviewWidget = new QWidget(ui->gameHistory);
+		QHBoxLayout *reviewLayout = new QHBoxLayout(reviewWidget);
+		reviewLayout->setContentsMargins(4, 2, 4, 2);
+		reviewLayout->setAlignment(Qt::AlignCenter);
+
+		QPushButton *reviewBtn = new QPushButton(tr("Review"), reviewWidget);
+		reviewBtn->setFont(ui->gameHistory->font());
+		reviewBtn->setFixedHeight(24);
+		reviewBtn->setCursor(Qt::PointingHandCursor);
+		reviewBtn->setToolTip(tr("Review and replay this game"));
+
+		connect(reviewBtn, &QPushButton::clicked, this, [this, item, game]() {
+			ui->gameHistory->clearSelection();
+			item->setSelected(true);
+			ui->gameHistory->setCurrentItem(item);
+			ChessGameReviewDialog *dialog = new ChessGameReviewDialog(game, this);
+			dialog->show();
+			dialog->raise();
+			dialog->activateWindow();
+		});
+		reviewLayout->addWidget(reviewBtn);
+		ui->gameHistory->setItemWidget(item, 4, reviewWidget);
 	}
 	ui->gameHistory->setSortingEnabled(true);
 	int sortCol = ui->gameHistory->header()->sortIndicatorSection();
