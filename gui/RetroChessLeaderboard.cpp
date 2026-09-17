@@ -224,6 +224,14 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 	table->verticalHeader()->setDefaultSectionSize(36);
 	table->setHorizontalHeaderLabels({tr("#"), tr("Player"), tr("Rating"), tr("RD"), tr("Games"),
 	                                  tr("W"), tr("D"), tr("L"), tr("Status"), tr("Last played")});
+	if (table->horizontalHeaderItem(0)) {
+		table->horizontalHeaderItem(0)->setTextAlignment(Qt::AlignCenter);
+	}
+	for (int c = 2; c <= 7; ++c) {
+		if (table->horizontalHeaderItem(c)) {
+			table->horizontalHeaderItem(c)->setTextAlignment(Qt::AlignCenter);
+		}
+	}
 	for (int row = 0; row < players.size(); ++row) {
 		const Player &p = players.at(row);
 		RsIdentityDetails details;
@@ -262,7 +270,10 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 		                         QLocale().toString(p.lastPlayed.toLocalTime(), QLocale::ShortFormat)};
 		for (int col = 0; col < values.size(); ++col) {
             auto *item = new QTableWidgetItem(values.at(col));
-            if (col == 0 || (col >= 2 && col <= 7)) item->setData(Qt::DisplayRole, values.at(col).toInt());
+            if (col == 0 || (col >= 2 && col <= 7)) {
+                item->setData(Qt::DisplayRole, values.at(col).toInt());
+                item->setTextAlignment(Qt::AlignCenter);
+            }
             if (col == 1) {
                 item->setIcon(QIcon(avatar));
                 item->setToolTip(playerTooltip);
@@ -274,7 +285,11 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 	}
 	table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
 	table->resizeColumnsToContents();
+	table->setColumnWidth(0, std::max(45, table->columnWidth(0)));
 	table->setColumnWidth(1, std::max(200, table->columnWidth(1)));
+	for (int c = 2; c <= 7; ++c) {
+		table->setColumnWidth(c, std::max(50, table->columnWidth(c)));
+	}
 	table->horizontalHeader()->setStretchLastSection(true);
 	table->setSortingEnabled(true);
 }
