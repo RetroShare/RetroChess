@@ -1695,7 +1695,7 @@ void NEMainpage::setupPlayersTab()
 		dialog.exec();
 		refreshAvailablePlayers();
 	});
-	ui->showOnlineplayersButton->setIcon(QIcon(":/images/cable-tag.png"));
+	ui->showOnlineplayersButton->setIcon(QIcon(":/images/chess-knight.svg"));
 	ui->showOnlineplayersButton->setIconSize(QSize(24, 24));
 	ui->showOnlineplayersButton->setCheckable(true);
 	ui->showOnlineplayersButton->setAutoRaise(true);

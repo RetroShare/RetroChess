@@ -264,32 +264,32 @@
                </property>
               </widget>
              </item>
-              <item>
-               <widget class="QToolButton" name="showOnlineplayersButton">
-                <property name="toolTip">
-                 <string>Show only online chess players</string>
-                </property>
-                <property name="text">
-                 <string/>
-                </property>
-                <property name="icon">
-                 <iconset resource="RetroChess_images.qrc">
-                  <normaloff>:/images/cable-tag.png</normaloff>:/images/cable-tag.png</iconset>
-                </property>
-                <property name="iconSize">
-                 <size>
-                  <width>24</width>
-                  <height>24</height>
-                 </size>
-                </property>
-                <property name="checkable">
-                 <bool>true</bool>
-                </property>
-                <property name="autoRaise">
-                 <bool>true</bool>
-                </property>
-               </widget>
-              </item>
+             <item>
+              <widget class="QToolButton" name="showOnlineplayersButton">
+               <property name="toolTip">
+                <string>Show only online chess players</string>
+               </property>
+               <property name="text">
+                <string/>
+               </property>
+               <property name="icon">
+                <iconset resource="RetroChess_images.qrc">
+                 <normaloff>:/images/chess-knight.svg</normaloff>:/images/chess-knight.svg</iconset>
+               </property>
+               <property name="iconSize">
+                <size>
+                 <width>24</width>
+                 <height>24</height>
+                </size>
+               </property>
+               <property name="checkable">
+                <bool>true</bool>
+               </property>
+               <property name="autoRaise">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
              <item>
               <widget class="QToolButton" name="addChessPlayerButton">
                <property name="toolTip">
@@ -760,11 +760,11 @@ border-image: url(:/images/closepressed.png)
          <property name="alternatingRowColors">
           <bool>false</bool>
          </property>
-         <property name="rootIsDecorated">
-          <bool>false</bool>
-         </property>
          <property name="selectionMode">
           <enum>QAbstractItemView::ExtendedSelection</enum>
+         </property>
+         <property name="rootIsDecorated">
+          <bool>false</bool>
          </property>
          <property name="sortingEnabled">
           <bool>true</bool>
