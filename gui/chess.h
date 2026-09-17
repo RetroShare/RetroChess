@@ -156,6 +156,13 @@ public:
 	QString m_capturedWhite;
 	QLabel *m_capturedBlackLabel;
 	QLabel *m_capturedWhiteLabel;
+	QLabel *m_drawBadges[2];
+	QLabel *m_winnerBadge;
+	QLabel *m_loserBadge;
+	QWidget *m_resultBar;
+	QLabel *m_resultTextLabel;
+	QLabel *m_resultInfoIcon;
+	void updateEndGameBadges(int ply);
 	QTableWidget *m_moveTable;
 	QPushButton *m_historyFirstButton;
 	QPushButton *m_historyPreviousButton;

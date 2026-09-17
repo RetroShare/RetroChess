@@ -64,6 +64,12 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_resultSubmitted(false),
     m_capturedBlackLabel(nullptr),
     m_capturedWhiteLabel(nullptr),
+    m_drawBadges{nullptr, nullptr},
+    m_winnerBadge(nullptr),
+    m_loserBadge(nullptr),
+    m_resultBar(nullptr),
+    m_resultTextLabel(nullptr),
+    m_resultInfoIcon(nullptr),
     m_moveTable(nullptr),
 	m_historyFirstButton(nullptr),
 	m_historyPreviousButton(nullptr),
@@ -172,6 +178,12 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_resultSubmitted(false),
 	m_capturedBlackLabel(nullptr),
 	m_capturedWhiteLabel(nullptr),
+	m_drawBadges{nullptr, nullptr},
+	m_winnerBadge(nullptr),
+	m_loserBadge(nullptr),
+	m_resultBar(nullptr),
+	m_resultTextLabel(nullptr),
+	m_resultInfoIcon(nullptr),
 	m_moveTable(nullptr),
 	m_historyFirstButton(nullptr),
 	m_historyPreviousButton(nullptr),
@@ -314,6 +326,35 @@ void RetroChessWindow::initAccessories()
 	m_moveTable->setShowGrid(false);
 	m_moveTable->setAlternatingRowColors(true);
 	m_ui->moveHistoryLayout->addWidget(m_moveTable, 1);
+
+	// Game result summary bar (e.g. "1/2-1/2 (i)")
+	m_resultBar = new QWidget(m_ui->moveHistoryFrame);
+	QHBoxLayout *resultLayout = new QHBoxLayout(m_resultBar);
+	resultLayout->setContentsMargins(4, 2, 4, 4);
+	resultLayout->setSpacing(6);
+	m_resultTextLabel = new QLabel(m_resultBar);
+	m_resultTextLabel->setStyleSheet("QLabel { font-size: 13px; font-weight: bold; color: #444; }");
+	m_resultInfoIcon = new QLabel(QStringLiteral("i"), m_resultBar);
+	m_resultInfoIcon->setAlignment(Qt::AlignCenter);
+	m_resultInfoIcon->setCursor(Qt::PointingHandCursor);
+	m_resultInfoIcon->setStyleSheet(
+	        "QLabel {"
+	        "  background-color: #726f6a;"
+	        "  color: #ffffff;"
+	        "  font-weight: bold;"
+	        "  font-size: 11px;"
+	        "  font-family: sans-serif;"
+	        "  border-radius: 8px;"
+	        "  min-width: 16px;"
+	        "  max-width: 16px;"
+	        "  min-height: 16px;"
+	        "  max-height: 16px;"
+	        "}");
+	resultLayout->addWidget(m_resultTextLabel);
+	resultLayout->addWidget(m_resultInfoIcon);
+	resultLayout->addStretch(1);
+	m_resultBar->hide();
+	m_ui->moveHistoryLayout->addWidget(m_resultBar);
 
 	QHBoxLayout *historyControls = new QHBoxLayout;
 	historyControls->setContentsMargins(2, 0, 2, 0);
@@ -718,6 +759,54 @@ void RetroChessWindow::initChessBoard()
 		        "QLabel { color: #353525; background: transparent; font-weight: bold; }");
 		fileLabel->raise();
 	}
+
+	for (int b = 0; b < 2; ++b) {
+		m_drawBadges[b] = new QLabel(baseWidget);
+		m_drawBadges[b]->setAlignment(Qt::AlignCenter);
+		m_drawBadges[b]->setText(QString::fromUtf8("½"));
+		m_drawBadges[b]->setStyleSheet(
+		        "QLabel {"
+		        "  background-color: #45433f;"
+		        "  color: #ffffff;"
+		        "  font-weight: bold;"
+		        "  font-size: 13px;"
+		        "  border: 1px solid rgba(255, 255, 255, 0.45);"
+		        "  border-radius: 11px;"
+		        "  min-width: 22px;"
+		        "  max-width: 22px;"
+		        "  min-height: 22px;"
+		        "  max-height: 22px;"
+		        "}");
+		m_drawBadges[b]->hide();
+	}
+
+	m_winnerBadge = new QLabel(baseWidget);
+	m_winnerBadge->setAlignment(Qt::AlignCenter);
+	m_winnerBadge->setStyleSheet(
+	        "QLabel {"
+	        "  background-color: #ffffff;"
+	        "  color: #2e7d32;"
+	        "  font-weight: bold;"
+	        "  font-size: 11px;"
+	        "  border: 1px solid #a5d6a7;"
+	        "  border-radius: 9px;"
+	        "  padding: 1px 7px;"
+	        "}");
+	m_winnerBadge->hide();
+
+	m_loserBadge = new QLabel(baseWidget);
+	m_loserBadge->setAlignment(Qt::AlignCenter);
+	m_loserBadge->setStyleSheet(
+	        "QLabel {"
+	        "  background-color: #ffffff;"
+	        "  color: #c62828;"
+	        "  font-weight: bold;"
+	        "  font-size: 11px;"
+	        "  border: 1px solid #ef9a9a;"
+	        "  border-radius: 9px;"
+	        "  padding: 1px 7px;"
+	        "}");
+	m_loserBadge->hide();
 
 	//white pawns
 	for(j=0; j<8; j++)
@@ -2200,6 +2289,7 @@ void RetroChessWindow::layoutChessBoard()
 			label->setGeometry(offsetX + BORDER_SIZE + fileIndex.toInt() * tileSize,
 			                   offsetY + BORDER_SIZE + 8 * tileSize, tileSize, BORDER_SIZE);
 	}
+	updateEndGameBadges(m_viewedHistoryPly);
 }
 
 void RetroChessWindow::recordBoardSnapshot(int fromTile, int toTile)
@@ -2248,6 +2338,7 @@ bool RetroChessWindow::restoreSessionPosition(
 	}
 	m_viewedHistoryPly = m_boardHistory.size() - 1;
 	updateHistoryControls();
+	updateEndGameBadges(m_viewedHistoryPly);
 	emit sessionStateChanged(currentFen(), sessionMoveSequence());
 	showGameStatus(tr("Interrupted game restored"));
 	return true;
@@ -2281,6 +2372,7 @@ void RetroChessWindow::showHistoryPly(int ply)
 	}
 	updateHistoryControls();
 	updateCapturedPiecesForPly(ply);
+	updateEndGameBadges(ply);
 }
 
 void RetroChessWindow::showLivePosition()
@@ -2587,6 +2679,124 @@ QPixmap RetroChessWindow::renderCapturedStrip(
 	return pixmap;
 }
 
+void RetroChessWindow::updateEndGameBadges(int ply)
+{
+	if (!m_drawBadges[0] || !m_drawBadges[1] || !m_winnerBadge || !m_loserBadge || !m_resultBar) return;
+
+	const bool isFinalPly = (!m_boardHistory.isEmpty() && ply == m_boardHistory.size() - 1 && m_gameArchived);
+	if (!isFinalPly) {
+		for (int b = 0; b < 2; ++b) if (m_drawBadges[b]) m_drawBadges[b]->hide();
+		if (m_winnerBadge) m_winnerBadge->hide();
+		if (m_loserBadge) m_loserBadge->hide();
+		if (m_resultBar) m_resultBar->hide();
+		return;
+	}
+
+	const bool isDraw = m_gameResult.contains("1/2") || m_gameResult.toLower().contains("draw")
+	        || m_gameEndReason.toLower().contains("stalemate") || m_gameEndReason.toLower().contains("draw");
+
+	auto positionCornerBadge = [this](QLabel *badge, int row, int col) {
+		if (!badge || row < 0 || col < 0 || row > 7 || col > 7) return;
+		Tile *square = tile[row][col];
+		if (!square) return;
+		const int bx = square->x() + square->width() - 22 - 2;
+		const int by = square->y() + 2;
+		badge->setGeometry(bx, by, 22, 22);
+		badge->raise();
+		badge->show();
+	};
+
+	auto positionCenterBadge = [this](QLabel *badge, int row, int col) {
+		if (!badge || row < 0 || col < 0 || row > 7 || col > 7) return;
+		Tile *square = tile[row][col];
+		if (!square) return;
+		badge->adjustSize();
+		int bx = square->x() + (square->width() - badge->width()) / 2;
+		int by = square->y() - badge->height() / 2;
+		if (by < 2) by = square->y() + 2;
+		badge->move(bx, by);
+		badge->raise();
+		badge->show();
+	};
+
+	const QString &position = m_boardHistory.at(ply);
+	const int whiteKing = position.indexOf('K');
+	const int blackKing = position.indexOf('k');
+
+	if (isDraw) {
+		if (m_winnerBadge) m_winnerBadge->hide();
+		if (m_loserBadge) m_loserBadge->hide();
+
+		if (whiteKing >= 0 && m_drawBadges[0])
+			positionCornerBadge(m_drawBadges[0], whiteKing / 8, whiteKing % 8);
+		if (blackKing >= 0 && m_drawBadges[1])
+			positionCornerBadge(m_drawBadges[1], blackKing / 8, blackKing % 8);
+
+		QString explanation;
+		if (m_gameEndReason.toLower().contains("stalemate")) {
+			explanation = tr("A draw by stalemate occurs when the player whose turn it is has no legal moves, but their king is not in check.");
+			for (int b = 0; b < 2; ++b) if (m_drawBadges[b]) m_drawBadges[b]->setToolTip(tr("Stalemate (½)"));
+		} else if (m_gameEndReason.toLower().contains("repetition")) {
+			explanation = tr("A draw by repetition occurs when the same position appears three times in the game with the same player to move and the same possible moves.");
+			for (int b = 0; b < 2; ++b) if (m_drawBadges[b]) m_drawBadges[b]->setToolTip(tr("Draw by repetition (½)"));
+		} else if (m_gameEndReason.toLower().contains("50-move") || m_gameEndReason.toLower().contains("75-move")) {
+			explanation = tr("A draw by the 50-move rule occurs when no capture has been made and no pawn has been moved in the last 50 moves.");
+			for (int b = 0; b < 2; ++b) if (m_drawBadges[b]) m_drawBadges[b]->setToolTip(tr("Draw by 50-move rule (½)"));
+		} else if (m_gameEndReason.toLower().contains("dead") || m_gameEndReason.toLower().contains("insufficient")) {
+			explanation = tr("A draw occurs when neither player has sufficient material to checkmate the opponent King.");
+			for (int b = 0; b < 2; ++b) if (m_drawBadges[b]) m_drawBadges[b]->setToolTip(tr("Draw by insufficient material (½)"));
+		} else if (m_gameEndReason.toLower().contains("agreement") || m_gameEndReason.toLower().contains("mutual")) {
+			explanation = tr("Draw agreed by mutual agreement between both players.");
+			for (int b = 0; b < 2; ++b) if (m_drawBadges[b]) m_drawBadges[b]->setToolTip(tr("Draw by agreement (½)"));
+		} else {
+			explanation = tr("The game ended in a draw.");
+			for (int b = 0; b < 2; ++b) if (m_drawBadges[b]) m_drawBadges[b]->setToolTip(tr("Draw (½)"));
+		}
+
+		if (m_resultBar) {
+			m_resultTextLabel->setText(m_gameResult.isEmpty() ? "1/2-1/2" : m_gameResult);
+			m_resultTextLabel->setToolTip(explanation);
+			m_resultInfoIcon->setToolTip(explanation);
+			m_resultBar->show();
+		}
+	} else {
+		for (int b = 0; b < 2; ++b) if (m_drawBadges[b]) m_drawBadges[b]->hide();
+
+		int winnerColor = -1;
+		if (m_gameResult.contains("1-0")) winnerColor = 1;
+		else if (m_gameResult.contains("0-1")) winnerColor = 0;
+
+		if (winnerColor >= 0 && whiteKing >= 0 && blackKing >= 0) {
+			const int winnerSquare = (winnerColor == 1) ? whiteKing : blackKing;
+			const int loserSquare = (winnerColor == 1) ? blackKing : whiteKing;
+
+			QString loserText = tr("Defeat");
+			if (m_gameEndReason.toLower().contains("checkmate") || m_gameEndReason.toLower().contains("mate")) {
+				loserText = tr("Checkmate");
+			} else if (m_gameEndReason.toLower().contains("resign")) {
+				loserText = tr("Resigned");
+			} else if (m_gameEndReason.toLower().contains("time")) {
+				loserText = tr("Time out");
+			} else if (m_gameEndReason.toLower().contains("left")) {
+				loserText = tr("Abandoned");
+			}
+
+			m_winnerBadge->setText(tr("Winner"));
+			m_loserBadge->setText(loserText);
+			positionCenterBadge(m_winnerBadge, winnerSquare / 8, winnerSquare % 8);
+			positionCenterBadge(m_loserBadge, loserSquare / 8, loserSquare % 8);
+
+			if (m_resultBar) {
+				m_resultTextLabel->setText(m_gameResult);
+				const QString explanation = m_gameEndReason.isEmpty() ? tr("Game ended") : m_gameEndReason;
+				m_resultTextLabel->setToolTip(explanation);
+				m_resultInfoIcon->setToolTip(explanation);
+				m_resultBar->show();
+			}
+		}
+	}
+}
+
 void RetroChessWindow::playMoveSound(bool capture)
 {
 	if (capture ? !RetroChessSettings::captureSoundEnabled()
@@ -2780,6 +2990,10 @@ bool RetroChessWindow::loadFen(const QString &fen, QString *error)
 	clearLastMove();
 	recordCurrentPosition();
 	recordBoardSnapshot();
+	m_gameArchived = false;
+	m_gameResult.clear();
+	m_gameEndReason.clear();
+	updateEndGameBadges(0);
 	playerTurnNotice();
 	return true;
 }
@@ -3060,6 +3274,7 @@ int RetroChessWindow::resultJudge()
 	}
 
 	if (!isKingInCheck(turn)) {
+		clearKingCheckHighlight();
 		showGameResultDialog(false, true, tr("Draw by stalemate"));
 		return 3;
 	}
@@ -3111,6 +3326,7 @@ void RetroChessWindow::completeGameHistory(const QString &result, const QString 
 	m_gameArchived = true;
 	m_gameResult = result;
 	m_gameEndReason = reason;
+	updateEndGameBadges(m_boardHistory.size() - 1);
 	emit gameReadyForHistory();
 }
 

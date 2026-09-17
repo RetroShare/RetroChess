@@ -44,11 +44,14 @@ static constexpr int BOARD_INNER_SIZE = BOARD_FULL_SIZE - BORDER_SIZE;  // 484
 ChessGameReviewDialog::ChessGameReviewDialog(
         const ChessGameRecord &game, QWidget *parent)
     : QDialog(parent), m_game(game), m_winnerBadge(nullptr), m_loserBadge(nullptr),
+      m_resultBar(nullptr), m_resultTextLabel(nullptr), m_resultInfoIcon(nullptr),
       m_moves(nullptr), m_first(nullptr), m_previous(nullptr), m_playPause(nullptr),
       m_next(nullptr), m_last(nullptr), m_positionLabel(nullptr), m_playTimer(nullptr),
       m_moveSound(nullptr), m_captureSound(nullptr), m_ply(0)
 {
 	for (int i = 0; i < 4; ++i) m_borders[i] = nullptr;
+	m_drawBadges[0] = nullptr;
+	m_drawBadges[1] = nullptr;
 
 	setModal(false);
 	setAttribute(Qt::WA_DeleteOnClose);
@@ -137,6 +140,26 @@ ChessGameReviewDialog::ChessGameReviewDialog(
 	        "}");
 	m_loserBadge->hide();
 
+	for (int i = 0; i < 2; ++i) {
+		m_drawBadges[i] = new QLabel(board);
+		m_drawBadges[i]->setAlignment(Qt::AlignCenter);
+		m_drawBadges[i]->setText(QString::fromUtf8("½"));
+		m_drawBadges[i]->setStyleSheet(
+		        "QLabel {"
+		        "  background-color: #45433f;"
+		        "  color: #ffffff;"
+		        "  font-weight: bold;"
+		        "  font-size: 13px;"
+		        "  border: 1px solid rgba(255, 255, 255, 0.45);"
+		        "  border-radius: 11px;"
+		        "  min-width: 22px;"
+		        "  max-width: 22px;"
+		        "  min-height: 22px;"
+		        "  max-height: 22px;"
+		        "}");
+		m_drawBadges[i]->hide();
+	}
+
 	root->addWidget(board, 0, Qt::AlignCenter);
 
 	QVBoxLayout *side = new QVBoxLayout;
@@ -159,6 +182,35 @@ ChessGameReviewDialog::ChessGameReviewDialog(
 		m_moves->setItem(row, index % 2 + 1, new QTableWidgetItem(game.moves[index]));
 	}
 	side->addWidget(m_moves, 1);
+
+	// Result summary row (e.g. "1/2-1/2 (i)")
+	m_resultBar = new QWidget(this);
+	QHBoxLayout *resultLayout = new QHBoxLayout(m_resultBar);
+	resultLayout->setContentsMargins(4, 2, 4, 4);
+	resultLayout->setSpacing(6);
+	m_resultTextLabel = new QLabel(m_resultBar);
+	m_resultTextLabel->setStyleSheet("QLabel { font-size: 13px; font-weight: bold; color: #444; }");
+	m_resultInfoIcon = new QLabel(QStringLiteral("i"), m_resultBar);
+	m_resultInfoIcon->setAlignment(Qt::AlignCenter);
+	m_resultInfoIcon->setCursor(Qt::PointingHandCursor);
+	m_resultInfoIcon->setStyleSheet(
+	        "QLabel {"
+	        "  background-color: #726f6a;"
+	        "  color: #ffffff;"
+	        "  font-weight: bold;"
+	        "  font-size: 11px;"
+	        "  font-family: sans-serif;"
+	        "  border-radius: 8px;"
+	        "  min-width: 16px;"
+	        "  max-width: 16px;"
+	        "  min-height: 16px;"
+	        "  max-height: 16px;"
+	        "}");
+	resultLayout->addWidget(m_resultTextLabel);
+	resultLayout->addWidget(m_resultInfoIcon);
+	resultLayout->addStretch(1);
+	m_resultBar->hide();
+	side->addWidget(m_resultBar);
 
 	// Audio setup
 	m_moveSound = new QMediaPlayer(this);
@@ -388,7 +440,60 @@ void ChessGameReviewDialog::showPly(int ply, bool playSound)
 		square->setPixmap(icon.pixmap(50, 50));
 	}
 
-	if (isFinalPly && winnerSquare >= 0 && loserSquare >= 0) {
+	const bool isDraw = m_game.result.contains("1/2") || m_game.result.toLower().contains("draw")
+	        || m_game.reason.toLower().contains("stalemate") || m_game.reason.toLower().contains("draw");
+
+	if (isFinalPly && isDraw) {
+		if (m_winnerBadge) m_winnerBadge->hide();
+		if (m_loserBadge) m_loserBadge->hide();
+
+		const int whiteKing = position.indexOf('K');
+		const int blackKing = position.indexOf('k');
+		auto positionCornerBadge = [](QLabel *badge, int squareIndex) {
+			if (!badge || squareIndex < 0 || squareIndex >= 64) return;
+			const int col = squareIndex % 8;
+			const int row = squareIndex / 8;
+			const int squareX = BORDER_SIZE + col * TILE_SIZE;
+			const int squareY = BORDER_SIZE + row * TILE_SIZE;
+			const int bx = squareX + TILE_SIZE - 22 - 2;
+			const int by = squareY + 2;
+			badge->setGeometry(bx, by, 22, 22);
+			badge->raise();
+			badge->show();
+		};
+
+		if (whiteKing >= 0 && m_drawBadges[0]) positionCornerBadge(m_drawBadges[0], whiteKing);
+		if (blackKing >= 0 && m_drawBadges[1]) positionCornerBadge(m_drawBadges[1], blackKing);
+
+		QString explanation;
+		if (m_game.reason.toLower().contains("stalemate")) {
+			explanation = tr("A draw by stalemate occurs when the player whose turn it is has no legal moves, but their king is not in check.");
+			for (int i = 0; i < 2; ++i) if (m_drawBadges[i]) m_drawBadges[i]->setToolTip(tr("Stalemate (½)"));
+		} else if (m_game.reason.toLower().contains("repetition")) {
+			explanation = tr("A draw by repetition occurs when the same position appears three times in the game with the same player to move and the same possible moves.");
+			for (int i = 0; i < 2; ++i) if (m_drawBadges[i]) m_drawBadges[i]->setToolTip(tr("Draw by repetition (½)"));
+		} else if (m_game.reason.toLower().contains("50-move") || m_game.reason.toLower().contains("75-move")) {
+			explanation = tr("A draw by the 50-move rule occurs when no capture has been made and no pawn has been moved in the last 50 moves.");
+			for (int i = 0; i < 2; ++i) if (m_drawBadges[i]) m_drawBadges[i]->setToolTip(tr("Draw by 50-move rule (½)"));
+		} else if (m_game.reason.toLower().contains("dead") || m_game.reason.toLower().contains("insufficient")) {
+			explanation = tr("A draw occurs when neither player has sufficient material to checkmate the opponent King.");
+			for (int i = 0; i < 2; ++i) if (m_drawBadges[i]) m_drawBadges[i]->setToolTip(tr("Draw by insufficient material (½)"));
+		} else if (m_game.reason.toLower().contains("agreement") || m_game.reason.toLower().contains("mutual")) {
+			explanation = tr("Draw agreed by mutual agreement between both players.");
+			for (int i = 0; i < 2; ++i) if (m_drawBadges[i]) m_drawBadges[i]->setToolTip(tr("Draw by agreement (½)"));
+		} else {
+			explanation = tr("The game ended in a draw.");
+			for (int i = 0; i < 2; ++i) if (m_drawBadges[i]) m_drawBadges[i]->setToolTip(tr("Draw (½)"));
+		}
+
+		if (m_resultBar) {
+			m_resultTextLabel->setText(m_game.result.isEmpty() ? "1/2-1/2" : m_game.result);
+			m_resultTextLabel->setToolTip(explanation);
+			m_resultInfoIcon->setToolTip(explanation);
+			m_resultBar->show();
+		}
+	} else if (isFinalPly && winnerSquare >= 0 && loserSquare >= 0) {
+		for (int i = 0; i < 2; ++i) if (m_drawBadges[i]) m_drawBadges[i]->hide();
 		auto positionBadge = [](QLabel *badge, int squareIndex) {
 			if (!badge || squareIndex < 0 || squareIndex >= 64) return;
 			const int col = squareIndex % 8;
@@ -416,9 +521,19 @@ void ChessGameReviewDialog::showPly(int ply, bool playSound)
 		m_loserBadge->setText(loserText);
 		positionBadge(m_winnerBadge, winnerSquare);
 		positionBadge(m_loserBadge, loserSquare);
+
+		if (m_resultBar) {
+			m_resultTextLabel->setText(m_game.result);
+			const QString explanation = m_game.reason.isEmpty() ? tr("Game ended") : m_game.reason;
+			m_resultTextLabel->setToolTip(explanation);
+			m_resultInfoIcon->setToolTip(explanation);
+			m_resultBar->show();
+		}
 	} else {
+		for (int i = 0; i < 2; ++i) if (m_drawBadges[i]) m_drawBadges[i]->hide();
 		if (m_winnerBadge) m_winnerBadge->hide();
 		if (m_loserBadge) m_loserBadge->hide();
+		if (m_resultBar) m_resultBar->hide();
 	}
 
 	if (m_ply == 0) m_moves->clearSelection();

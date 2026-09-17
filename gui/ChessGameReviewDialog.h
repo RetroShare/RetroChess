@@ -58,6 +58,10 @@ private:
 	QLabel *m_borders[4];
 	QLabel *m_winnerBadge;
 	QLabel *m_loserBadge;
+	QLabel *m_drawBadges[2];
+	QWidget *m_resultBar;
+	QLabel *m_resultTextLabel;
+	QLabel *m_resultInfoIcon;
 	QTableWidget *m_moves;
 	QPushButton *m_first;
 	QPushButton *m_previous;
