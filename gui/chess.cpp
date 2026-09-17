@@ -38,6 +38,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QTimer>
+#include <QPainter>
+#include <QFontMetrics>
 
 #include "chess.h"
 #include "ui_chess.h"
@@ -298,6 +300,8 @@ void RetroChessWindow::initAccessories()
 	m_ui->m_player2_name->setText( p2name.c_str() );
 	m_ui->m_move_record->hide();
 	m_ui->moveHistoryLayout->removeWidget(m_ui->m_move_record);
+	m_ui->moveHistoryLayout->setContentsMargins(4, 4, 4, 4);
+	m_ui->moveHistoryLayout->setSpacing(3);
 	m_moveTable = new QTableWidget(0, 3, m_ui->moveHistoryFrame);
 	m_moveTable->setHorizontalHeaderLabels(QStringList() << "#" << tr("White") << tr("Black"));
 	m_moveTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
@@ -345,21 +349,21 @@ void RetroChessWindow::initAccessories()
 	});
 	updateHistoryControls();
 
-	// Compact captured-piece strips, arranged like online chess boards:
-	// Black's lost pieces above the moves and White's below them.
+	// Modern Chess.com-style captured-piece strips:
+	// Opponent's captures above the moves and local player's below them.
 	m_capturedBlackLabel = new QLabel(m_ui->moveHistoryFrame);
 	m_capturedWhiteLabel = new QLabel(m_ui->moveHistoryFrame);
 	for (QLabel *label : {m_capturedBlackLabel, m_capturedWhiteLabel}) {
-		label->setFixedHeight(29);
+		label->setFixedHeight(28);
 		label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 		label->setWordWrap(false);
-		label->setTextFormat(Qt::RichText);
-		label->setStyleSheet("QLabel { color: #666; font-size: 12px; padding: 1px 4px; }");
+		label->setStyleSheet("QLabel { background: transparent; padding: 0px; }");
 	}
-	m_capturedBlackLabel->setToolTip(tr("Captured black pieces"));
-	m_capturedWhiteLabel->setToolTip(tr("Captured white pieces"));
+	m_capturedBlackLabel->setToolTip(tr("Pieces captured by opponent"));
+	m_capturedWhiteLabel->setToolTip(tr("Pieces captured by you"));
 	m_ui->moveHistoryLayout->insertWidget(0, m_capturedBlackLabel);
 	m_ui->moveHistoryLayout->addWidget(m_capturedWhiteLabel);
+	updateCapturedPiecesDisplay();
 
 	// Keep turn information beside the moves. The upper label belongs to the
 	// opponent and the lower label belongs to the local player, regardless of
@@ -2037,6 +2041,7 @@ void RetroChessWindow::refreshBoardTheme()
 				tile[row][column]->tileDisplay();
 
 	drawLastMove();
+	updateCapturedPiecesDisplay();
 }
 
 void RetroChessWindow::closeForRematch()
@@ -2119,6 +2124,10 @@ void RetroChessWindow::resizeEvent(QResizeEvent *event)
 {
 	QWidget::resizeEvent(event);
 	layoutChessBoard();
+	if (!m_boardHistory.isEmpty() && m_viewedHistoryPly >= 0)
+		updateCapturedPiecesForPly(m_viewedHistoryPly);
+	else
+		updateCapturedPiecesDisplay();
 }
 
 bool RetroChessWindow::eventFilter(QObject *watched, QEvent *event)
@@ -2271,6 +2280,7 @@ void RetroChessWindow::showHistoryPly(int ply)
 		}
 	}
 	updateHistoryControls();
+	updateCapturedPiecesForPly(ply);
 }
 
 void RetroChessWindow::showLivePosition()
@@ -2329,36 +2339,252 @@ void RetroChessWindow::recordCapturedPiece(char pieceName, int pieceColor)
 	} else {
 		m_capturedWhite.append(QChar(pieceName));
 	}
+	updateCapturedPiecesDisplay();
+}
 
-	auto compactPieces = [](const QString &pieces, const QString &color) {
-		QString result;
-		const QString order = "QRRBBHHPPPPPPPPK";
-		QString rendered;
-		for (const QChar piece : order) {
-			if (rendered.contains(piece) || !pieces.contains(piece))
-				continue;
-			rendered += piece;
-			QChar pieceCode;
-			switch (piece.toLatin1()) {
-			case 'K': pieceCode = 'K'; break;
-			case 'Q': pieceCode = 'Q'; break;
-			case 'R': pieceCode = 'R'; break;
-			case 'B': pieceCode = 'B'; break;
-			case 'H': pieceCode = 'N'; break;
-			default: pieceCode = 'P'; break;
-			}
-			const int amount = pieces.count(piece);
-			const QChar colorCode = color == "black" ? 'b' : 'w';
-			result += QString("<img src=\":/piece/%1%2.svg\" width=\"20\" height=\"20\">")
-			        .arg(colorCode).arg(pieceCode);
-			if (amount > 1)
-				result += QString("×%1").arg(amount);
-			result += "&nbsp;";
+int RetroChessWindow::calculatePiecePoints(const QString &pieces)
+{
+	int points = 0;
+	for (const QChar ch : pieces) {
+		switch (ch.toUpper().toLatin1()) {
+		case 'P': points += 1; break;
+		case 'B': points += 3; break;
+		case 'H': case 'N': points += 3; break;
+		case 'R': points += 5; break;
+		case 'Q': points += 9; break;
+		default: break;
 		}
-		return result;
+	}
+	return points;
+}
+
+void RetroChessWindow::updateCapturedPiecesDisplay()
+{
+	renderCapturedDisplays(m_capturedBlack, m_capturedWhite);
+}
+
+void RetroChessWindow::updateCapturedPiecesForPly(int ply)
+{
+	if (m_boardHistory.isEmpty() || ply >= m_boardHistory.size() - 1) {
+		updateCapturedPiecesDisplay();
+		return;
+	}
+
+	const QString &position = m_boardHistory.at(ply);
+	int pW = 8, rW = 2, nW = 2, bW = 2, qW = 1;
+	int pB = 8, rB = 2, nB = 2, bB = 2, qB = 1;
+	for (int i = 0; i < 64 && i < position.length(); ++i) {
+		switch (position.at(i).toLatin1()) {
+		case 'P': --pW; break;
+		case 'R': --rW; break;
+		case 'N': case 'H': --nW; break;
+		case 'B': --bW; break;
+		case 'Q': --qW; break;
+		case 'p': --pB; break;
+		case 'r': --rB; break;
+		case 'n': case 'h': --nB; break;
+		case 'b': --bB; break;
+		case 'q': --qB; break;
+		}
+	}
+
+	QString capturedW;
+	for (int i = 0; i < qMax(0, pW); ++i) capturedW += 'P';
+	for (int i = 0; i < qMax(0, bW); ++i) capturedW += 'B';
+	for (int i = 0; i < qMax(0, nW); ++i) capturedW += 'H';
+	for (int i = 0; i < qMax(0, rW); ++i) capturedW += 'R';
+	for (int i = 0; i < qMax(0, qW); ++i) capturedW += 'Q';
+
+	QString capturedB;
+	for (int i = 0; i < qMax(0, pB); ++i) capturedB += 'P';
+	for (int i = 0; i < qMax(0, bB); ++i) capturedB += 'B';
+	for (int i = 0; i < qMax(0, nB); ++i) capturedB += 'H';
+	for (int i = 0; i < qMax(0, rB); ++i) capturedB += 'R';
+	for (int i = 0; i < qMax(0, qB); ++i) capturedB += 'Q';
+
+	renderCapturedDisplays(capturedB, capturedW);
+}
+
+void RetroChessWindow::renderCapturedDisplays(
+		const QString &capturedBlack, const QString &capturedWhite)
+{
+	if (!m_capturedBlackLabel || !m_capturedWhiteLabel) return;
+
+	const bool opponentIsBlack = (m_localplayer_turn == 1);
+
+	// Opponent tray is at top (m_capturedBlackLabel)
+	// Local player tray is at bottom (m_capturedWhiteLabel)
+	const QString &opponentPieces = opponentIsBlack ? capturedWhite : capturedBlack;
+	const bool opponentPiecesAreWhite = opponentIsBlack;
+
+	const QString &localPieces = opponentIsBlack ? capturedBlack : capturedWhite;
+	const bool localPiecesAreWhite = !opponentIsBlack;
+
+	const int whitePoints = calculatePiecePoints(capturedBlack);
+	const int blackPoints = calculatePiecePoints(capturedWhite);
+
+	int opponentAdvantage = 0;
+	int localAdvantage = 0;
+	if (opponentIsBlack) {
+		if (blackPoints > whitePoints) opponentAdvantage = blackPoints - whitePoints;
+		if (whitePoints > blackPoints) localAdvantage = whitePoints - blackPoints;
+	} else {
+		if (whitePoints > blackPoints) opponentAdvantage = whitePoints - blackPoints;
+		if (blackPoints > whitePoints) localAdvantage = blackPoints - whitePoints;
+	}
+
+	const int w = m_capturedBlackLabel->width() > 30
+	        ? m_capturedBlackLabel->width()
+	        : (MOVES_PANEL_WIDTH - 12);
+	const int h = 28;
+	const qreal dpr = m_capturedBlackLabel->devicePixelRatioF();
+
+	if (opponentPieces.isEmpty()) {
+		m_capturedBlackLabel->clear();
+		m_capturedBlackLabel->setToolTip(QString());
+	} else {
+		m_capturedBlackLabel->setPixmap(renderCapturedStrip(
+		        opponentPieces, opponentAdvantage, opponentPiecesAreWhite, w, h, dpr));
+		const int pts = calculatePiecePoints(opponentPieces);
+		m_capturedBlackLabel->setToolTip(
+		        tr("Pieces captured by opponent (%1 %2)")
+		                .arg(pts)
+		                .arg(pts == 1 ? tr("point") : tr("points")));
+	}
+
+	if (localPieces.isEmpty()) {
+		m_capturedWhiteLabel->clear();
+		m_capturedWhiteLabel->setToolTip(QString());
+	} else {
+		m_capturedWhiteLabel->setPixmap(renderCapturedStrip(
+		        localPieces, localAdvantage, localPiecesAreWhite, w, h, dpr));
+		const int pts = calculatePiecePoints(localPieces);
+		m_capturedWhiteLabel->setToolTip(
+		        tr("Pieces captured by you (%1 %2)")
+		                .arg(pts)
+		                .arg(pts == 1 ? tr("point") : tr("points")));
+	}
+}
+
+QPixmap RetroChessWindow::renderCapturedStrip(
+		const QString &capturedPieces,
+		int advantage,
+		bool isWhitePieces,
+		int targetWidth,
+		int targetHeight,
+		qreal dpr)
+{
+	if (dpr <= 0.0) dpr = 1.0;
+	if (targetWidth < 30) targetWidth = MOVES_PANEL_WIDTH - 12;
+	if (targetHeight < 20) targetHeight = 28;
+
+	const int physW = qMax(1, qRound(targetWidth * dpr));
+	const int physH = qMax(1, qRound(targetHeight * dpr));
+	QPixmap pixmap(physW, physH);
+	pixmap.fill(Qt::transparent);
+	pixmap.setDevicePixelRatio(dpr);
+
+	QPainter painter(&pixmap);
+	painter.setRenderHint(QPainter::Antialiasing, true);
+	painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+	painter.setRenderHint(QPainter::TextAntialiasing, true);
+
+	// Background is completely transparent to match the window frame seamlessly
+
+	// Render advantage text (+N) if applicable
+	int advWidth = 0;
+	if (advantage > 0) {
+		const QString advText = QString("+%1").arg(advantage);
+		QFont font = painter.font();
+		font.setPointSize(9);
+		font.setBold(true);
+		painter.setFont(font);
+		QFontMetrics fm(font);
+		advWidth = fm.horizontalAdvance(advText);
+
+		const int advX = targetWidth - advWidth - 2;
+		painter.setPen(QColor(85, 85, 85));
+		painter.drawText(QRect(advX, 0, advWidth, targetHeight), Qt::AlignVCenter | Qt::AlignRight, advText);
+	}
+
+	struct Group {
+		char type;
+		int count;
 	};
-	m_capturedBlackLabel->setText(compactPieces(m_capturedBlack, "black"));
-	m_capturedWhiteLabel->setText(compactPieces(m_capturedWhite, "white"));
+	QVector<Group> groups;
+	const char order[] = {'P', 'B', 'H', 'R', 'Q', 'K'};
+	for (char p : order) {
+		int cnt = 0;
+		if (p == 'H') {
+			cnt = capturedPieces.count('H') + capturedPieces.count('h')
+			        + capturedPieces.count('N') + capturedPieces.count('n');
+		} else {
+			cnt = capturedPieces.count(p) + capturedPieces.count(QChar(p).toLower());
+		}
+		if (cnt > 0) groups.append({p, cnt});
+	}
+
+	if (groups.isEmpty()) {
+		painter.end();
+		return pixmap;
+	}
+
+	double pieceSize = 18.0;
+	if (targetHeight < 24) pieceSize = targetHeight - 4;
+	const double posY = (targetHeight - pieceSize) / 2.0;
+	const double startX = 2.0;
+	const double maxX = advantage > 0 ? (targetWidth - advWidth - 4) : (targetWidth - 2);
+	const double availableWidth = qMax(10.0, maxX - startX);
+
+	double pawnStep = 5.5;
+	double pieceStep = 6.5;
+	double groupGap = 4.0;
+
+	double totalNeeded = 0.0;
+	for (int i = 0; i < groups.size(); ++i) {
+		if (i > 0) totalNeeded += groupGap;
+		const auto &g = groups[i];
+		const double step = (g.type == 'P') ? pawnStep : pieceStep;
+		totalNeeded += pieceSize + (g.count - 1) * step;
+	}
+
+	if (totalNeeded > availableWidth && totalNeeded > 0.0) {
+		const double factor = availableWidth / totalNeeded;
+		pawnStep *= factor;
+		pieceStep *= factor;
+		groupGap *= factor;
+		if (factor < 0.85) {
+			pieceSize = qMax(13.0, pieceSize * (0.5 + 0.5 * factor));
+		}
+	}
+
+	auto getStyledPiece = [&](char type, double size) -> QPixmap {
+		const QChar pieceCode = (type == 'H') ? 'N' : type;
+		const QString svgPath = QString(":/piece/%1%2.svg")
+		        .arg(isWhitePieces ? 'w' : 'b')
+		        .arg(pieceCode);
+
+		const int pSize = qMax(1, qRound(size * dpr));
+		QPixmap basePix = QIcon(svgPath).pixmap(QSize(pSize, pSize));
+		basePix.setDevicePixelRatio(dpr);
+		return basePix;
+	};
+
+	double curX = startX;
+	for (int i = 0; i < groups.size(); ++i) {
+		const auto &g = groups[i];
+		const double step = (g.type == 'P') ? pawnStep : pieceStep;
+		QPixmap piecePix = getStyledPiece(g.type, pieceSize);
+
+		for (int c = 0; c < g.count; ++c) {
+			painter.drawPixmap(QPointF(curX, posY), piecePix);
+			if (c < g.count - 1) curX += step;
+		}
+		curX += pieceSize + groupGap;
+	}
+
+	painter.end();
+	return pixmap;
 }
 
 void RetroChessWindow::playMoveSound(bool capture)
@@ -2545,6 +2771,9 @@ bool RetroChessWindow::loadFen(const QString &fen, QString *error)
 	click1 = nullptr;
 	m_move_history.clear();
 	m_moveTable->setRowCount(0);
+	m_capturedBlack.clear();
+	m_capturedWhite.clear();
+	updateCapturedPiecesDisplay();
 	m_positionOccurrences.clear();
 	m_boardHistory.clear();
 	m_boardHistoryMoves.clear();

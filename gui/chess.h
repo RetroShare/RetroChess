@@ -167,6 +167,17 @@ public:
 	void recordBoardSnapshot(int fromTile = -1, int toTile = -1);
 	void showHistoryPly(int ply);
 	void updateHistoryControls();
+	void updateCapturedPiecesDisplay();
+	void updateCapturedPiecesForPly(int ply);
+	void renderCapturedDisplays(const QString &capturedBlack, const QString &capturedWhite);
+	static int calculatePiecePoints(const QString &pieces);
+	static QPixmap renderCapturedStrip(
+	        const QString &capturedPieces,
+	        int advantage,
+	        bool isWhitePieces,
+	        int targetWidth,
+	        int targetHeight,
+	        qreal dpr = 1.0);
 	QMediaPlayer *m_moveSound;
 	QMediaPlayer *m_captureSound;
 	QMediaPlayer *m_victorySound;
