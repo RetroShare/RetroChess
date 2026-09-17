@@ -179,6 +179,8 @@ private:
 		QString status = "unknown";
 		QString nonce;
 		RsGxsTunnelId probeTunnel;
+		QString opponentId;
+		QString opponentName;
 	};
 	std::map<RsGxsId, ChessContact> mChessContacts;
 	std::set<RsGxsId> mChessIdentities;

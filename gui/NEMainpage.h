@@ -51,6 +51,7 @@ class QLabel;
 class QTreeWidgetItem;
 class QTreeWidget;
 class RetroChessSessionService;
+struct RsRetroChessAvailablePeer;
 
 namespace Ui
 {
@@ -117,6 +118,7 @@ private:
     void create_chess_window_gxs(const RsGxsId &gxs_id, int player_id);
 	void showOfficialLobby();
 	void refreshGameHistory();
+	void refreshActiveContactGames(const std::vector<RsRetroChessAvailablePeer> &peers);
 	bool selectedHistoryGame(ChessGameRecord &game) const;
 	QVector<ChessGameRecord> selectedHistoryGames() const;
 	void reviewSelectedGame();

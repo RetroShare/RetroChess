@@ -534,6 +534,8 @@ std::vector<RsRetroChessAvailablePeer> p3RetroChess::availableChessPeers()
             peer.savedContact = true;
             peer.status = contact->second.status;
             peer.lastSeen = contact->second.lastSeen;
+            peer.opponentId = contact->second.opponentId;
+            peer.opponentName = contact->second.opponentName;
         }
         result.push_back(peer);
     }
@@ -770,13 +772,25 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         reply["version"] = 1;
         reply["nonce"] = nonce;
         QString state = "available";
+        QString opponentId;
+        QString opponentName;
         QByteArray reciprocalProbe;
         {
             RsStackMutex stack(mRetroChessMtx);
             if (mChessBusy) state = "busy";
-            for (const auto &entry : mGameSessions)
-                if (entry.second.gxs && entry.second.localIdentityId == QString::fromStdString(info.source_gxs_id.toStdString()))
+            for (const auto &entry : mGameSessions) {
+                if (entry.second.gxs && entry.second.localIdentityId == QString::fromStdString(info.source_gxs_id.toStdString())) {
                     state = "playing";
+                    opponentId = entry.second.endpointId;
+                    break;
+                }
+            }
+            if (!opponentId.isEmpty() && rsIdentity) {
+                RsIdentityDetails oppDetails;
+                if (rsIdentity->getIdDetails(RsGxsId(opponentId.toStdString()), oppDetails) && !oppDetails.mNickname.empty()) {
+                    opponentName = QString::fromUtf8(oppDetails.mNickname.c_str());
+                }
+            }
             // A saved contact reaching us has a working tunnel already. Probe
             // back on it now instead of waiting through an offline retry delay.
             // Still require a nonce-matched reply before displaying availability.
@@ -811,6 +825,10 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
             }
         }
         reply["status"] = state;
+        if (state == "playing" && !opponentId.isEmpty()) {
+            reply["opponent_id"] = opponentId;
+            if (!opponentName.isEmpty()) reply["opponent_name"] = opponentName;
+        }
         const QByteArray bytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
         mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
                 reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
@@ -822,6 +840,14 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
     } else {
         const QString state = message.value("status").toString();
         if (state != "available" && state != "playing" && state != "busy") return true;
+        const QString opponentId = (state == "playing") ? message.value("opponent_id").toString() : QString();
+        QString opponentName = (state == "playing") ? message.value("opponent_name").toString() : QString();
+        if (opponentName.isEmpty() && !opponentId.isEmpty() && rsIdentity) {
+            RsIdentityDetails oppDetails;
+            if (rsIdentity->getIdDetails(RsGxsId(opponentId.toStdString()), oppDetails) && !oppDetails.mNickname.empty()) {
+                opponentName = QString::fromUtf8(oppDetails.mNickname.c_str());
+            }
+        }
         {
             RsStackMutex stack(mRetroChessMtx);
             auto it = mChessContacts.find(sender);
@@ -829,6 +855,8 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
                     || it->second.nonce != nonce || it->second.probeTunnel != tunnel) return true;
             ChessContact &contact = it->second;
             contact.status = state;
+            contact.opponentId = opponentId;
+            contact.opponentName = opponentName;
             contact.lastSeen = time(nullptr);
             contact.nextProbe = contact.lastSeen + 60;
             contact.deadline = 0;

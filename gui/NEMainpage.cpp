@@ -173,7 +173,19 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		item->setText(0, window ? window->activeGameDescription() : key);
 		item->setText(1, key);
 		item->setData(0, Qt::UserRole, key);
+		item->setData(0, Qt::UserRole + 1, "local");
 		if (window) item->setToolTip(0, window->windowTitle());
+	});
+	connect(ui->active_games, &QTreeWidget::itemDoubleClicked,
+	        this, [this](QTreeWidgetItem *item, int) {
+		if (!item) return;
+		if (item->data(0, Qt::UserRole + 1).toString() == "local") {
+			const QString key = item->data(0, Qt::UserRole).toString();
+			if (RetroChessWindow *window = mGameSessions->game(key)) {
+				window->raise();
+				window->activateWindow();
+			}
+		}
 	});
 	ui->active_games->header()->setSectionResizeMode(0, QHeaderView::Stretch);
 	ui->active_games->header()->setSectionResizeMode(1, QHeaderView::Interactive);
@@ -617,7 +629,88 @@ void NEMainpage::refreshAvailablePlayers()
     }
     filterSavedContacts();
     ui->availablePlayersDescription->setText(tr("Saved chess contacts keeps all saved players, including offline contacts. Available or invited players shows players ready for a game and incoming or outgoing invitations. Right-click or double-click a player for actions."));
+    refreshActiveContactGames(peers);
     emit lobbyUnreadCountChanged();
+}
+
+void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailablePeer> &peers)
+{
+	if (!ui->active_games) return;
+
+	struct MatchInfo {
+		QString nameA;
+		QString idA;
+		QString nameB;
+		QString idB;
+	};
+	QMap<QString, MatchInfo> activeMatches;
+
+	for (const auto &peer : peers) {
+		if (peer.status != "playing" || peer.opponentId.isEmpty()) continue;
+		const QString idA = peer.endpointId;
+		const QString idB = peer.opponentId;
+
+		// Ignore if this is our own identity or a local game we participate in
+		if (mGameSessions->contains(idA) || mGameSessions->contains(idB)) continue;
+		if (rsIdentity && (rsIdentity->isOwnId(RsGxsId(idA.toStdString())) || rsIdentity->isOwnId(RsGxsId(idB.toStdString()))))
+			continue;
+
+		// Canonical match key so A vs B and B vs A are merged
+		const QString canonicalKey = "contact_game:" + (idA < idB ? (idA + "_" + idB) : (idB + "_" + idA));
+
+		RsIdentityDetails detailsA;
+		const bool knownA = rsIdentity && rsIdentity->getIdDetails(RsGxsId(idA.toStdString()), detailsA);
+		const QString nameA = knownA && !detailsA.mNickname.empty()
+		        ? QString::fromUtf8(detailsA.mNickname.c_str()) : idA.left(12);
+
+		QString nameB = peer.opponentName;
+		if (nameB.isEmpty()) {
+			RsIdentityDetails detailsB;
+			if (rsIdentity && rsIdentity->getIdDetails(RsGxsId(idB.toStdString()), detailsB) && !detailsB.mNickname.empty())
+				nameB = QString::fromUtf8(detailsB.mNickname.c_str());
+			else
+				nameB = idB.left(12);
+		}
+
+		if (!activeMatches.contains(canonicalKey)) {
+			activeMatches[canonicalKey] = {nameA, idA, nameB, idB};
+		} else {
+			auto &existing = activeMatches[canonicalKey];
+			if (existing.idA == idB && existing.nameA == idB.left(12) && !nameB.isEmpty() && nameB != idB.left(12))
+				existing.nameA = nameB;
+			if (existing.idB == idA && existing.nameB == idA.left(12) && !nameA.isEmpty() && nameA != idA.left(12))
+				existing.nameB = nameA;
+		}
+	}
+
+	QSet<QString> retainedKeys;
+	for (int row = ui->active_games->topLevelItemCount() - 1; row >= 0; --row) {
+		QTreeWidgetItem *item = ui->active_games->topLevelItem(row);
+		if (!item) continue;
+		if (item->data(0, Qt::UserRole + 1).toString() == "contact") {
+			const QString key = item->data(0, Qt::UserRole).toString();
+			if (activeMatches.contains(key)) {
+				retainedKeys.insert(key);
+				const auto &m = activeMatches.value(key);
+				item->setText(0, tr("%1 — %2 (Contact Match)").arg(m.nameA, m.nameB));
+				item->setToolTip(0, tr("Active match between %1 (%2) and %3 (%4)").arg(m.nameA, m.idA, m.nameB, m.idB));
+			} else {
+				delete ui->active_games->takeTopLevelItem(row);
+			}
+		}
+	}
+
+	for (auto it = activeMatches.constBegin(); it != activeMatches.constEnd(); ++it) {
+		if (!retainedKeys.contains(it.key())) {
+			QTreeWidgetItem *item = new QTreeWidgetItem(ui->active_games);
+			const auto &m = it.value();
+			item->setText(0, tr("%1 — %2 (Contact Match)").arg(m.nameA, m.nameB));
+			item->setText(1, tr("Contact Match"));
+			item->setData(0, Qt::UserRole, it.key());
+			item->setData(0, Qt::UserRole + 1, "contact");
+			item->setToolTip(0, tr("Active match between %1 (%2) and %3 (%4)").arg(m.nameA, m.idA, m.nameB, m.idB));
+		}
+	}
 }
 
 

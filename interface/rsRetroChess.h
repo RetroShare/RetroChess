@@ -59,6 +59,8 @@ struct RsRetroChessAvailablePeer
 	bool savedContact = false;
 	QString status = "unknown";
 	time_t lastSeen = 0;
+	QString opponentId;
+	QString opponentName;
 };
 
 class RsRetroChess ;
