@@ -798,6 +798,36 @@ border-image: url(:/images/closepressed.png)
        </item>
       </layout>
      </widget>
+     <widget class="QWidget" name="leaderboardTab">
+      <attribute name="title">
+       <string>Leaderboard</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="leaderboardLayout">
+       <item>
+        <widget class="QLabel" name="leaderboardInfo">
+         <property name="text">
+          <string>Standard Glicko-2 rating. A game is counted after both players publish the same signed result.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTableWidget" name="leaderboardTable">
+         <property name="editTriggers">
+          <set>QAbstractItemView::NoEditTriggers</set>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::SingleSelection</enum>
+         </property>
+         <property name="selectionBehavior">
+          <enum>QAbstractItemView::SelectRows</enum>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
   </layout>

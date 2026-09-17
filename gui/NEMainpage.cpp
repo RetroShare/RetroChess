@@ -133,16 +133,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 {
 	ui->setupUi(this);
 	mLeaderboard = new RetroChessLeaderboard(this);
-	mLeaderboardTable = new QTableWidget(this);
-	QWidget *leaderboardPage = new QWidget(ui->tabWidget);
-	QVBoxLayout *leaderboardLayout = new QVBoxLayout(leaderboardPage);
-	mLeaderboardInfo = new QLabel(
-	        tr("Standard Glicko-2 rating. A game is counted after both players publish the same signed result."),
-	        leaderboardPage);
-	mLeaderboardInfo->setWordWrap(true);
-	leaderboardLayout->addWidget(mLeaderboardInfo);
-	leaderboardLayout->addWidget(mLeaderboardTable);
-	ui->tabWidget->addTab(leaderboardPage, tr("Leaderboard"));
+	mLeaderboardTable = ui->leaderboardTable;
+	mLeaderboardInfo = ui->leaderboardInfo;
 	connect(mLeaderboard, SIGNAL(changed()), this, SLOT(refreshLeaderboard()));
 	if (mNotify) {
 		connect(mNotify, &RetroChessNotify::gxsTunnelReady, mLeaderboard, &RetroChessLeaderboard::handleTunnelReady);

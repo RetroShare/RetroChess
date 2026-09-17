@@ -184,6 +184,8 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 	QList<Player> players = mPlayers.values();
 	std::sort(players.begin(), players.end(), [](const Player &a, const Player &b) { return a.rating == b.rating ? a.id < b.id : a.rating > b.rating; });
 	table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+	table->setSelectionBehavior(QAbstractItemView::SelectRows);
+	table->setSelectionMode(QAbstractItemView::SingleSelection);
 	table->setSortingEnabled(false); table->setRowCount(players.size()); table->setColumnCount(10);
 	table->setIconSize(QSize(32, 32));
 	table->verticalHeader()->setDefaultSectionSize(36);
