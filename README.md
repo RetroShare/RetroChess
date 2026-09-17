@@ -42,21 +42,6 @@ are saved, but online status is checked again after restart.
 The Rating column currently shows **Unrated**. Game history is saved, but an
 Elo calculation and rating exchange have not been implemented.
 
-## Presence regression checks
-
-With the matching MinGW/Qt 5 tools on PATH, run `python tests/chess-presence.py`
-and `powershell -File tests/pending-invite.ps1`. On Windows, use the MSYS2 shell
-used for the plugin build. The presence test executes the production methods
-against a fake transport and clock, covering reply validation, timeouts,
-backoff, concurrency, self-exclusion, busy/playing responses, disabled
-identities, contact persistence/removal, and preservation of games/invitations.
-
-For an end-to-end check, run two RetroShare nodes with the updated plugin:
-enable a chess identity on each, add the other identity, wait for Available,
-toggle Busy, invite/accept/play, finish the game, disconnect/reconnect, and
-restart to check that saved contacts remain. Verify that removing a contact
-survives restart and that disabled identities no longer answer presence probes.
-
 # Standalone chessboard debugger
 
 RetroChess includes a small standalone Qt application for reproducing and
@@ -123,5 +108,3 @@ with older clients that do not exchange game IDs are unrated. The ledger
 contains public player identities and game results. Ratings may change as
 additional signed results arrive; they do not prevent collusion.
 
-Run `python tests/leaderboard.py` with a C++ compiler, Qt 5 Core development
-files and pkg-config available to check the production rating and receipt logic.

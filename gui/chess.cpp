@@ -315,8 +315,8 @@ void RetroChessWindow::initAccessories()
 	historyControls->setContentsMargins(2, 0, 2, 0);
 	historyControls->setSpacing(2);
 	m_historyFirstButton = new QPushButton(QIcon(":/images/skip-prev-solid.png"), QString(), m_ui->moveHistoryFrame);
-	m_historyPreviousButton = new QPushButton(QIcon(":/images/nav-arrow-left-solid.png"), QString(), m_ui->moveHistoryFrame);
-	m_historyNextButton = new QPushButton(QIcon(":/images/nav-arrow-right-solid.png"), QString(), m_ui->moveHistoryFrame);
+	m_historyPreviousButton = new QPushButton(QIcon(":/images/chevron-left.png"), QString(), m_ui->moveHistoryFrame);
+	m_historyNextButton = new QPushButton(QIcon(":/images/chevron-right.png"), QString(), m_ui->moveHistoryFrame);
 	m_historyLatestButton = new QPushButton(QIcon(":/images/skip-next-solid.png"), QString(), m_ui->moveHistoryFrame);
 	for (QPushButton *button : {m_historyFirstButton, m_historyPreviousButton,
 	                            m_historyNextButton, m_historyLatestButton}) {

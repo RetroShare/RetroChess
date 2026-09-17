@@ -28,6 +28,8 @@
 class QLabel;
 class QPushButton;
 class QTableWidget;
+class QTimer;
+class QMediaPlayer;
 
 class ChessGameReviewDialog : public QDialog
 {
@@ -35,19 +37,37 @@ class ChessGameReviewDialog : public QDialog
 
 public:
 	explicit ChessGameReviewDialog(const ChessGameRecord &game, QWidget *parent = nullptr);
+	virtual ~ChessGameReviewDialog();
+
+private slots:
+	void stepForward();
+	void togglePlayPause();
 
 private:
-	void showPly(int ply);
+	void showPly(int ply, bool playSound = false);
 	void updateControls();
+	void updatePlayPauseButton();
+	void startPlayback();
+	void pausePlayback();
+	void playMoveSound(bool capture);
+	bool isCapture(int ply) const;
+	void lastMoveSquares(int ply, int &fromSquare, int &toSquare) const;
 
 	ChessGameRecord m_game;
 	QLabel *m_squares[64];
+	QLabel *m_borders[4];
+	QLabel *m_winnerBadge;
+	QLabel *m_loserBadge;
 	QTableWidget *m_moves;
 	QPushButton *m_first;
 	QPushButton *m_previous;
+	QPushButton *m_playPause;
 	QPushButton *m_next;
 	QPushButton *m_last;
 	QLabel *m_positionLabel;
+	QTimer *m_playTimer;
+	QMediaPlayer *m_moveSound;
+	QMediaPlayer *m_captureSound;
 	int m_ply;
 };
 
