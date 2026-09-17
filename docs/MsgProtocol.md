@@ -14,6 +14,17 @@ Unsolicited or duplicate rejection packets are ignored. A separate incoming
 invitation from the same identity is preserved. The tunnel remains available.
 Older versions that do not handle `chess_reject` will not display the decline.
 
+## Leaderboard GXS Tunnel Synchronization
+
+Leaderboard data is exchanged directly and gossiped across peers via secured GXS tunnels (Service ID `0xC4E5`):
+
+1. `{"type":"leaderboard_receipt", "version":1, "game_id":"...", "white":"...", "black":"...", "result":"1-0|0-1|1/2-1/2", "signer":"...", "finished_at":123456}`:
+   Published immediately upon rated match finish to active tunnels and gossiped to connected contacts.
+2. `{"type":"leaderboard_sync", "version":1, "receipts":[...]}`:
+   Sent in batches (up to 10 receipts per packet) when a tunnel becomes ready or upon request to synchronize known receipts.
+3. `{"type":"leaderboard_sync_req", "version":1}`:
+   Requests that the remote peer reply with their known receipts.
+
 # peer messge:
 qvm peer message assembly in a `QVariantMap`, format as `key`-`value`, usage:
 

@@ -59,6 +59,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_suppressLeave(false),
     m_resultPopupShown(false),
     m_rematchRequested(false),
+    m_resultSubmitted(false),
     m_capturedBlackLabel(nullptr),
     m_capturedWhiteLabel(nullptr),
     m_moveTable(nullptr),
@@ -91,6 +92,7 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     setAttribute(Qt::WA_DeleteOnClose);
     mPeerId = gxsId.toStdString(); // Use string representation for internal tracking
 	mOwnGxsId = rsRetroChess->ownGxsIdForPeer(gxsId);
+	mGameId = rsRetroChess->gameIdForPeer(gxsId);
 
     m_ui->m_player1_result->hide();
     m_ui->m_player2_result->hide();
@@ -165,6 +167,7 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 	m_suppressLeave(false),
 	m_resultPopupShown(false),
 	m_rematchRequested(false),
+	m_resultSubmitted(false),
 	m_capturedBlackLabel(nullptr),
 	m_capturedWhiteLabel(nullptr),
 	m_moveTable(nullptr),
@@ -607,6 +610,7 @@ void RetroChessWindow::closeEvent(QCloseEvent *event)
 		completeGameHistory("*", tr("Game window closed before completion"));
     // send leave message
     if (!m_suppressLeave && mIsGxs) {
+        submitRatedResult(false);
         rsRetroChess->player_leave_gxs(this->mGxsId);
     } else if (!m_suppressLeave) {
         rsRetroChess->player_leave(mPeerId);
@@ -2046,6 +2050,7 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
     if (m_resultPopupShown)
         return;
     m_resultPopupShown = true;
+	submitRatedResult(localWon, draw);
 	const int winningColor = localWon ? m_localplayer_turn : 1 - m_localplayer_turn;
 	completeGameHistory(
 	        draw ? "1/2-1/2" : (winningColor == 1 ? "1-0" : "0-1"),
@@ -2846,6 +2851,7 @@ int RetroChessWindow::resultJudge()
 
 void RetroChessWindow::showPlayerLeaveMsg()
 {
+	submitRatedResult(true);
 	// Stop all local interaction as soon as the opponent leaves.
 	m_flag_finished = 1;
 	completeGameHistory(
@@ -2900,6 +2906,19 @@ ChessGameRecord RetroChessWindow::historyRecord() const
 	game.moves = m_move_history;
 	game.positions = QStringList(m_boardHistory.begin(), m_boardHistory.end());
 	return game;
+}
+
+void RetroChessWindow::submitRatedResult(bool localWon, bool draw)
+{
+	if (!mIsGxs || m_resultSubmitted || mGameId.isEmpty() || mOwnGxsId.isNull()
+        || (m_gameArchived && m_gameResult == "*")) return;
+	m_resultSubmitted = true;
+	const bool localIsWhite = m_localplayer_turn == 1;
+	const RsGxsId white = localIsWhite ? mOwnGxsId : mGxsId;
+	const RsGxsId black = localIsWhite ? mGxsId : mOwnGxsId;
+	QString result = "1/2-1/2";
+	if (!draw) result = (localWon == localIsWhite) ? "1-0" : "0-1";
+	emit ratedResult(mGameId, white, black, result);
 }
 
 void RetroChessWindow::playerTurnNotice()

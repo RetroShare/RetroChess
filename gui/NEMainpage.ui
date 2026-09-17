@@ -26,60 +26,6 @@
    <property name="bottomMargin">
     <number>0</number>
    </property>
-   <item row="2" column="0">
-    <widget class="QGroupBox" name="pendingInvitesBox">
-     <property name="maximumSize">
-      <size>
-       <width>16777215</width>
-       <height>160</height>
-      </size>
-     </property>
-     <property name="title">
-      <string>Pending Chess Invitations</string>
-     </property>
-     <layout class="QVBoxLayout" name="pendingInvitesLayout">
-      <item>
-       <widget class="QTreeWidget" name="pendingInvites">
-        <property name="font">
-         <font>
-          <pointsize>12</pointsize>
-         </font>
-        </property>
-        <property name="alternatingRowColors">
-         <bool>true</bool>
-        </property>
-        <property name="selectionMode">
-         <enum>QAbstractItemView::SingleSelection</enum>
-        </property>
-        <property name="selectionBehavior">
-         <enum>QAbstractItemView::SelectRows</enum>
-        </property>
-        <property name="rootIsDecorated">
-         <bool>false</bool>
-        </property>
-        <property name="sortingEnabled">
-         <bool>true</bool>
-        </property>
-        <column>
-         <property name="text">
-          <string>Player</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>Received</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>Action</string>
-         </property>
-        </column>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
    <item row="0" column="0" colspan="2">
     <widget class="QFrame" name="titleBarFrame">
      <property name="sizePolicy">
@@ -168,52 +114,6 @@
         <property name="autoRaise">
          <bool>true</bool>
         </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item row="2" column="1">
-    <widget class="QGroupBox" name="groupBox">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="maximumSize">
-      <size>
-       <width>16777215</width>
-       <height>160</height>
-      </size>
-     </property>
-     <property name="title">
-      <string>Active Games</string>
-     </property>
-     <layout class="QGridLayout" name="gridLayout_4">
-      <item row="0" column="0">
-       <widget class="QTreeWidget" name="active_games">
-        <property name="font">
-         <font>
-          <pointsize>12</pointsize>
-         </font>
-        </property>
-        <property name="alternatingRowColors">
-         <bool>true</bool>
-        </property>
-        <property name="rootIsDecorated">
-         <bool>false</bool>
-        </property>
-        <column>
-         <property name="text">
-          <string>Players</string>
-         </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>Game ID</string>
-         </property>
-        </column>
        </widget>
       </item>
      </layout>
@@ -360,6 +260,32 @@
                 <string>Search contacts...</string>
                </property>
                <property name="clearButtonEnabled">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QToolButton" name="showOnlineplayersButton">
+               <property name="toolTip">
+                <string>Show only online chess players</string>
+               </property>
+               <property name="text">
+                <string/>
+               </property>
+               <property name="icon">
+                <iconset resource="RetroChess_images.qrc">
+                 <normaloff>:/images/chess-knight.svg</normaloff>:/images/chess-knight.svg</iconset>
+               </property>
+               <property name="iconSize">
+                <size>
+                 <width>24</width>
+                 <height>24</height>
+                </size>
+               </property>
+               <property name="checkable">
+                <bool>true</bool>
+               </property>
+               <property name="autoRaise">
                 <bool>true</bool>
                </property>
               </widget>
@@ -517,6 +443,11 @@
              </column>
              <column>
               <property name="text">
+               <string>RD</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
                <string>Last seen</string>
               </property>
              </column>
@@ -525,6 +456,57 @@
                <string>Invitation</string>
               </property>
              </column>
+             <column>
+              <property name="text">
+               <string>Reject</string>
+              </property>
+             </column>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="groupBox">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>160</height>
+              </size>
+             </property>
+             <property name="title">
+              <string>Active Games</string>
+             </property>
+             <layout class="QGridLayout" name="gridLayout_4">
+              <item row="0" column="0">
+               <widget class="QTreeWidget" name="active_games">
+                <property name="font">
+                 <font>
+                  <pointsize>12</pointsize>
+                 </font>
+                </property>
+                <property name="alternatingRowColors">
+                 <bool>true</bool>
+                </property>
+                <property name="rootIsDecorated">
+                 <bool>false</bool>
+                </property>
+                <column>
+                 <property name="text">
+                  <string>Players</string>
+                 </property>
+                </column>
+                <column>
+                 <property name="text">
+                  <string>Game ID</string>
+                 </property>
+                </column>
+               </widget>
+              </item>
+             </layout>
             </widget>
            </item>
           </layout>
@@ -778,6 +760,9 @@ border-image: url(:/images/closepressed.png)
          <property name="alternatingRowColors">
           <bool>false</bool>
          </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::ExtendedSelection</enum>
+         </property>
          <property name="rootIsDecorated">
           <bool>false</bool>
          </property>
@@ -806,9 +791,44 @@ border-image: url(:/images/closepressed.png)
          </column>
          <column>
           <property name="text">
+           <string>Review</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
            <string>Moves</string>
           </property>
          </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="leaderboardTab">
+      <attribute name="title">
+       <string>Leaderboard</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="leaderboardLayout">
+       <item>
+        <widget class="QLabel" name="leaderboardInfo">
+         <property name="text">
+          <string>Standard Glicko-2 rating. A game is counted after both players publish the same signed result.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTableWidget" name="leaderboardTable">
+         <property name="editTriggers">
+          <set>QAbstractItemView::NoEditTriggers</set>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::SingleSelection</enum>
+         </property>
+         <property name="selectionBehavior">
+          <enum>QAbstractItemView::SelectRows</enum>
+         </property>
         </widget>
        </item>
       </layout>

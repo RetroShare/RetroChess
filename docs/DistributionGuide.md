@@ -5,8 +5,6 @@
 put/clone `RetroChess` to `RetroShare/plugins/` recommend
 
 	cd ${YOUR_DIR}/RetroShare/plugins/RetroChess/
-	mkdir build
-	cd build
 	qmake ..
 	make -j$(nproc)
 

@@ -38,6 +38,7 @@
 #include <retroshare/rschats.h>
 #include <qjsondocument.h>
 #include <QUuid>
+#include <QJsonObject>
 #include <algorithm>
 
 
@@ -533,6 +534,8 @@ std::vector<RsRetroChessAvailablePeer> p3RetroChess::availableChessPeers()
             peer.savedContact = true;
             peer.status = contact->second.status;
             peer.lastSeen = contact->second.lastSeen;
+            peer.opponentId = contact->second.opponentId;
+            peer.opponentName = contact->second.opponentName;
         }
         result.push_back(peer);
     }
@@ -682,7 +685,9 @@ void p3RetroChess::tickChessPresence()
     {
         RsStackMutex stack(mRetroChessMtx);
         unsigned int inFlight = 0;
-        for (const auto &entry : mChessContacts) if (entry.second.deadline) ++inFlight;
+        // Bound expensive tunnel discovery, not heartbeats on working tunnels.
+        for (const auto &entry : mChessContacts)
+            if (entry.second.deadline && !mActiveTunnels.count(entry.first)) ++inFlight;
         for (auto &entry : mChessContacts) {
             const RsGxsId &id = entry.first;
             ChessContact &contact = entry.second;
@@ -692,8 +697,9 @@ void p3RetroChess::tickChessPresence()
                 contact.nonce.clear();
                 contact.status = "offline";
                 contact.failures = std::min(contact.failures + 1, 4u);
-                contact.nextProbe = now + std::min(600u, 30u << contact.failures);
-                --inFlight;
+                // Keep offline discovery responsive instead of backing off for eight minutes.
+                contact.nextProbe = now + std::min(60u, 15u << (contact.failures - 1));
+                if (!mActiveTunnels.count(id)) --inFlight;
                 changed = true;
                 // Presence failures must never tear down an invitation or game.
                 if (!mGameSessions.count(id.toStdString()) && !mInvitesToGxs.count(id)
@@ -717,10 +723,12 @@ void p3RetroChess::tickChessPresence()
                 contact.status = "offline";
                 changed = true;
             }
-            if (enabled && !contact.deadline && now >= contact.nextProbe && inFlight < 4) {
-                contact.deadline = now + 45;
+            if (enabled && !contact.deadline && now >= contact.nextProbe
+                    && (mActiveTunnels.count(id) || inFlight < 4)) {
+                // GXS discovery and its key exchange need their own connection budget.
+                contact.deadline = now + 120;
                 contact.nonce.clear();
-                ++inFlight;
+                if (!mActiveTunnels.count(id)) ++inFlight;
                 if (contact.status == "unknown" || contact.status == "offline") {
                     contact.status = "checking";
                     changed = true;
@@ -731,6 +739,9 @@ void p3RetroChess::tickChessPresence()
             if (enabled && contact.deadline && contact.nonce.isEmpty() && active != mActiveTunnels.end()) {
                 contact.nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
                 contact.probeTunnel = active->second;
+                // Start the reply timeout when the probe is actually sent, not
+                // when the asynchronous tunnel connection was requested.
+                contact.deadline = now + 45;
                 QVariantMap message;
                 message["type"] = "chess_presence_request";
                 message["version"] = 1;
@@ -761,20 +772,82 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         reply["version"] = 1;
         reply["nonce"] = nonce;
         QString state = "available";
+        QString opponentId;
+        QString opponentName;
+        QByteArray reciprocalProbe;
         {
             RsStackMutex stack(mRetroChessMtx);
             if (mChessBusy) state = "busy";
-            for (const auto &entry : mGameSessions)
-                if (entry.second.gxs && entry.second.localIdentityId == QString::fromStdString(info.source_gxs_id.toStdString()))
+            for (const auto &entry : mGameSessions) {
+                if (entry.second.gxs && entry.second.localIdentityId == QString::fromStdString(info.source_gxs_id.toStdString())) {
                     state = "playing";
+                    opponentId = entry.second.endpointId;
+                    break;
+                }
+            }
+            if (!opponentId.isEmpty() && rsIdentity) {
+                RsIdentityDetails oppDetails;
+                if (rsIdentity->getIdDetails(RsGxsId(opponentId.toStdString()), oppDetails) && !oppDetails.mNickname.empty()) {
+                    opponentName = QString::fromUtf8(oppDetails.mNickname.c_str());
+                }
+            }
+            // A saved contact reaching us has a working tunnel already. Probe
+            // back on it now instead of waiting through an offline retry delay.
+            // Still require a nonce-matched reply before displaying availability.
+            auto contactIt = mChessContacts.find(sender);
+            auto active = mActiveTunnels.find(sender);
+            auto pending = mPendingTunnels.find(sender);
+            auto own = mOwnGxsIdByPeer.find(sender);
+            const bool sameIdentity = own == mOwnGxsIdByPeer.end() || own->second == info.source_gxs_id;
+            const bool sameTunnel = (active == mActiveTunnels.end() || active->second == tunnel)
+                    && (pending == mPendingTunnels.end() || pending->second == tunnel);
+            if (contactIt != mChessContacts.end() && sameTunnel && sameIdentity) {
+                ChessContact &contact = contactIt->second;
+                const time_t now = time(nullptr);
+                const bool awaitingReply = contact.deadline > now && !contact.nonce.isEmpty();
+                if (!awaitingReply && (contact.deadline || now >= contact.nextProbe
+                        || contact.status == "offline" || contact.status == "checking"
+                        || contact.status == "unknown")) {
+                    mActiveTunnels[sender] = tunnel;
+                    mPendingTunnels.erase(sender);
+                    mOwnGxsIdByPeer[sender] = info.source_gxs_id;
+                    contact.deadline = now + 45;
+                    contact.nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                    contact.probeTunnel = tunnel;
+                    if (contact.status == "offline" || contact.status == "unknown")
+                        contact.status = "checking";
+                    QVariantMap probe;
+                    probe["type"] = "chess_presence_request";
+                    probe["version"] = 1;
+                    probe["nonce"] = contact.nonce;
+                    reciprocalProbe = QJsonDocument::fromVariant(probe).toJson(QJsonDocument::Compact);
+                }
+            }
         }
         reply["status"] = state;
+        if (state == "playing" && !opponentId.isEmpty()) {
+            reply["opponent_id"] = opponentId;
+            if (!opponentName.isEmpty()) reply["opponent_name"] = opponentName;
+        }
         const QByteArray bytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
         mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
                 reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+        if (!reciprocalProbe.isEmpty()) {
+            mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                    reinterpret_cast<const uint8_t*>(reciprocalProbe.constData()), reciprocalProbe.size());
+            mNotify->notifyAvailablePeersChanged();
+        }
     } else {
         const QString state = message.value("status").toString();
         if (state != "available" && state != "playing" && state != "busy") return true;
+        const QString opponentId = (state == "playing") ? message.value("opponent_id").toString() : QString();
+        QString opponentName = (state == "playing") ? message.value("opponent_name").toString() : QString();
+        if (opponentName.isEmpty() && !opponentId.isEmpty() && rsIdentity) {
+            RsIdentityDetails oppDetails;
+            if (rsIdentity->getIdDetails(RsGxsId(opponentId.toStdString()), oppDetails) && !oppDetails.mNickname.empty()) {
+                opponentName = QString::fromUtf8(oppDetails.mNickname.c_str());
+            }
+        }
         {
             RsStackMutex stack(mRetroChessMtx);
             auto it = mChessContacts.find(sender);
@@ -782,6 +855,8 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
                     || it->second.nonce != nonce || it->second.probeTunnel != tunnel) return true;
             ChessContact &contact = it->second;
             contact.status = state;
+            contact.opponentId = opponentId;
+            contact.opponentName = opponentName;
             contact.lastSeen = time(nullptr);
             contact.nextProbe = contact.lastSeen + 60;
             contact.deadline = 0;
@@ -890,7 +965,7 @@ bool p3RetroChess::cancelInviteToGxs(const RsGxsId &gxsId)
         if (mInvitesToGxs.count(gxsId) == 0) return false;
         auto pending = mPendingGxsInvites.find(gxsId);
         if (pending != mPendingGxsInvites.end()
-                && pending->second == "{\"type\":\"chess_invite\"}") {
+                && QJsonDocument::fromJson(QByteArray::fromStdString(pending->second)).object().value("type").toString() == "chess_invite") {
             mPendingGxsInvites.erase(pending);
             mInvitesToGxs.erase(gxsId);
         } else {
@@ -925,14 +1000,14 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
         else
             // Client side: we initiated the invite but the tunnel isn't in
             // mActiveTunnels yet. Queue accept for when it becomes CAN_TALK.
-            mPendingGxsInvites[gxsId] = "{\"type\":\"chess_accept\"}";
+            mPendingGxsInvites[gxsId] = QJsonDocument(QJsonObject{{"type", "chess_accept"}, {"game_id", mGameIdByPeer[gxsId]}}).toJson(QJsonDocument::Compact).toStdString();
     }
 
     if (!activeTunnel.isNull()) {
         // Tunnel already active (server side — invite arrived over it).
         // Send chess_accept immediately, outside the mutex.
         if (!mGxsTunnels) return;
-        const std::string accept = "{\"type\":\"chess_accept\"}";
+        const std::string accept = QJsonDocument(QJsonObject{{"type", "chess_accept"}, {"game_id", gameIdForPeer(gxsId)}}).toJson(QJsonDocument::Compact).toStdString();
         std::cout << "Chess: Sending chess_accept over tunnel " << activeTunnel << std::endl;
         mGxsTunnels->sendData(activeTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
                               (const uint8_t*)accept.c_str(), accept.size());
@@ -978,8 +1053,11 @@ bool p3RetroChess::sendRematchGxs(const RsGxsId &gxsId, int localColor)
         tunnelId = it->second;
     }
 
-    const std::string message = QString("{\"type\":\"rematch\",\"color\":%1}")
-            .arg(localColor).toStdString();
+    QVariantMap map;
+    map.insert("type", "rematch");
+    map.insert("color", localColor);
+    map.insert("game_id", gameIdForPeer(gxsId));
+    const std::string message = QJsonDocument::fromVariant(map).toJson(QJsonDocument::Compact).toStdString();
     return mGxsTunnels->sendData(
             tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
             reinterpret_cast<const uint8_t*>(message.data()), message.size());
@@ -1004,6 +1082,45 @@ bool p3RetroChess::sendGameActionGxs(const RsGxsId &gxsId, const std::string &ac
             reinterpret_cast<const uint8_t*>(message.constData()), message.size());
 }
 
+bool p3RetroChess::sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray &data)
+{
+    RsGxsTunnelId tunnelId;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto it = mActiveTunnels.find(gxsId);
+        if (it == mActiveTunnels.end() || !mGxsTunnels)
+            return false;
+        tunnelId = it->second;
+    }
+    return mGxsTunnels->sendData(
+            tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+            reinterpret_cast<const uint8_t*>(data.constData()), data.size());
+}
+
+void p3RetroChess::broadcastLeaderboardDataGxs(const QByteArray &data)
+{
+    std::vector<RsGxsTunnelId> tunnels;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        if (!mGxsTunnels) return;
+        for (const auto &entry : mActiveTunnels)
+            tunnels.push_back(entry.second);
+    }
+    for (const auto &tunnelId : tunnels)
+        mGxsTunnels->sendData(
+                tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                reinterpret_cast<const uint8_t*>(data.constData()), data.size());
+}
+
+std::vector<RsGxsId> p3RetroChess::activeGxsTunnels()
+{
+    RsStackMutex stack(mRetroChessMtx);
+    std::vector<RsGxsId> peers;
+    for (const auto &entry : mActiveTunnels)
+        peers.push_back(entry.first);
+    return peers;
+}
+
 bool p3RetroChess::hasInviteFromGxs(const RsGxsId &gxsId)
 {
     RsStackMutex stack(mRetroChessMtx);
@@ -1015,6 +1132,20 @@ RsGxsId p3RetroChess::ownGxsIdForPeer(const RsGxsId &gxsId)
     RsStackMutex stack(mRetroChessMtx);
     auto it = mOwnGxsIdByPeer.find(gxsId);
     return it == mOwnGxsIdByPeer.end() ? RsGxsId() : it->second;
+}
+
+QString p3RetroChess::gameIdForPeer(const RsGxsId &gxsId)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    auto it = mGameIdByPeer.find(gxsId);
+    return it == mGameIdByPeer.end() ? QString() : it->second;
+}
+
+void p3RetroChess::startNewGameIdForPeer(const RsGxsId &gxsId)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    mGameIdByPeer[gxsId] = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    mRematchIdByPeer[gxsId] = mGameIdByPeer[gxsId];
 }
 
 bool p3RetroChess::sendInvite_chat(const ChatId &chatId)
@@ -1070,7 +1201,10 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         if (activeIt != mActiveTunnels.end()) activeTunnel = activeIt->second;
     }
 
-    const std::string invite = "{\"type\":\"chess_invite\"}";
+    startNewGameIdForPeer(toId);
+    { RsStackMutex stack(mRetroChessMtx); mRematchIdByPeer.erase(toId); }
+    const std::string invite = QJsonDocument(QJsonObject{{"type", "chess_invite"},
+        {"game_id", gameIdForPeer(toId)}}).toJson(QJsonDocument::Compact).toStdString();
     if (!activeTunnel.isNull()) {
         if (mGxsTunnels->sendData(
                     activeTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
@@ -1111,7 +1245,7 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         {
             RsStackMutex stack(mRetroChessMtx);
             mPendingTunnels[toId] = tunnelId;
-            mPendingGxsInvites[toId] = "{\"type\":\"chess_invite\"}";
+            mPendingGxsInvites[toId] = invite;
             mInvitesToGxs.insert(toId);
             std::cout << "Chess: Tunnel requested (id=" << tunnelId << "), invite queued for " << toId << std::endl;
         }
@@ -1238,7 +1372,7 @@ void p3RetroChess::handleGxsTick()
                               (const uint8_t*)it->second.c_str(), it->second.size());
         // Cancellation can race with an invite already copied into flushes.
         // Send cancellation after that invite so it cannot remain pending remotely.
-        if (it->second == "{\"type\":\"chess_invite\"}") {
+        if (QJsonDocument::fromJson(QByteArray::fromStdString(it->second)).object().value("type").toString() == "chess_invite") {
             bool cancelled = false;
             {
                 RsStackMutex stack(mRetroChessMtx);
@@ -1306,6 +1440,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             // Remember the identity and tunnel chosen for this invitation.
             mOwnGxsIdByPeer[sender_id] = info.source_gxs_id;
             mActiveTunnels[sender_id] = tunnel_id;
+            mGameIdByPeer[sender_id] = map.value("game_id").toString();
             mInvitesFromGxs.insert(sender_id);
         }
         // A new invite packet is also a refresh of an existing pending invite.
@@ -1320,6 +1455,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         {
             RsStackMutex stack(mRetroChessMtx);
             invited = mInvitesToGxs.erase(sender_id) > 0;
+            if (invited) mGameIdByPeer[sender_id] = map.value("game_id").toString();
         }
         if (!invited) {
             std::cerr << "Chess: Ignoring chess_accept from " << sender_id
@@ -1344,7 +1480,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             if (mInvitesToGxs.erase(sender_id) == 0) return;
             auto pending = mPendingGxsInvites.find(sender_id);
             if (pending != mPendingGxsInvites.end()
-                    && pending->second == "{\"type\":\"chess_invite\"}")
+                    && QJsonDocument::fromJson(QByteArray::fromStdString(pending->second)).object().value("type").toString() == "chess_invite")
                 mPendingGxsInvites.erase(pending);
         }
         mNotify->notifyChessRejectedGxs(sender_id);
@@ -1360,11 +1496,23 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
 
     } else if (type == "rematch") {
         const int remoteColor = map.value("color").toInt();
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            QString incoming = map.value("game_id").toString();
+            auto pending = mRematchIdByPeer.find(sender_id);
+            if (pending != mRematchIdByPeer.end() && !incoming.isEmpty())
+                incoming = std::min(incoming, pending->second);
+            mGameIdByPeer[sender_id] = incoming;
+            mRematchIdByPeer.erase(sender_id);
+        }
         std::cout << "Chess: Remote GXS player requested a rematch " << sender_id << std::endl;
         mNotify->notifyChessRematchGxs(sender_id, remoteColor);
 
     } else if (type == "game_action") {
         mNotify->notifyChessGameActionGxs(sender_id, map.value("action").toString());
+
+    } else if (type == "leaderboard_receipt" || type == "leaderboard_sync" || type == "leaderboard_sync_req") {
+        mNotify->notifyLeaderboardDataGxs(sender_id, QByteArray((const char*)data, data_size));
 
     } else {
         // Chess move: format "col,row,count"

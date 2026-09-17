@@ -84,6 +84,8 @@ public:
 	bool m_suppressLeave;
 	bool m_resultPopupShown;
 	bool m_rematchRequested;
+	bool m_resultSubmitted;
+	QString mGameId;
 
 	//from global
 
@@ -198,6 +200,7 @@ public:
 
     int resultJudge();	// judge result (slow method)
     void showPlayerLeaveMsg();	// show player leave message
+	void submitRatedResult(bool localWon, bool draw = false);
     void playerTurnNotice();
 	void closeForRematch();
 	void showGameResultDialog(bool localWon, bool draw = false, const QString &reason = QString());
@@ -209,6 +212,7 @@ public:
 	bool m_gameArchived;
 
 signals:
+	void ratedResult(QString gameId, RsGxsId white, RsGxsId black, QString result);
 	void rematchRequested(const RsGxsId &gxsId, int localColor);
 	void rematchRequestedPeer(QString peerId, int localColor);
 	void gameClosed(QString gameId);

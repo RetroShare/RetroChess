@@ -45,9 +45,13 @@ class ChatDialog;
 class ChatWidget;
 class UserNotify;
 class QShowEvent;
+class RetroChessLeaderboard;
+class QTableWidget;
+class QLabel;
 class QTreeWidgetItem;
 class QTreeWidget;
 class RetroChessSessionService;
+struct RsRetroChessAvailablePeer;
 
 namespace Ui
 {
@@ -63,16 +67,17 @@ public:
 	~NEMainpage();
 	UserNotify *createUserNotify(QObject *parent) override;
 	unsigned int lobbyUnreadCount() const { return mLobbyUnreadCount; }
+	unsigned int incomingInviteCount() const;
 	unsigned int notificationCount() const
 	{
-		return mLobbyUnreadCount
-		        + static_cast<unsigned int>(mUnreadInviteKeys.size());
+		return mLobbyUnreadCount + incomingInviteCount();
 	}
 
 signals:
 	void lobbyUnreadCountChanged();
 
 private slots:
+	void refreshLeaderboard();
 	void setupMenuActions();
 	void NeMsgArrived(const RsPeerId &peer_id, QString str);
 	void chessInvitePeer(const RsPeerId &peer_id);
@@ -96,6 +101,9 @@ private slots:
 	void archiveFinishedGame();
 	void refreshAvailablePlayers();
 private:
+	RetroChessLeaderboard *mLeaderboard;
+	QTableWidget *mLeaderboardTable;
+	QLabel *mLeaderboardInfo;
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
 	RetroChessSessionService *mGameSessions;
@@ -104,21 +112,20 @@ private:
 	RsEventsHandlerId_t mEventHandlerId_identity = 0;
 	RsEventsHandlerId_t mEventHandlerId_chat = 0;
 
-	QMap<QString, QTreeWidgetItem*> mPendingInvites;
-	QSet<QString> mUnreadInviteKeys;
 	void handleEvent_identity_main_thread(std::shared_ptr<const RsEvent> event);
 	void handleEvent_chat_main_thread(std::shared_ptr<const RsEvent> event);
 	void create_chess_window(std::string peer_id, int player_id);
     void create_chess_window_gxs(const RsGxsId &gxs_id, int player_id);
-	void addGxsInvitation(const RsGxsId &gxs_id);
-	void removePendingInvitation(const QString &key);
 	void showOfficialLobby();
 	void refreshGameHistory();
+	void refreshActiveContactGames(const std::vector<RsRetroChessAvailablePeer> &peers);
 	bool selectedHistoryGame(ChessGameRecord &game) const;
+	QVector<ChessGameRecord> selectedHistoryGames() const;
 	void reviewSelectedGame();
 	void exportSelectedGame();
 	void deleteSelectedGame();
 	void saveContactsToSettings();
+	void filterSavedContacts();
 	void loadLayoutSettings();
 	void saveLayoutSettings();
 	void setupPlayersTab();

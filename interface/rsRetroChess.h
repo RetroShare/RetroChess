@@ -32,6 +32,7 @@
 
 #include <QVariantMap>
 #include <QString>
+#include <QByteArray>
 
 struct RsRetroChessGameSession
 {
@@ -58,6 +59,8 @@ struct RsRetroChessAvailablePeer
 	bool savedContact = false;
 	QString status = "unknown";
 	time_t lastSeen = 0;
+	QString opponentId;
+	QString opponentName;
 };
 
 class RsRetroChess ;
@@ -97,6 +100,8 @@ class RsRetroChess
 	virtual bool rejectedInviteGxs(const RsGxsId &gxsId) = 0;
 	virtual void clearInviteGxs(const RsGxsId &gxsId) = 0;
 	virtual bool hasInviteFromGxs(const RsGxsId &gxsId) = 0;
+	virtual QString gameIdForPeer(const RsGxsId &gxsId) = 0;
+	virtual void startNewGameIdForPeer(const RsGxsId &gxsId) = 0;
 	virtual RsGxsId ownGxsIdForPeer(const RsGxsId &gxsId) = 0;
 	virtual bool sendRematchGxs(const RsGxsId &gxsId, int localColor) = 0;
 	virtual bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) = 0;
@@ -118,6 +123,10 @@ class RsRetroChess
 	// Send invite via an *existing* distant chat tunnel (the right approach for distant chat)
 	virtual bool sendInvite_chat(const ChatId &chatId) = 0;
 
+	// Leaderboard data exchange over GXS tunnels
+	virtual bool sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray &data) = 0;
+	virtual void broadcastLeaderboardDataGxs(const QByteArray &data) = 0;
+	virtual std::vector<RsGxsId> activeGxsTunnels() = 0;
 };
 
 

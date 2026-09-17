@@ -28,6 +28,7 @@ set(RETROCHESS_SOURCES
     gui/ChessBoard.cpp
     gui/ChessPosition.cpp
     gui/RetroChessSessionService.cpp
+    gui/RetroChessLeaderboard.cpp
     gui/ChessGameHistory.cpp
     gui/ChessGameReviewDialog.cpp
     gui/tile.cpp
@@ -51,6 +52,7 @@ set(RETROCHESS_HEADERS
     gui/ChessBoard.h
     gui/ChessPosition.h
     gui/RetroChessSessionService.h
+    gui/RetroChessLeaderboard.h
     gui/ChessGameHistory.h
     gui/ChessGameReviewDialog.h
     gui/tile.h

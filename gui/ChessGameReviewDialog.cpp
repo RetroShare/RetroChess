@@ -37,6 +37,9 @@ ChessGameReviewDialog::ChessGameReviewDialog(
       m_previous(nullptr), m_next(nullptr), m_last(nullptr),
       m_positionLabel(nullptr), m_ply(0)
 {
+	setModal(false);
+	setAttribute(Qt::WA_DeleteOnClose);
+	setWindowFlags(windowFlags() | Qt::WindowMinMaxButtonsHint);
 	setWindowTitle(tr("Review: %1 vs %2").arg(game.whitePlayer, game.blackPlayer));
 	setMinimumSize(760, 540);
 	QHBoxLayout *root = new QHBoxLayout(this);
