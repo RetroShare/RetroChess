@@ -1572,6 +1572,11 @@ void NEMainpage::setupPlayersTab()
 			        && !rsRetroChess->preferredChessIdentity().isNull()));
 			QAction *accept = incoming ? menu.addAction(tr("Accept invitation")) : nullptr;
 			QAction *decline = incoming ? menu.addAction(tr("Decline invitation")) : nullptr;
+			QAction *chatAction = nullptr;
+			if (tree == ui->savedContacts) {
+				chatAction = menu.addAction(QIcon(":/icons/png/chats.png"), tr("Start private chat"));
+				chatAction->setEnabled(!id.isNull());
+			}
 			QAction *contact = nullptr;
 			if (tree == ui->savedContacts) {
 				menu.addSeparator();
@@ -1594,6 +1599,34 @@ void NEMainpage::setupPlayersTab()
 			} else if (chosen == invite) {
 				const bool ok = outgoing ? rsRetroChess->cancelInviteToGxs(id) : rsRetroChess->sendInviteToGxs(id);
 				if (!ok) QMessageBox::warning(this, tr("Chess invitation"), tr("The invitation could not be updated."));
+			} else if (chatAction && chosen == chatAction) {
+				RsGxsId own_id = rsRetroChess->preferredChessIdentity();
+				if (own_id.isNull() && rsIdentity) {
+					std::list<RsGxsId> own_ids;
+					if (rsIdentity->getOwnIds(own_ids) && !own_ids.empty())
+						own_id = own_ids.front();
+				}
+				if (own_id.isNull()) {
+					QMessageBox::information(this, tr("Private chat"),
+						tr("Please select or create an identity before starting a private chat."));
+					return;
+				}
+				DistantChatPeerId dpid;
+				uint32_t error_code = 0;
+				if (!rsChats || !rsChats->initiateDistantChatConnexion(id, own_id, dpid, error_code)) {
+					QString error_str;
+					switch (error_code) {
+						case RS_DISTANT_CHAT_ERROR_DECRYPTION_FAILED:  error_str = tr("Decryption failed."); break;
+						case RS_DISTANT_CHAT_ERROR_SIGNATURE_MISMATCH: error_str = tr("Signature mismatch."); break;
+						case RS_DISTANT_CHAT_ERROR_UNKNOWN_KEY:        error_str = tr("Unknown key."); break;
+						case RS_DISTANT_CHAT_ERROR_UNKNOWN_HASH:       error_str = tr("Unknown hash."); break;
+						default:                                       error_str = tr("Unknown error."); break;
+					}
+					QMessageBox::warning(this, tr("Cannot start private chat"),
+						tr("Private chat could not be initiated: %1 (code %2)").arg(error_str).arg(error_code));
+				} else {
+					ChatDialog::chatFriend(ChatId(dpid), true);
+				}
 			}
 			refreshAvailablePlayers();
 		});
