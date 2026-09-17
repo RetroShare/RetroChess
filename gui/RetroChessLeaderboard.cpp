@@ -10,6 +10,10 @@
 #include <QTimer>
 #include <QSet>
 #include <QLocale>
+#include <QFile>
+#include <QSaveFile>
+#include <QFileInfo>
+#include <retroshare/rsinit.h>
 #include <retroshare/rsidentity.h>
 #include "interface/rsRetroChess.h"
 #include "gui/settings/rsharesettings.h"
@@ -19,6 +23,15 @@
 namespace {
 constexpr double kScale = 173.7178;
 constexpr double kTau = 0.5;
+
+QString leaderboardFilePath()
+{
+	const std::string accDir = RsAccounts::AccountDirectory();
+	if (accDir.empty()) {
+		return QString();
+	}
+	return QString::fromUtf8(accDir.c_str()) + "/retrochess_leaderboard.json";
+}
 
 QString displayName(const RsGxsId &id)
 {
@@ -248,32 +261,113 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 
 void RetroChessLeaderboard::load()
 {
-	const QStringList gossiped = Settings->valueFromGroup(
-	        "RetroChess", "LeaderboardGossipedReceipts").toStringList();
-	mGossipedReceipts = QSet<QString>(gossiped.cbegin(), gossiped.cend());
-	const QByteArray raw = Settings->valueFromGroup("RetroChess", "LeaderboardReceipts").toByteArray();
-	const QJsonArray array = QJsonDocument::fromJson(raw).array();
-	for (const QJsonValue &v : array) {
-		const QJsonObject o = v.toObject();
-		Receipt r{o["game_id"].toString(), o["white"].toString(), o["black"].toString(),
-		          o["result"].toString(), o["signer"].toString(), static_cast<qint64>(o["finished_at"].toDouble())};
-		if (!r.gameId.isEmpty() && r.gameId.size() <= 128 && r.white != r.black
-            && !RsGxsId(r.white.toStdString()).isNull() && !RsGxsId(r.black.toStdString()).isNull()
-            && validResult(r.result) && r.finishedAt > 0 && (r.signer == r.white || r.signer == r.black))
-            mReceipts.insert(canonicalKey(r) + '|' + r.signer, r);
+	mReceipts.clear();
+	mGossipedReceipts.clear();
+
+	const QString filePath = leaderboardFilePath();
+	bool loadedFromFile = false;
+
+	if (!filePath.isEmpty() && QFile::exists(filePath)) {
+		QFile file(filePath);
+		if (file.open(QIODevice::ReadOnly)) {
+			const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+			if (doc.isObject()) {
+				const QJsonObject root = doc.object();
+				const QJsonArray array = root.value("receipts").toArray();
+				for (const QJsonValue &v : array) {
+					const QJsonObject o = v.toObject();
+					Receipt r{o["game_id"].toString(), o["white"].toString(), o["black"].toString(),
+					          o["result"].toString(), o["signer"].toString(), static_cast<qint64>(o["finished_at"].toDouble())};
+					if (!r.gameId.isEmpty() && r.gameId.size() <= 128 && r.white != r.black
+					    && !RsGxsId(r.white.toStdString()).isNull() && !RsGxsId(r.black.toStdString()).isNull()
+					    && validResult(r.result) && r.finishedAt > 0 && (r.signer == r.white || r.signer == r.black))
+						mReceipts.insert(canonicalKey(r) + '|' + r.signer, r);
+				}
+				const QJsonArray gossipedArray = root.value("gossiped").toArray();
+				for (const QJsonValue &gv : gossipedArray) {
+					const QString key = gv.toString();
+					if (!key.isEmpty()) {
+						mGossipedReceipts.insert(key);
+					}
+				}
+				loadedFromFile = true;
+			}
+		}
 	}
+
+	// If no file existed or failed to load, check and migrate legacy data from Settings
+	if (!loadedFromFile) {
+		const QStringList gossiped = Settings->valueFromGroup(
+		        "RetroChess", "LeaderboardGossipedReceipts").toStringList();
+		mGossipedReceipts = QSet<QString>(gossiped.cbegin(), gossiped.cend());
+		const QByteArray raw = Settings->valueFromGroup("RetroChess", "LeaderboardReceipts").toByteArray();
+		if (!raw.isEmpty()) {
+			const QJsonArray array = QJsonDocument::fromJson(raw).array();
+			for (const QJsonValue &v : array) {
+				const QJsonObject o = v.toObject();
+				Receipt r{o["game_id"].toString(), o["white"].toString(), o["black"].toString(),
+				          o["result"].toString(), o["signer"].toString(), static_cast<qint64>(o["finished_at"].toDouble())};
+				if (!r.gameId.isEmpty() && r.gameId.size() <= 128 && r.white != r.black
+				    && !RsGxsId(r.white.toStdString()).isNull() && !RsGxsId(r.black.toStdString()).isNull()
+				    && validResult(r.result) && r.finishedAt > 0 && (r.signer == r.white || r.signer == r.black))
+					mReceipts.insert(canonicalKey(r) + '|' + r.signer, r);
+			}
+			// Migrate legacy data immediately into the dedicated file
+			if (!mReceipts.isEmpty()) {
+				save();
+				Settings->remove("RetroChess/LeaderboardReceipts");
+				Settings->remove("RetroChess/LeaderboardGossipedReceipts");
+				Settings->sync();
+			}
+		}
+	}
+
 	recompute();
 }
 
 void RetroChessLeaderboard::save() const
 {
-	QJsonArray array;
-	for (const Receipt &r : mReceipts) array.append(QJsonObject{{"game_id",r.gameId},{"white",r.white},
-		{"black",r.black},{"result",r.result},{"signer",r.signer},{"finished_at",static_cast<double>(r.finishedAt)}});
-	Settings->setValueToGroup("RetroChess", "LeaderboardReceipts", QJsonDocument(array).toJson(QJsonDocument::Compact));
-	Settings->setValueToGroup("RetroChess", "LeaderboardGossipedReceipts",
-	        QStringList(mGossipedReceipts.values()));
-	Settings->sync();
+	const QString filePath = leaderboardFilePath();
+	if (filePath.isEmpty()) {
+		QJsonArray array;
+		for (const Receipt &r : mReceipts) array.append(QJsonObject{{"game_id",r.gameId},{"white",r.white},
+			{"black",r.black},{"result",r.result},{"signer",r.signer},{"finished_at",static_cast<double>(r.finishedAt)}});
+		Settings->setValueToGroup("RetroChess", "LeaderboardReceipts", QJsonDocument(array).toJson(QJsonDocument::Compact));
+		Settings->setValueToGroup("RetroChess", "LeaderboardGossipedReceipts",
+		        QStringList(mGossipedReceipts.values()));
+		Settings->sync();
+		return;
+	}
+
+	QJsonArray receiptsArray;
+	for (const Receipt &r : mReceipts) {
+		receiptsArray.append(QJsonObject{
+			{"game_id", r.gameId},
+			{"white", r.white},
+			{"black", r.black},
+			{"result", r.result},
+			{"signer", r.signer},
+			{"finished_at", static_cast<double>(r.finishedAt)}
+		});
+	}
+
+	QJsonArray gossipedArray;
+	for (const QString &key : mGossipedReceipts) {
+		gossipedArray.append(key);
+	}
+
+	QJsonObject root;
+	root["version"] = 1;
+	root["receipts"] = receiptsArray;
+	root["gossiped"] = gossipedArray;
+
+	QSaveFile saveFile(filePath);
+	if (saveFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+		saveFile.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+		if (!saveFile.commit()) {
+			saveFile.cancelWriting();
+		}
+	}
 }
 
 void RetroChessLeaderboard::broadcastReceipt(const Receipt &r, const RsGxsId &excludePeer)

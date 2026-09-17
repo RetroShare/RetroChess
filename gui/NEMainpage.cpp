@@ -326,6 +326,10 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		        "RetroChess", "GameHistoryHeaderState", historyHeader->saveState());
 	});
 	ui->gameHistory->setIconSize(QSize(32, 32));
+	if (ui->gameHistory->headerItem()) {
+		ui->gameHistory->headerItem()->setTextAlignment(4, Qt::AlignCenter);
+		ui->gameHistory->headerItem()->setTextAlignment(5, Qt::AlignCenter);
+	}
 	ui->gameHistory->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	ui->gameHistory->setContextMenuPolicy(Qt::CustomContextMenu);
 
@@ -1245,6 +1249,7 @@ void NEMainpage::refreshGameHistory()
 		item->setText(3, game.result);
 		item->setText(4, QString());
 		item->setText(5, QString::number(game.moves.size()));
+		item->setTextAlignment(5, Qt::AlignCenter);
 		item->setToolTip(3, game.reason);
 		for (int column = 0; column < ui->gameHistory->columnCount(); ++column)
 			item->setSizeHint(column, QSize(32, 40));
