@@ -41,6 +41,33 @@ static constexpr int TILE_SIZE = 58;
 static constexpr int BOARD_FULL_SIZE = BORDER_SIZE * 2 + TILE_SIZE * 8; // 504
 static constexpr int BOARD_INNER_SIZE = BOARD_FULL_SIZE - BORDER_SIZE;  // 484
 
+namespace
+{
+QTableWidgetItem *createMoveTableItem(const QString &notation, bool isWhite)
+{
+	if (notation.isEmpty()) {
+		return new QTableWidgetItem();
+	}
+
+	if (notation.startsWith(QLatin1String("O-O"))) {
+		return new QTableWidgetItem(notation);
+	}
+
+	const QChar firstChar = notation.at(0);
+	const QChar upper = firstChar.toUpper();
+	if (upper == 'K' || upper == 'Q' || upper == 'R' || upper == 'B' || upper == 'N' || upper == 'H') {
+		const QChar pieceCode = (upper == 'H') ? 'N' : upper;
+		const QString iconPath = QStringLiteral(":/piece/%1%2.svg")
+		        .arg(isWhite ? 'w' : 'b')
+		        .arg(pieceCode);
+		const QString displayText = notation.mid(1);
+		return new QTableWidgetItem(QIcon(iconPath), displayText);
+	}
+
+	return new QTableWidgetItem(notation);
+}
+} // namespace
+
 ChessGameReviewDialog::ChessGameReviewDialog(
         const ChessGameRecord &game, QWidget *parent)
     : QDialog(parent), m_game(game), m_winnerBadge(nullptr), m_loserBadge(nullptr),
@@ -175,11 +202,21 @@ ChessGameReviewDialog::ChessGameReviewDialog(
 	m_moves->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
 	m_moves->verticalHeader()->hide();
 	m_moves->setEditTriggers(QAbstractItemView::NoEditTriggers);
+	m_moves->setSelectionMode(QAbstractItemView::SingleSelection);
+	m_moves->setSelectionBehavior(QAbstractItemView::SelectItems);
+	m_moves->setShowGrid(false);
+	m_moves->setAlternatingRowColors(true);
+	m_moves->setIconSize(QSize(18, 18));
 	for (int index = 0; index < game.moves.size(); ++index) {
 		const int row = index / 2;
-		if (!m_moves->item(row, 0))
-			m_moves->setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
-		m_moves->setItem(row, index % 2 + 1, new QTableWidgetItem(game.moves[index]));
+		if (!m_moves->item(row, 0)) {
+			auto *numItem = new QTableWidgetItem(QString::number(row + 1));
+			numItem->setTextAlignment(Qt::AlignCenter);
+			m_moves->setItem(row, 0, numItem);
+			m_moves->setRowHeight(row, 24);
+		}
+		const int col = index % 2 + 1;
+		m_moves->setItem(row, col, createMoveTableItem(game.moves[index], col == 1));
 	}
 	side->addWidget(m_moves, 1);
 

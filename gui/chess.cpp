@@ -48,9 +48,37 @@
 #include "ChessBoard.h"
 
 #include <QPointer>
+#include <QIcon>
 
 #include "gui/common/AvatarDefs.h"
 #include "../services/p3RetroChess.h"
+
+namespace
+{
+QTableWidgetItem *createMoveTableItem(const QString &notation, bool isWhite)
+{
+	if (notation.isEmpty()) {
+		return new QTableWidgetItem();
+	}
+
+	if (notation.startsWith(QLatin1String("O-O"))) {
+		return new QTableWidgetItem(notation);
+	}
+
+	const QChar firstChar = notation.at(0);
+	const QChar upper = firstChar.toUpper();
+	if (upper == 'K' || upper == 'Q' || upper == 'R' || upper == 'B' || upper == 'N' || upper == 'H') {
+		const QChar pieceCode = (upper == 'H') ? 'N' : upper;
+		const QString iconPath = QStringLiteral(":/piece/%1%2.svg")
+		        .arg(isWhite ? 'w' : 'b')
+		        .arg(pieceCode);
+		const QString displayText = notation.mid(1);
+		return new QTableWidgetItem(QIcon(iconPath), displayText);
+	}
+
+	return new QTableWidgetItem(notation);
+}
+} // namespace
 
 // NEW: Constructor for Distant GXS Identity
 RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *parent) :
@@ -325,6 +353,7 @@ void RetroChessWindow::initAccessories()
 	m_moveTable->setSelectionBehavior(QAbstractItemView::SelectItems);
 	m_moveTable->setShowGrid(false);
 	m_moveTable->setAlternatingRowColors(true);
+	m_moveTable->setIconSize(QSize(18, 18));
 	m_ui->moveHistoryLayout->addWidget(m_moveTable, 1);
 
 	// Game result summary bar (e.g. "1/2-1/2 (i)")
@@ -2416,11 +2445,13 @@ void RetroChessWindow::recordMove(
 	const int row = (m_move_history.size() - 1) / 2;
 	if (m_moveTable->rowCount() <= row) {
 		m_moveTable->insertRow(row);
-		m_moveTable->setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
-		m_moveTable->setRowHeight(row, 23);
+		auto *numItem = new QTableWidgetItem(QString::number(row + 1));
+		numItem->setTextAlignment(Qt::AlignCenter);
+		m_moveTable->setItem(row, 0, numItem);
+		m_moveTable->setRowHeight(row, 24);
 	}
 	const int column = (m_move_history.size() % 2) ? 1 : 2;
-	m_moveTable->setItem(row, column, new QTableWidgetItem(notation));
+	m_moveTable->setItem(row, column, createMoveTableItem(notation, column == 1));
 	m_moveTable->scrollToBottom();
 }
 
