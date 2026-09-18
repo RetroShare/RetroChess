@@ -2540,8 +2540,10 @@ bool RetroChessWindow::restoreSessionPosition(
 	m_viewedHistoryPly = m_boardHistory.size() - 1;
 	updateHistoryControls();
 	updateEndGameBadges(m_viewedHistoryPly);
-	emit sessionStateChanged(currentFen(), sessionMoveSequence());
-	showGameStatus(tr("Interrupted game restored"));
+	if (!m_isSpectator) {
+		emit sessionStateChanged(currentFen(), sessionMoveSequence());
+		showGameStatus(tr("Interrupted game restored"));
+	}
 	return true;
 }
 
@@ -3217,6 +3219,11 @@ void RetroChessWindow::updateDebugWindow()
 
 void RetroChessWindow::stopForDesynchronization(const QString &reason)
 {
+	if (m_isSpectator) {
+		std::cerr << "Chess (Spectator): Desynchronization event ignored: "
+		          << reason.toStdString() << std::endl;
+		return;
+	}
 	if (m_desynchronized) return;
 	m_desynchronized = true;
 	m_flag_finished = 7;
@@ -3271,6 +3278,18 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 			return;
 		}
 		if (verifiedPacket && (!sequenceOk || sequence != m_boardHistory.size())) {
+			if (sequenceOk && sequence < m_boardHistory.size()) {
+				// Move has already been applied (e.g. duplicate packet from opponent or relay).
+				// Silently drop without raising an error.
+				return;
+			}
+			if (m_isSpectator) {
+				// In spectator mode, do not halt on skipped/misordered packet;
+				// the next FEN watch_state snapshot will synchronize the board.
+				std::cerr << "Chess (Spectator): Sequence mismatch (expected "
+				          << m_boardHistory.size() << " but got " << sequence << "), ignoring." << std::endl;
+				return;
+			}
 			stopForDesynchronization(tr("Expected move sequence %1 but received %2")
 			        .arg(m_boardHistory.size()).arg(sequence));
 			return;

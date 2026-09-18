@@ -274,9 +274,9 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	connect(mNotify, SIGNAL(chessRematchGxs(RsGxsId,int)), this, SLOT(chessRematchGxs(RsGxsId,int)));
 	connect(mNotify, SIGNAL(chessGameActionGxs(RsGxsId,QString)), this, SLOT(chessGameActionGxs(RsGxsId,QString)));
 
-	connect(mNotify, &RetroChessNotify::chessWatchState, this, &NEMainpage::chessWatchState);
-	connect(mNotify, &RetroChessNotify::chessWatchAction, this, &NEMainpage::chessWatchAction);
-	connect(mNotify, &RetroChessNotify::chessWatchEnd, this, &NEMainpage::chessWatchEnd);
+	connect(mNotify, &RetroChessNotify::chessWatchState, this, &NEMainpage::chessWatchState, Qt::QueuedConnection);
+	connect(mNotify, &RetroChessNotify::chessWatchAction, this, &NEMainpage::chessWatchAction, Qt::QueuedConnection);
+	connect(mNotify, &RetroChessNotify::chessWatchEnd, this, &NEMainpage::chessWatchEnd, Qt::QueuedConnection);
 
 	connect(mNotify, &RetroChessNotify::availablePeersChanged,
 	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
@@ -748,11 +748,6 @@ void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailab
 	auto setupWatchButton = [this](QTreeWidgetItem *item) {
 		if (!ui->active_games->itemWidget(item, 1)) {
 			QPushButton *watchBtn = new QPushButton(tr("Watch"));
-			watchBtn->setStyleSheet(
-				"QPushButton { padding: 3px 10px; font-size: 11px; font-weight: bold; "
-				"background: #4b7f2b; color: white; border: 1px solid #3c6622; border-radius: 4px; }"
-				"QPushButton:hover { background: #5a9634; }");
-			watchBtn->setCursor(Qt::PointingHandCursor);
 			connect(watchBtn, &QPushButton::clicked, this, [this, item]() {
 				ui->active_games->setCurrentItem(item);
 				watchSelectedActiveGame();
@@ -1121,43 +1116,79 @@ void NEMainpage::watchSelectedActiveGame()
 		return;
 	}
 
-	QString targetId = idA;
-	const auto activeTunnels = rsRetroChess ? rsRetroChess->activeGxsTunnels() : std::vector<RsGxsId>();
+	if (!rsRetroChess) return;
+
+	// Check active tunnels first
+	QString activePeerId;
+	const auto activeTunnels = rsRetroChess->activeGxsTunnels();
 	for (const auto &peer : activeTunnels) {
 		if (peer.toStdString() == idA.toStdString()) {
-			targetId = idA; break;
+			activePeerId = idA; break;
 		} else if (peer.toStdString() == idB.toStdString()) {
-			targetId = idB; break;
+			activePeerId = idB; break;
 		}
 	}
 
-	if (rsRetroChess) {
-		rsRetroChess->sendWatchRequestGxs(RsGxsId(targetId.toStdString()), gameKey);
-		const QString nameA = item->data(0, Qt::UserRole + 4).toString();
-		const QString nameB = item->data(0, Qt::UserRole + 5).toString();
-		QMessageBox::information(this, tr("Watch Game"),
-		                         tr("Connecting to live match between %1 and %2...").arg(nameA, nameB));
+	bool aIsContact = false;
+	bool bIsContact = false;
+	for (const auto &p : rsRetroChess->availableChessPeers()) {
+		if (p.endpointId == idA && p.savedContact) aIsContact = true;
+		if (p.endpointId == idB) bIsContact = true;
 	}
+
+	if (!activePeerId.isEmpty()) {
+		rsRetroChess->sendWatchRequestGxs(RsGxsId(activePeerId.toStdString()), gameKey);
+	} else if (aIsContact) {
+		rsRetroChess->sendWatchRequestGxs(RsGxsId(idA.toStdString()), gameKey);
+	} else if (bIsContact) {
+		rsRetroChess->sendWatchRequestGxs(RsGxsId(idB.toStdString()), gameKey);
+	} else {
+		rsRetroChess->sendWatchRequestGxs(RsGxsId(idA.toStdString()), gameKey);
+	}
+
+	const QString nameA = item->data(0, Qt::UserRole + 4).toString();
+	const QString nameB = item->data(0, Qt::UserRole + 5).toString();
+	std::cout << "Chess: Sent watch request to host for game between "
+	          << nameA.toStdString() << " and " << nameB.toStdString() << std::endl;
 }
 
 void NEMainpage::chessWatchState(const RsGxsId &hostId, const QString &gameKey,
                                  const QString &whiteId, const QString &whiteName,
                                  const QString &blackId, const QString &blackName,
-                                 const QString &fen, uint32_t sequence)
+                                 const QString &fen, int sequence)
 {
+	std::cout << "Chess: NEMainpage::chessWatchState opening/updating spectator window for gameKey "
+	          << gameKey.toStdString() << " (FEN=" << fen.toStdString() << ")" << std::endl;
+
+	RetroChessWindow *targetWindow = nullptr;
 	if (mSpectatorWindows.contains(gameKey) && mSpectatorWindows[gameKey]) {
-		mSpectatorWindows[gameKey]->restoreSessionPosition(fen, sequence);
-		mSpectatorWindows[gameKey]->raise();
-		mSpectatorWindows[gameKey]->activateWindow();
+		targetWindow = mSpectatorWindows[gameKey];
+	} else {
+		for (auto it = mSpectatorWindows.begin(); it != mSpectatorWindows.end(); ++it) {
+			if (it.value() && (it.key() == gameKey || it.key().contains(gameKey) || gameKey.contains(it.key())
+			        || (!whiteId.isEmpty() && !blackId.isEmpty() && it.key().contains(whiteId) && it.key().contains(blackId)))) {
+				targetWindow = it.value();
+				break;
+			}
+		}
+	}
+
+	if (targetWindow) {
+		targetWindow->restoreSessionPosition(fen, sequence);
+		targetWindow->show();
+		targetWindow->raise();
+		targetWindow->activateWindow();
 		return;
 	}
 
 	RetroChessWindow *window = new RetroChessWindow(
-	        hostId, gameKey, whiteId, whiteName, blackId, blackName, this);
+	        hostId, gameKey, whiteId, whiteName, blackId, blackName, nullptr);
 	window->restoreSessionPosition(fen, sequence);
 	connect(window, &RetroChessWindow::spectatorClosed, this, &NEMainpage::onSpectatorClosed);
 	mSpectatorWindows[gameKey] = window;
 	window->show();
+	window->raise();
+	window->activateWindow();
 }
 
 void NEMainpage::chessWatchAction(const RsGxsId &hostId, const QString &gameKey, const QString &action)

@@ -105,7 +105,7 @@ private slots:
 	void chessWatchState(const RsGxsId &hostId, const QString &gameKey,
 	                     const QString &whiteId, const QString &whiteName,
 	                     const QString &blackId, const QString &blackName,
-	                     const QString &fen, uint32_t sequence);
+	                     const QString &fen, int sequence);
 	void chessWatchAction(const RsGxsId &hostId, const QString &gameKey, const QString &action);
 	void chessWatchEnd(const RsGxsId &hostId, const QString &gameKey, const QString &reason);
 	void onSpectatorClosed(const RsGxsId &hostId, const QString &gameKey);
