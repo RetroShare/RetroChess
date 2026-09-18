@@ -131,7 +131,7 @@ private:
 QVector<RetroChessBoardTheme> RetroChessSettings::boardThemes()
 {
 	return {
-		{"original", QObject::tr("Default"), QColor(211, 211, 158), QColor(120, 120, 90), QColor("#d3d3d3")},
+		{"original", QObject::tr("Default"), QColor(211, 211, 158), QColor(120, 120, 90), QColor("#baca44")},
 		{"brown", QObject::tr("Brown"), QColor("#f0d9b5"), QColor("#b58863"), QColor("#baca44")},
 		{"green", QObject::tr("Green"), QColor("#eeeed2"), QColor("#769656"), QColor("#baca44")},
 		{"sky", QObject::tr("Sky"), QColor("#eef1f0"), QColor("#c4dbe5"), QColor("#a8cce4")},
