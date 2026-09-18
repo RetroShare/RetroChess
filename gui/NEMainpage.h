@@ -50,6 +50,7 @@ class QTableWidget;
 class QLabel;
 class QTreeWidgetItem;
 class QTreeWidget;
+class QMenu;
 class RetroChessSessionService;
 struct RsRetroChessAvailablePeer;
 
@@ -129,6 +130,8 @@ private:
 	void loadLayoutSettings();
 	void saveLayoutSettings();
 	void setupPlayersTab();
+	QMenu *createSavedContactsContextMenu(QMenu *contextMenu = nullptr);
+	void showSavedContactsHeaderContextMenu(const QPoint &globalPos);
 	void showEvent(QShowEvent *event) override;
 };
 

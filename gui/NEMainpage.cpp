@@ -59,6 +59,8 @@
 #include <QGroupBox>
 #include <QVBoxLayout>
 #include <QDialogButtonBox>
+#include <QWidgetAction>
+#include <QSpacerItem>
 
 #include "gui/common/FriendSelectionWidget.h"
 #include "gui/RetroChessSettings.h"
@@ -1574,6 +1576,16 @@ void NEMainpage::loadLayoutSettings()
 	        ? tr("Show all chess players")
 	        : tr("Show only online chess players"));
 
+	ui->savedContacts->setColumnHidden(1, false);
+	const bool hideLastSeen = Settings->valueFromGroup("RetroChess", "SavedContacts_HideLastSeen", false).toBool();
+	ui->savedContacts->setColumnHidden(2, hideLastSeen);
+	if (!hideLastSeen && ui->savedContacts->columnWidth(2) < 50) {
+		ui->savedContacts->setColumnWidth(2, 130);
+	}
+
+	const bool hideHeader = Settings->valueFromGroup("RetroChess", "SavedContacts_HideHeader", false).toBool();
+	ui->savedContacts->header()->setHidden(hideHeader);
+
 	connect(ui->savedContacts->header(), &QHeaderView::sectionResized,
 	        this, &NEMainpage::saveLayoutSettings);
 	connect(ui->availablePlayers->header(), &QHeaderView::sectionResized,
@@ -1589,6 +1601,8 @@ void NEMainpage::saveLayoutSettings()
 	Settings->setValueToGroup("RetroChess", "AvailablePlayersHeaderState", ui->availablePlayers->header()->saveState());
 	Settings->setValueToGroup("RetroChess", "GameHistoryHeaderState", ui->gameHistory->header()->saveState());
 	Settings->setValueToGroup("RetroChess", "ShowOnlyOnlineContacts", ui->showOnlineplayersButton->isChecked());
+	Settings->setValueToGroup("RetroChess", "SavedContacts_HideLastSeen", ui->savedContacts->isColumnHidden(2));
+	Settings->setValueToGroup("RetroChess", "SavedContacts_HideHeader", ui->savedContacts->header()->isHidden());
 
 	QVariantList savedWidths;
 	for (int col = 0; col < ui->savedContacts->columnCount(); ++col) {
@@ -1605,15 +1619,104 @@ void NEMainpage::saveLayoutSettings()
 	Settings->sync();
 }
 
+QMenu *NEMainpage::createSavedContactsContextMenu(QMenu *contextMenu)
+{
+	if (!contextMenu) {
+		contextMenu = new QMenu(this);
+	} else if (!contextMenu->isEmpty()) {
+		contextMenu->addSeparator();
+	}
+
+	QFrame *widget = new QFrame(contextMenu);
+	widget->setObjectName("gradFrame");
+
+	QHBoxLayout *hbox = new QHBoxLayout(widget);
+	hbox->setContentsMargins(6, 2, 6, 2);
+	hbox->setSpacing(6);
+
+	QLabel *iconLabel = new QLabel(widget);
+	iconLabel->setObjectName("trans_Icon");
+	QPixmap pix(":/icons/png/options2.png");
+	if (pix.isNull()) {
+		pix = QPixmap(":/icons/settings.png");
+	}
+	if (!pix.isNull()) {
+		pix = pix.scaledToHeight(QFontMetricsF(iconLabel->font()).height() * 1.5, Qt::SmoothTransformation);
+		iconLabel->setPixmap(pix);
+		iconLabel->setMaximumSize(iconLabel->frameSize().height() + pix.height(), pix.width());
+	}
+	hbox->addWidget(iconLabel);
+
+	QLabel *textLabel = new QLabel("<strong>" + tr("Tree View Options") + "</strong>", widget);
+	textLabel->setObjectName("trans_Text");
+	hbox->addWidget(textLabel);
+
+	QSpacerItem *spacerItem = new QSpacerItem(40, 24, QSizePolicy::Expanding, QSizePolicy::Minimum);
+	hbox->addItem(spacerItem);
+
+	widget->setLayout(hbox);
+
+	QWidgetAction *widgetAction = new QWidgetAction(contextMenu);
+	widgetAction->setDefaultWidget(widget);
+	contextMenu->addAction(widgetAction);
+
+	QAction *actShowHeader = contextMenu->addAction(tr("Show Header"));
+	actShowHeader->setCheckable(true);
+	actShowHeader->setChecked(!ui->savedContacts->header()->isHidden());
+	connect(actShowHeader, &QAction::toggled, this, [this](bool checked) {
+		ui->savedContacts->header()->setHidden(!checked);
+		saveLayoutSettings();
+	});
+
+	QMenu *headerMenuShowCol = contextMenu->addMenu(tr("Show column …"));
+	QTreeWidgetItem *headerItem = ui->savedContacts->headerItem();
+	const int col = 2;
+	QString txt = headerItem ? headerItem->text(col) : QString();
+	if (txt.isEmpty()) {
+		txt = tr("Last seen");
+	}
+	QAction *action = headerMenuShowCol->addAction(txt);
+	action->setCheckable(true);
+	action->setChecked(!ui->savedContacts->isColumnHidden(col));
+	connect(action, &QAction::toggled, this, [this, col](bool checked) {
+		ui->savedContacts->setColumnHidden(col, !checked);
+		if (checked && ui->savedContacts->columnWidth(col) < 50) {
+			ui->savedContacts->setColumnWidth(col, 130);
+		}
+		saveLayoutSettings();
+	});
+
+	return contextMenu;
+}
+
+void NEMainpage::showSavedContactsHeaderContextMenu(const QPoint &globalPos)
+{
+	QMenu *contextMenu = createSavedContactsContextMenu(nullptr);
+	if (!contextMenu) return;
+	contextMenu->exec(globalPos);
+	delete contextMenu;
+}
+
 void NEMainpage::setupPlayersTab()
 {
+	ui->savedContacts->header()->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(ui->savedContacts->header(), &QHeaderView::customContextMenuRequested,
+	        this, [this](const QPoint &pos) {
+		showSavedContactsHeaderContextMenu(ui->savedContacts->header()->mapToGlobal(pos));
+	});
+
 	for (QTreeWidget *tree : {ui->savedContacts, ui->availablePlayers}) {
 		tree->sortItems(0, Qt::AscendingOrder);
 		tree->setContextMenuPolicy(Qt::CustomContextMenu);
 		connect(tree, &QTreeWidget::customContextMenuRequested,
 		        this, [this, tree](const QPoint &position) {
 			const QTreeWidgetItem *item = tree->itemAt(position);
-			if (!item) return;
+			if (!item) {
+				if (tree == ui->savedContacts) {
+					showSavedContactsHeaderContextMenu(tree->viewport()->mapToGlobal(position));
+				}
+				return;
+			}
 			const QString endpoint = item->data(0, Qt::UserRole).toString();
 			const RsGxsId id(endpoint.toStdString());
 			const bool saved = item->data(0, Qt::UserRole + 1).toBool();
@@ -1635,6 +1738,7 @@ void NEMainpage::setupPlayersTab()
 			if (tree == ui->savedContacts) {
 				menu.addSeparator();
 				contact = menu.addAction(tr("Remove chess contact"));
+				createSavedContactsContextMenu(&menu);
 			} else if (!saved) {
 				menu.addSeparator();
 				contact = menu.addAction(tr("Save chess contact"));
