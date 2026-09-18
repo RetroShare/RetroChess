@@ -13,34 +13,49 @@ put/clone `RetroChess` to `RetroShare/plugins/` recommend
 Copy your RetroChess.dll to "Data/extensions6" (Windows)
 Then restart your RetroShare. You'll see a chess logo in your chat dialog's tool-bar or home's tool-bar.
 
-# Usage:
+# Usage
 
-Open **Chess Players** and add a player by GXS ID or from your RetroShare
-contacts. Past opponents are imported from game history once; new opponents
-are remembered when a game starts. Removing a chess contact does not remove
-the underlying RetroShare contact.
+### Accessing RetroChess
+After installing and restarting RetroShare:
+- Click the **RetroChess** icon in the main RetroShare navigation sidebar or home toolbar.
+- You can also launch chess games directly from any RetroShare chat dialog toolbar.
 
-The list keeps offline contacts and shows a coloured icon plus a status label:
-Available, Playing, Busy, Checking, Unknown, or Offline / unreachable.
-Right-click an available player to invite them, cancel a pending invitation,
-or remove the contact. Existing invitations through chat remain supported.
+The plugin provides the dedicated tabs:
 
-Use **My chess identities** to enable local identities and select the identity
-for new connections. Until configured, the first local identity is used.
-Unchecking every identity disables new chess presence probes and responses.
-The **Busy** checkbox advertises that you are unavailable for a new game.
-Own identities cannot be added as opponents.
+---
 
-Presence uses versioned request/reply messages on the RetroChess GXS tunnel
-service, independently of chat. At most four probes are outstanding. Successful
-probes are repeated after 60 seconds, requests time out after 45 seconds, and
-failures retry with a backoff up to ten minutes. A tunnel alone does not confirm
-presence. Older plugins without the presence protocol may appear unreachable;
-they can still be invited through the existing chat action. Last-seen times
-are saved, but online status is checked again after restart.
+### 1. Chess Players & Invitations
+- **Managing Contacts**: Add players by their GXS ID or import them from your RetroShare contacts list. Past opponents are automatically remembered. Removing a chess contact does not remove the underlying RetroShare contact.
+- **Online Presence & Status**:
+  - 🟢 **Available**: Online and ready to play. Right-click or click **Invite** to send a game challenge.
+  - 🔵 **Playing**: Currently playing another chess match.
+  - 🟠 **Busy**: Online, but has set their status to busy.
+  - ⚪ **Offline / Unreachable**: Offline contact.
+- **Chess Profile**: Click the **Chess profile** button to select your active identity for chess games. Check the **Busy** box if you wish to temporarily decline new game invites.
 
-The Rating column currently shows **Unrated**. Game history is saved, but an
-Elo calculation and rating exchange have not been implemented.
+---
+
+### 2. Playing Games & Game History
+- **Live Match Features**:
+  - Figurine chess notation with piece vector icons in the moves list table.
+  - Move highlighting (last moves, legal move hints, and check indicators).
+  - Customizable board themes, piece sets, board flip, and sounds in **Settings** (gear icon).
+- **Game History Tab**:
+  - Automatically saves every finished game with opponent results, and timestamps.
+  - **Review**: Step forwards and backwards through moves in completed games.
+  - **Export PGN**: Export games to standard Portable Game Notation (.pgn) for replay and analysis in external chess engines and tools.
+
+---
+
+### 3. Leaderboard & Ratings
+- **Glicko-2 Rating System**:
+  - Every player starts with a base rating of **1500** (Rating Deviation: 350, Volatility: 0.06).
+  - Players remain *Provisional* until completing at least 10 games with an RD at or below 110.
+  - Hovering over the **Rating** or **RD** column displays detailed tooltips explaining rating reliability and games played.
+- **Decentralized Verification**:
+  - Completed GXS games exchange cryptographically signed receipts between players over secure GXS tunnels.
+  - Receipts synchronize automatically between players and connected peers (gossip sync) without central servers.
+  - Conflicting claims are safely excluded, and duplicate receipts cannot count twice.
 
 # Standalone chessboard debugger
 
@@ -86,25 +101,9 @@ game window.
 
 ![Screenshot](https://github.com/RetroShare/RetroChess/blob/main/screenshot/screenshot.png)
 
+
 #  extra info
 based on: https://github.com/Texas-C/RetroChess
 
 based on: https://github.com/chozabu/RetroChess
-
-### Leaderboard
-
-The Leaderboard tab ranks GXS identities using Glicko-2 (initial rating 1500,
-rating deviation 350, volatility 0.06; each confirmed game is a rating period).
-It shows ratings, rating deviation, games, wins, draws, losses and last played.
-Players remain provisional until they have ten games and RD is at most 110.
-
-Completed GXS games exchange identity-signed result receipts over secure
-GXS tunnels directly between players and through connected peers (gossip sync). Both
-players must report the same game ID, colors and result before it counts.
-Results and receipts are saved locally and synchronized over active GXS tunnels.
-Conflicting claims exclude the game; repeated receipts cannot count it twice.
-Rematches receive separate game IDs. Direct-peer games, aborted games and games
-with older clients that do not exchange game IDs are unrated. The ledger
-contains public player identities and game results. Ratings may change as
-additional signed results arrive; they do not prevent collusion.
 

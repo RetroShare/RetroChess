@@ -285,8 +285,13 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 
     setupPlayersTab();
 	connect(ui->tabWidget, &QTabWidget::currentChanged,
-	        this, [this](int) {
+	        this, [this](int index) {
 		refreshAvailablePlayers();
+		if (ui->tabWidget->widget(index) == ui->gameHistoryTab) {
+			refreshGameHistory();
+		} else if (ui->tabWidget->widget(index) == ui->leaderboardTab) {
+			refreshLeaderboard();
+		}
 	});
 	QHeaderView *historyHeader = ui->gameHistory->header();
 	historyHeader->setSectionResizeMode(QHeaderView::Interactive);
@@ -858,6 +863,7 @@ void NEMainpage::showEvent(QShowEvent *event)
 	}
 	MainPage::showEvent(event);
 	refreshAvailablePlayers();
+	refreshLeaderboard();
 	autoJoinOfficialLobby();
 }
 
@@ -1435,6 +1441,8 @@ void NEMainpage::handleEvent_identity_main_thread(std::shared_ptr<const RsEvent>
 	case RsGxsIdentityEventCode::UPDATED_IDENTITY:
 	case RsGxsIdentityEventCode::DELETED_IDENTITY:
 		refreshAvailablePlayers();
+		refreshLeaderboard();
+		refreshGameHistory();
 		break;
 	default:
 		break;

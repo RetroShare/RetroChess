@@ -38,7 +38,10 @@
 #include "interface/rsRetroChess.h"
 #include "gui/settings/rsharesettings.h"
 #include "gui/gxs/GxsIdTreeWidgetItem.h"
+#include "gui/ChessGameHistory.h"
+#include "gui/common/AvatarDefs.h"
 #include "util/HandleRichText.h"
+#include <retroshare/rspeers.h>
 
 namespace {
 constexpr double kScale = 173.7178;
@@ -53,12 +56,49 @@ QString leaderboardFilePath()
 	return QString::fromUtf8(accDir.c_str()) + "/retrochess_leaderboard.json";
 }
 
+QString lookupGameHistoryName(const QString &idStr, QString *outPeerId = nullptr)
+{
+	if (idStr.isEmpty()) return QString();
+	for (const ChessGameRecord &game : ChessGameHistory::games()) {
+		if (game.whiteGxsId.compare(idStr, Qt::CaseInsensitive) == 0) {
+			if (outPeerId && !game.whitePeerId.isEmpty()) {
+				*outPeerId = game.whitePeerId;
+			}
+			if (!game.whitePlayer.isEmpty()) {
+				return game.whitePlayer;
+			}
+		}
+		if (game.blackGxsId.compare(idStr, Qt::CaseInsensitive) == 0) {
+			if (outPeerId && !game.blackPeerId.isEmpty()) {
+				*outPeerId = game.blackPeerId;
+			}
+			if (!game.blackPlayer.isEmpty()) {
+				return game.blackPlayer;
+			}
+		}
+	}
+	return QString();
+}
+
 QString displayName(const RsGxsId &id)
 {
 	RsIdentityDetails details;
-	if (rsIdentity && rsIdentity->getIdDetails(id, details))
+	if (rsIdentity && rsIdentity->getIdDetails(id, details) && !details.mNickname.empty())
 		return QString::fromUtf8(details.mNickname.c_str());
-	return QString::fromStdString(id.toStdString()).left(12);
+
+	const QString idStr = QString::fromStdString(id.toStdString());
+	QString peerId;
+	const QString histName = lookupGameHistoryName(idStr, &peerId);
+	if (!histName.isEmpty())
+		return histName;
+
+	if (!peerId.isEmpty() && rsPeers) {
+		const std::string peerName = rsPeers->getPeerName(RsPeerId(peerId.toStdString()));
+		if (!peerName.empty())
+			return QString::fromStdString(peerName);
+	}
+
+	return idStr.left(12);
 }
 
 double newVolatility(double phi, double delta, double variance, double sigma)
@@ -232,28 +272,90 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 			table->horizontalHeaderItem(c)->setTextAlignment(Qt::AlignCenter);
 		}
 	}
+	static QMap<QString, qint64> sRequestedIdentities;
+	const qint64 now = QDateTime::currentSecsSinceEpoch();
+
 	for (int row = 0; row < players.size(); ++row) {
 		const Player &p = players.at(row);
+		const QString idStr = QString::fromStdString(p.id.toStdString());
 		RsIdentityDetails details;
 		const bool known = rsIdentity && rsIdentity->getIdDetails(p.id, details);
-		QPixmap avatar;
-		if (!known || !details.mAvatar.mSize || !GxsIdDetails::loadPixmapFromData(
-		        details.mAvatar.mData, details.mAvatar.mSize, avatar, GxsIdDetails::MEDIUM))
-			avatar = GxsIdDetails::makeDefaultIcon(p.id, GxsIdDetails::MEDIUM);
-		const QString playerName = known && !details.mNickname.empty()
-		        ? QString::fromUtf8(details.mNickname.c_str())
-		        : (p.name.isEmpty() ? QString::fromStdString(p.id.toStdString()).left(12) : p.name);
 
+		QString peerId;
+		QString playerName = known && !details.mNickname.empty()
+		        ? QString::fromUtf8(details.mNickname.c_str())
+		        : QString();
+		if (playerName.isEmpty()) {
+			playerName = lookupGameHistoryName(idStr, &peerId);
+		}
+		if (playerName.isEmpty() && !peerId.isEmpty() && rsPeers) {
+			const std::string peerName = rsPeers->getPeerName(RsPeerId(peerId.toStdString()));
+			if (!peerName.empty()) {
+				playerName = QString::fromStdString(peerName);
+			}
+		}
+		if (playerName.isEmpty()) {
+			playerName = p.name.isEmpty() ? idStr.left(12) : p.name;
+		}
+
+		// Resolve table avatar (MEDIUM)
+		QPixmap avatar;
+		bool avatarLoaded = false;
+		if (known && details.mAvatar.mSize > 0) {
+			avatarLoaded = GxsIdDetails::loadPixmapFromData(
+			        details.mAvatar.mData, details.mAvatar.mSize, avatar, GxsIdDetails::MEDIUM);
+		}
+		if (!avatarLoaded && rsIdentity && rsIdentity->isOwnId(p.id)) {
+			AvatarDefs::getOwnAvatar(avatar);
+			avatarLoaded = !avatar.isNull();
+		}
+		if (!avatarLoaded) {
+			if (peerId.isEmpty()) {
+				lookupGameHistoryName(idStr, &peerId);
+			}
+			if (!peerId.isEmpty()) {
+				AvatarDefs::getAvatarFromSslId(RsPeerId(peerId.toStdString()), avatar);
+				avatarLoaded = !avatar.isNull();
+			}
+		}
+		if (!avatarLoaded || avatar.isNull()) {
+			avatar = GxsIdDetails::makeDefaultIcon(p.id, GxsIdDetails::MEDIUM);
+		}
+
+		// Resolve tooltip avatar (LARGE)
 		QPixmap tooltipPixmap;
-		if (!known || details.mAvatar.mSize == 0
-		        || !GxsIdDetails::loadPixmapFromData(
-		                details.mAvatar.mData, details.mAvatar.mSize,
-		                tooltipPixmap, GxsIdDetails::LARGE))
+		bool tooltipLoaded = false;
+		if (known && details.mAvatar.mSize > 0) {
+			tooltipLoaded = GxsIdDetails::loadPixmapFromData(
+			        details.mAvatar.mData, details.mAvatar.mSize,
+			        tooltipPixmap, GxsIdDetails::LARGE);
+		}
+		if (!tooltipLoaded && rsIdentity && rsIdentity->isOwnId(p.id)) {
+			AvatarDefs::getOwnAvatar(tooltipPixmap);
+			tooltipLoaded = !tooltipPixmap.isNull();
+		}
+		if (!tooltipLoaded && !peerId.isEmpty()) {
+			AvatarDefs::getAvatarFromSslId(RsPeerId(peerId.toStdString()), tooltipPixmap);
+			tooltipLoaded = !tooltipPixmap.isNull();
+		}
+		if (!tooltipLoaded || tooltipPixmap.isNull()) {
 			tooltipPixmap = GxsIdDetails::makeDefaultIcon(p.id, GxsIdDetails::LARGE);
+		}
+
+		// Actively request unknown identity details from peers (throttled to once every 30 seconds per ID)
+		if (rsIdentity && !p.id.isNull() && !rsIdentity->isOwnId(p.id)) {
+			if (!known || details.mNickname.empty() || details.mAvatar.mSize == 0) {
+				if (!sRequestedIdentities.contains(idStr) || (now - sRequestedIdentities.value(idStr) > 30)) {
+					sRequestedIdentities[idStr] = now;
+					rsIdentity->requestIdentity(p.id);
+				}
+			}
+		}
+
 		QString playerTooltip = known ? GxsIdDetails::getComment(details) : QString();
 		if (playerTooltip.isEmpty())
 			playerTooltip = tr("Identity name: %1<br/>Identity Id: %2")
-			        .arg(playerName.toHtmlEscaped(), QString::fromStdString(p.id.toStdString()).toHtmlEscaped());
+			        .arg(playerName.toHtmlEscaped(), idStr.toHtmlEscaped());
 		QString embeddedImage;
 		if (RsHtml::makeEmbeddedImage(
 		        tooltipPixmap.scaled(
@@ -277,6 +379,14 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
             if (col == 1) {
                 item->setIcon(QIcon(avatar));
                 item->setToolTip(playerTooltip);
+            } else if (col == 2) {
+                item->setToolTip(tr("Rating: %1 (%2, %3 games)")
+                        .arg(qRound(p.rating))
+                        .arg(p.provisional() ? tr("Provisional") : tr("Rated"))
+                        .arg(p.games()));
+            } else if (col == 3) {
+                item->setToolTip(tr("Rating Deviation: %1 (lower means more reliable)")
+                        .arg(qRound(p.rd)));
             } else {
                 item->setToolTip(QString::fromStdString(p.id.toStdString()));
             }
