@@ -495,9 +495,8 @@ void NEMainpage::refreshAvailablePlayers()
                             actionBtn->setToolTip(tr("Invited by player. Click to accept and start the game."));
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
-                                "  border: 1px solid #199909; color: white; padding: 1px 8px; border-radius: 4px;"
+                                "  border: 1px solid #199909; color: white; padding: 1px 6px; border-radius: 4px;"
                                 "  background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #22c70d, stop: 1 #116a06);"
-                                "  font-weight: bold;"
                                 "}"
                                 "QPushButton:hover { border-color: #35d51f; }"
                                 "QPushButton:pressed { background-color: #116a06; }"
@@ -514,7 +513,7 @@ void NEMainpage::refreshAvailablePlayers()
                             actionBtn->setToolTip(tr("Click to cancel invitation"));
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
-                                "  border: 1px solid #991919; color: white; padding: 1px 8px; border-radius: 4px;"
+                                "  border: 1px solid #991919; color: white; padding: 1px 6px; border-radius: 4px;"
                                 "  background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #c72222, stop: 1 #6a1111);"
                                 "}"
                                 "QPushButton:hover { border-color: #d53535; }"
@@ -533,7 +532,7 @@ void NEMainpage::refreshAvailablePlayers()
                             actionBtn->setToolTip(tr("Invite to chess"));
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
-                                "  border: 1px solid #2365a6; color: white; padding: 1px 20px; border-radius: 4px;"
+                                "  border: 1px solid #2365a6; color: white; padding: 1px 6px; border-radius: 4px;"
                                 "  background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #3488db, stop: 1 #1f5f99);"
                                 "}"
                                 "QPushButton:hover { border-color: #5dade2; }"
@@ -553,6 +552,14 @@ void NEMainpage::refreshAvailablePlayers()
                                 }
                                 refreshAvailablePlayers();
                             });
+                        }
+
+                        const QFontMetrics fm(tree->font());
+                        const int textW = fm.horizontalAdvance(actionBtn->text());
+                        const int btnWidth = std::max(96, textW + 20);
+                        actionBtn->setFixedWidth(btnWidth);
+                        if (tree->columnWidth(2) < btnWidth + 16) {
+                            tree->setColumnWidth(2, btnWidth + 16);
                         }
                         actionLayout->addWidget(actionBtn);
                         tree->setItemWidget(item, 2, actionWidget);
