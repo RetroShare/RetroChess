@@ -301,51 +301,28 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 
 		// Resolve table avatar (MEDIUM)
 		QPixmap avatar;
-		bool avatarLoaded = false;
 		if (known && details.mAvatar.mSize > 0) {
-			avatarLoaded = GxsIdDetails::loadPixmapFromData(
+			GxsIdDetails::loadPixmapFromData(
 			        details.mAvatar.mData, details.mAvatar.mSize, avatar, GxsIdDetails::MEDIUM);
 		}
-		if (!avatarLoaded && rsIdentity && rsIdentity->isOwnId(p.id)) {
-			AvatarDefs::getOwnAvatar(avatar);
-			avatarLoaded = !avatar.isNull();
-		}
-		if (!avatarLoaded) {
-			if (peerId.isEmpty()) {
-				lookupGameHistoryName(idStr, &peerId);
-			}
-			if (!peerId.isEmpty()) {
-				AvatarDefs::getAvatarFromSslId(RsPeerId(peerId.toStdString()), avatar);
-				avatarLoaded = !avatar.isNull();
-			}
-		}
-		if (!avatarLoaded || avatar.isNull()) {
+		if (avatar.isNull()) {
 			avatar = GxsIdDetails::makeDefaultIcon(p.id, GxsIdDetails::MEDIUM);
 		}
 
 		// Resolve tooltip avatar (LARGE)
 		QPixmap tooltipPixmap;
-		bool tooltipLoaded = false;
 		if (known && details.mAvatar.mSize > 0) {
-			tooltipLoaded = GxsIdDetails::loadPixmapFromData(
+			GxsIdDetails::loadPixmapFromData(
 			        details.mAvatar.mData, details.mAvatar.mSize,
 			        tooltipPixmap, GxsIdDetails::LARGE);
 		}
-		if (!tooltipLoaded && rsIdentity && rsIdentity->isOwnId(p.id)) {
-			AvatarDefs::getOwnAvatar(tooltipPixmap);
-			tooltipLoaded = !tooltipPixmap.isNull();
-		}
-		if (!tooltipLoaded && !peerId.isEmpty()) {
-			AvatarDefs::getAvatarFromSslId(RsPeerId(peerId.toStdString()), tooltipPixmap);
-			tooltipLoaded = !tooltipPixmap.isNull();
-		}
-		if (!tooltipLoaded || tooltipPixmap.isNull()) {
+		if (tooltipPixmap.isNull()) {
 			tooltipPixmap = GxsIdDetails::makeDefaultIcon(p.id, GxsIdDetails::LARGE);
 		}
 
 		// Actively request unknown identity details from peers (throttled to once every 30 seconds per ID)
 		if (rsIdentity && !p.id.isNull() && !rsIdentity->isOwnId(p.id)) {
-			if (!known || details.mNickname.empty() || details.mAvatar.mSize == 0) {
+			if (!known || details.mNickname.empty()) {
 				if (!sRequestedIdentities.contains(idStr) || (now - sRequestedIdentities.value(idStr) > 30)) {
 					sRequestedIdentities[idStr] = now;
 					rsIdentity->requestIdentity(p.id);

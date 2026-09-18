@@ -533,7 +533,7 @@ void NEMainpage::refreshAvailablePlayers()
                             actionBtn->setToolTip(tr("Invite to chess"));
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
-                                "  border: 1px solid #2365a6; color: white; padding: 1px 8px; border-radius: 4px;"
+                                "  border: 1px solid #2365a6; color: white; padding: 1px 20px; border-radius: 4px;"
                                 "  background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #3488db, stop: 1 #1f5f99);"
                                 "}"
                                 "QPushButton:hover { border-color: #5dade2; }"
@@ -1240,17 +1240,17 @@ void NEMainpage::refreshGameHistory()
 		};
 		setGxsIdentity(1, game.whiteGxsId, game.whitePlayer);
 		setGxsIdentity(2, game.blackGxsId, game.blackPlayer);
-		if (!game.whitePeerId.isEmpty()) {
+		if (game.whiteGxsId.isEmpty() && !game.whitePeerId.isEmpty()) {
 			QPixmap avatar;
-			AvatarDefs::getAvatarFromSslId(
-			        RsPeerId(game.whitePeerId.toStdString()), avatar);
-			if (!avatar.isNull()) item->setIcon(1, QIcon(avatar));
+			if (AvatarDefs::getAvatarFromSslId(
+			        RsPeerId(game.whitePeerId.toStdString()), avatar) && !avatar.isNull())
+				item->setIcon(1, QIcon(avatar));
 		}
-		if (!game.blackPeerId.isEmpty()) {
+		if (game.blackGxsId.isEmpty() && !game.blackPeerId.isEmpty()) {
 			QPixmap avatar;
-			AvatarDefs::getAvatarFromSslId(
-			        RsPeerId(game.blackPeerId.toStdString()), avatar);
-			if (!avatar.isNull()) item->setIcon(2, QIcon(avatar));
+			if (AvatarDefs::getAvatarFromSslId(
+			        RsPeerId(game.blackPeerId.toStdString()), avatar) && !avatar.isNull())
+				item->setIcon(2, QIcon(avatar));
 		}
 		item->setText(3, game.result);
 		item->setText(4, QString());
