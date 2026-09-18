@@ -74,6 +74,10 @@ public:
 	std::string mPeerId;
 	explicit RetroChessWindow(std::string peerid, int player = 0, QWidget *parent = 0);
 	explicit RetroChessWindow(const RsGxsId &gxsId, int player = 0, QWidget *parent = 0);
+	explicit RetroChessWindow(const RsGxsId &hostId, const QString &gameKey,
+	                          const QString &whiteId, const QString &whiteName,
+	                          const QString &blackId, const QString &blackName,
+	                          QWidget *parent = 0);
 	~RetroChessWindow();
 	QString activeGameDescription() const;
 	int currentplayer;
@@ -81,6 +85,8 @@ public:
 	RsGxsId mGxsId; // Store GXS identity if using a tunnel
 	RsGxsId mOwnGxsId; // Exact local identity used by this GXS tunnel
 	bool mIsGxs;
+	bool m_isSpectator;
+	bool m_flipped;
 	bool m_suppressLeave;
 	bool m_resultPopupShown;
 	bool m_rematchRequested;
@@ -222,6 +228,7 @@ public:
     void playerTurnNotice();
 	void closeForRematch();
 	void showGameResultDialog(bool localWon, bool draw = false, const QString &reason = QString());
+	void showSpectatorResult(const QString &result, const QString &reason);
 	void completeGameHistory(const QString &result, const QString &reason);
 	void activateBoardSquare(int square);
 	QDateTime m_gameStartedAt;
@@ -237,6 +244,7 @@ signals:
 	void gameEnded(QString gameId);
 	void gameReadyForHistory();
 	void sessionStateChanged(const QString &fen, uint32_t moveSequence);
+	void spectatorClosed(const RsGxsId &hostId, const QString &gameKey);
 };
 
 

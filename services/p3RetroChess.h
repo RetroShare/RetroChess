@@ -147,6 +147,10 @@ public:
 	void broadcastLeaderboardDataGxs(const QByteArray &data) override;
 	std::vector<RsGxsId> activeGxsTunnels() override;
 
+	// Spectator / Live Watching
+	bool sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
+	void sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
+
 	// Async tunnel management
 	void handleGxsTick(); // Called periodically by the core
 	void closePendingGxsTunnels();
@@ -220,6 +224,8 @@ private:
 	std::map<DistantChatPeerId, PendingDistantInvite> mPendingDistantChatInvites;
 	std::map<std::string, RsRetroChessGameSession> mGameSessions;
 	std::map<std::string, time_t> mLastSessionReconnect;
+	std::map<std::string, std::set<RsGxsId>> mSpectatorsByGame;
+	std::map<RsGxsId, QString> mPendingWatchRequests;
 
 	RsMutex mRetroChessMtx;
 	RsServiceControl *mServiceControl;

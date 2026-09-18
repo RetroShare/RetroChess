@@ -64,6 +64,12 @@ public:
 	void notifyChessStartGxs(const RsGxsId &gxs_id); 
 	void notifyAvailablePeersChanged();
 	void notifyLeaderboardDataGxs(const RsGxsId &gxs_id, const QByteArray &data);
+	void notifyChessWatchState(const RsGxsId &hostId, const QString &gameKey,
+	                           const QString &whiteId, const QString &whiteName,
+	                           const QString &blackId, const QString &blackName,
+	                           const QString &fen, uint32_t sequence);
+	void notifyChessWatchAction(const RsGxsId &hostId, const QString &gameKey, const QString &action);
+	void notifyChessWatchEnd(const RsGxsId &hostId, const QString &gameKey, const QString &reason);
 
 signals:
 	void NeMsgArrived(const RsPeerId &peer_id, QString str) ; // emitted when the peer gets a msg
@@ -86,6 +92,12 @@ signals:
 	void availablePeersChanged();
 	void leaderboardDataGxs(const RsGxsId &gxs_id, const QByteArray &data);
 
+	void chessWatchState(const RsGxsId &hostId, const QString &gameKey,
+	                     const QString &whiteId, const QString &whiteName,
+	                     const QString &blackId, const QString &blackName,
+	                     const QString &fen, uint32_t sequence);
+	void chessWatchAction(const RsGxsId &hostId, const QString &gameKey, const QString &action);
+	void chessWatchEnd(const RsGxsId &hostId, const QString &gameKey, const QString &reason);
 };
 
 #endif // NETEXAMPLENOTIFY_H

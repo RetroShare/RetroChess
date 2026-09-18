@@ -25,6 +25,21 @@ Leaderboard data is exchanged directly and gossiped across peers via secured GXS
 3. `{"type":"leaderboard_sync_req", "version":1}`:
    Requests that the remote peer reply with their known receipts.
 
+## Live Chess Spectator Mode (Watch Game)
+
+Contacts can watch ongoing chess games between other contacts in real time without interrupting the players:
+
+1. `{"type":"chess_watch_req", "version":1, "game_id":"..."}`:
+   Sent by a spectator to a playing contact to request watching their live game. Handled silently in the background without user prompts or game interruption.
+2. `{"type":"chess_watch_state", "version":1, "game_id":"...", "white_id":"...", "white_name":"...", "black_id":"...", "black_name":"...", "fen":"...", "sequence":12}`:
+   Replied by the player with the current match details and board position (FEN + sequence number).
+3. `{"type":"chess_watch_action", "version":1, "game_id":"...", "action":"move:..."}`:
+   Broadcast to all active spectators whenever either player makes a move or performs a game action.
+4. `{"type":"chess_watch_end", "version":1, "game_id":"...", "reason":"..."}`:
+   Sent to spectators when the game concludes or a player leaves.
+5. `{"type":"chess_watch_leave", "version":1, "game_id":"..."}`:
+   Sent by a spectator when closing the watch window to unregister from live move relays.
+
 # peer messge:
 qvm peer message assembly in a `QVariantMap`, format as `key`-`value`, usage:
 

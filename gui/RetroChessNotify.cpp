@@ -118,3 +118,21 @@ void RetroChessNotify::notifyLeaderboardDataGxs(const RsGxsId &gxs_id, const QBy
 {
 	emit leaderboardDataGxs(gxs_id, data);
 }
+
+void RetroChessNotify::notifyChessWatchState(const RsGxsId &hostId, const QString &gameKey,
+                                             const QString &whiteId, const QString &whiteName,
+                                             const QString &blackId, const QString &blackName,
+                                             const QString &fen, uint32_t sequence)
+{
+	emit chessWatchState(hostId, gameKey, whiteId, whiteName, blackId, blackName, fen, sequence);
+}
+
+void RetroChessNotify::notifyChessWatchAction(const RsGxsId &hostId, const QString &gameKey, const QString &action)
+{
+	emit chessWatchAction(hostId, gameKey, action);
+}
+
+void RetroChessNotify::notifyChessWatchEnd(const RsGxsId &hostId, const QString &gameKey, const QString &reason)
+{
+	emit chessWatchEnd(hostId, gameKey, reason);
+}

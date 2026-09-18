@@ -127,6 +127,10 @@ class RsRetroChess
 	virtual bool sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray &data) = 0;
 	virtual void broadcastLeaderboardDataGxs(const QByteArray &data) = 0;
 	virtual std::vector<RsGxsId> activeGxsTunnels() = 0;
+
+	// Spectator / Live Chess Watching over GXS tunnels
+	virtual bool sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey) = 0;
+	virtual void sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey) = 0;
 };
 
 
