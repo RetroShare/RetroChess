@@ -463,7 +463,7 @@ void NEMainpage::refreshAvailablePlayers()
             item->setData(1, Qt::UserRole, rank);
             item->setData(1, Qt::UserRole + 1, status);
             const QString lastSeenText = peer.lastSeen
-                    ? QLocale().toString(QDateTime::fromSecsSinceEpoch(peer.lastSeen), QLocale::ShortFormat)
+                    ? RetroChessSettings::formatDateTime(QDateTime::fromSecsSinceEpoch(peer.lastSeen))
                     : tr("Never");
             if (isSavedContacts) {
                 item->setText(2, lastSeenText);
@@ -1192,8 +1192,8 @@ void NEMainpage::refreshGameHistory()
 		item->m_endedAt = game.endedAt;
 		item->m_movesCount = game.moves.size();
 		item->setData(0, Qt::UserRole, game.id);
-		item->setText(0, QLocale().toString(
-		        game.endedAt.toLocalTime(), QLocale::ShortFormat));
+		item->setText(0, RetroChessSettings::formatDateTime(
+		        game.endedAt.toLocalTime()));
 		item->setText(1, game.whitePlayer);
 		item->setText(2, game.blackPlayer);
 		auto setGxsIdentity = [item](
@@ -1426,6 +1426,10 @@ void NEMainpage::setupMenuActions()
 		for (RetroChessWindow *window : mGameSessions->games())
 			if (window)
 				window->refreshBoardTheme();
+
+		refreshAvailablePlayers();
+		refreshLeaderboard();
+		refreshGameHistory();
 	});
 
 }
@@ -1700,8 +1704,11 @@ void NEMainpage::setupPlayersTab()
 	connect(ui->busyCheckBox, &QCheckBox::toggled, this, [](bool value) { rsRetroChess->setChessBusy(value); });
 	connect(ui->identitiesButton, &QPushButton::clicked, this, [this]() {
 		RetroChessSettingsDialog dialog(this, true);
-		dialog.exec();
-		refreshAvailablePlayers();
+		if (dialog.exec() == QDialog::Accepted) {
+			refreshAvailablePlayers();
+			refreshLeaderboard();
+			refreshGameHistory();
+		}
 	});
 	ui->showOnlineplayersButton->setIcon(QIcon(":/images/chess-knight.svg"));
 	ui->showOnlineplayersButton->setIconSize(QSize(24, 24));

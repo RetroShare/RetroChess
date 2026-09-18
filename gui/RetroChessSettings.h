@@ -25,6 +25,7 @@
 #include <QDialog>
 #include <QString>
 #include <QVector>
+#include <QDateTime>
 
 struct RetroChessBoardTheme
 {
@@ -47,6 +48,9 @@ public:
 	static bool gameResultSoundEnabled();
 	static bool invitationSoundEnabled();
 	static void setSoundOptions(bool move, bool capture, bool gameResult, bool invitation);
+	static int dateFormat();
+	static void setDateFormat(int format);
+	static QString formatDateTime(const QDateTime &dt);
 };
 
 class RetroChessSettingsDialog : public QDialog

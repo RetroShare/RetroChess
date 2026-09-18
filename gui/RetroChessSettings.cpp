@@ -43,6 +43,8 @@
 
 #include "gui/settings/rsharesettings.h"
 #include "gui/common/AvatarDefs.h"
+#include <QGroupBox>
+#include <QLocale>
 
 namespace {
 
@@ -192,9 +194,46 @@ void RetroChessSettings::setSoundOptions(
 	Settings->sync();
 }
 
+int RetroChessSettings::dateFormat()
+{
+	int val = Settings->valueFromGroup("RetroChess", "DateFormat", -1).toInt();
+	if (val < 0 || val > 2) {
+		val = Settings->getDateFormat();
+	}
+	if (val < 0 || val > 2) {
+		val = RshareSettings::DateFormat_System;
+	}
+	return val;
+}
+
+void RetroChessSettings::setDateFormat(int format)
+{
+	if (format < 0 || format > 2) {
+		format = RshareSettings::DateFormat_System;
+	}
+	Settings->setValueToGroup("RetroChess", "DateFormat", format);
+	Settings->sync();
+}
+
+QString RetroChessSettings::formatDateTime(const QDateTime &dt)
+{
+	if (!dt.isValid()) return QString();
+	const int fmt = dateFormat();
+	const QDateTime local = dt.toLocalTime();
+
+	if (fmt == RshareSettings::DateFormat_ISO) {
+		return local.date().toString(Qt::ISODate) + " " + local.time().toString("HH:mm");
+	}
+	if (fmt == RshareSettings::DateFormat_Text) {
+		return QLocale::system().toString(local.date(), QLocale::LongFormat) + " " +
+		       QLocale::system().toString(local.time(), QLocale::ShortFormat);
+	}
+	return QLocale::system().toString(local.date(), QLocale::ShortFormat) + " " +
+	       QLocale::system().toString(local.time(), QLocale::ShortFormat);
+}
+
 RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identitiesPage) : QDialog(parent)
 {
-	Q_UNUSED(identitiesPage);
 	setWindowTitle(tr("RetroChess Settings"));
 	setMinimumSize(780, 480);
 
@@ -202,6 +241,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	QHBoxLayout *content = new QHBoxLayout;
 	QListWidget *navigation = new QListWidget(this);
 	navigation->setFixedWidth(145);
+	navigation->addItem(tr("General"));
 	navigation->addItem(tr("Chess profile"));
 	navigation->addItem(tr("Board colours"));
 	navigation->addItem(tr("Sounds"));
@@ -211,13 +251,55 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	content->addWidget(pages, 1);
 	root->addLayout(content, 1);
 
+	// --- General Page ---
+	QWidget *generalPage = new QWidget(pages);
+	QVBoxLayout *generalRoot = new QVBoxLayout(generalPage);
+	QLabel *generalTitle = new QLabel(tr("General"), generalPage);
+	QFont titleFont = generalTitle->font();
+	titleFont.setPointSize(titleFont.pointSize() + 3);
+	titleFont.setBold(true);
+	generalTitle->setFont(titleFont);
+	generalRoot->addWidget(generalTitle);
+
+	QGroupBox *dateGroup = new QGroupBox(tr("Date Format"), generalPage);
+	QVBoxLayout *dateLayout = new QVBoxLayout(dateGroup);
+
+	QComboBox *cmboDateFormat = new QComboBox(dateGroup);
+	const QDateTime now = QDateTime::currentDateTime();
+
+	// 1. Format Système (ShortFormat)
+	cmboDateFormat->addItem(tr("System Default") + " (" +
+	        QLocale::system().toString(now.date(), QLocale::ShortFormat) + " " +
+	        QLocale::system().toString(now.time(), QLocale::ShortFormat) + ")",
+	        RshareSettings::DateFormat_System);
+
+	// 2. Format ISO (YYYY-MM-DD + HH:mm)
+	cmboDateFormat->addItem(tr("ISO 8601") + " (" +
+	        now.date().toString(Qt::ISODate) + " " +
+	        now.time().toString("HH:mm") + ")",
+	        RshareSettings::DateFormat_ISO);
+
+	// 3. Format Texte (LongFormat de Qt + Heure)
+	cmboDateFormat->addItem(tr("Text") + " (" +
+	        QLocale::system().toString(now.date(), QLocale::LongFormat) + " " +
+	        QLocale::system().toString(now.time(), QLocale::ShortFormat) + ")",
+	        RshareSettings::DateFormat_Text);
+
+	const int curFormat = RetroChessSettings::dateFormat();
+	const int dateIndex = cmboDateFormat->findData(curFormat);
+	if (dateIndex >= 0) {
+		cmboDateFormat->setCurrentIndex(dateIndex);
+	}
+
+	dateLayout->addWidget(cmboDateFormat);
+	generalRoot->addWidget(dateGroup);
+	generalRoot->addStretch();
+	pages->addWidget(generalPage);
+
 	// --- Chess Profile Page ---
 	QWidget *identityPage = new QWidget(pages);
 	QVBoxLayout *identityRoot = new QVBoxLayout(identityPage);
 	QLabel *identityTitle = new QLabel(tr("Chess profile"), identityPage);
-	QFont titleFont = identityTitle->font();
-	titleFont.setPointSize(titleFont.pointSize() + 3);
-	titleFont.setBold(true);
 	identityTitle->setFont(titleFont);
 	identityRoot->addWidget(identityTitle);
 
@@ -440,7 +522,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 
 	connect(navigation, &QListWidget::currentRowChanged,
 	        pages, &QStackedWidget::setCurrentIndex);
-	navigation->setCurrentRow(0);
+	navigation->setCurrentRow(identitiesPage ? 1 : 0);
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(
 	        QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
@@ -448,7 +530,8 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 	connect(buttons, &QDialogButtonBox::accepted, this,
-	        [this, group, moveSound, captureSound, resultSound, inviteSound, identityList, preferred]() {
+	        [this, cmboDateFormat, group, moveSound, captureSound, resultSound, inviteSound, identityList, preferred]() {
+		RetroChessSettings::setDateFormat(cmboDateFormat->currentData().toInt());
 		if (group->checkedButton()) {
 			RetroChessSettings::setBoardThemeId(
 			        group->checkedButton()->property("themeId").toString());

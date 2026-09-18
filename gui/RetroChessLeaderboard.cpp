@@ -39,6 +39,7 @@
 #include "gui/settings/rsharesettings.h"
 #include "gui/gxs/GxsIdTreeWidgetItem.h"
 #include "gui/ChessGameHistory.h"
+#include "gui/RetroChessSettings.h"
 #include "gui/common/AvatarDefs.h"
 #include "util/HandleRichText.h"
 #include <retroshare/rspeers.h>
@@ -369,7 +370,7 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 		                         QString::number(qRound(p.rd)), QString::number(p.games()),
 		                         QString::number(p.wins), QString::number(p.draws), QString::number(p.losses),
 		                         p.provisional() ? tr("Provisional") : tr("Rated"),
-		                         QLocale().toString(p.lastPlayed.toLocalTime(), QLocale::ShortFormat)};
+		                         RetroChessSettings::formatDateTime(p.lastPlayed.toLocalTime())};
 		for (int col = 0; col < values.size(); ++col) {
             auto *item = new QTableWidgetItem(values.at(col));
             if (col == 0 || (col >= 2 && col <= 7)) {
