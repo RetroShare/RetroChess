@@ -90,3 +90,4 @@ FORMS += \
           gui/toaster/ChessToaster.ui
 
 RESOURCES = gui/RetroChess_images.qrc
+RESOURCES += gui/RetroChess_pieces.qrc

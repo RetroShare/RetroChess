@@ -76,9 +76,7 @@ QTableWidgetItem *createMoveTableItem(const QString &notation, bool isWhite)
 	const QChar upper = firstChar.toUpper();
 	if (upper == 'K' || upper == 'Q' || upper == 'R' || upper == 'B' || upper == 'N' || upper == 'H') {
 		const QChar pieceCode = (upper == 'H') ? 'N' : upper;
-		const QString iconPath = QStringLiteral(":/piece/%1%2.svg")
-		        .arg(isWhite ? 'w' : 'b')
-		        .arg(pieceCode);
+		const QString iconPath = RetroChessSettings::pieceResource(isWhite ? 'w' : 'b', pieceCode);
 		const QString displayText = notation.mid(1);
 		return new QTableWidgetItem(QIcon(iconPath), displayText);
 	}
@@ -1954,7 +1952,7 @@ char RetroChessWindow::promotionChoiceForPawn(int color)
 	const QChar colorCode = color ? 'w' : 'b';
 	auto addChoice = [&choices, colorCode](const QString &name, QChar resourceCode, char gameCode) {
 		choices.addItem(
-		        QIcon(QString(":/piece/%1%2.svg").arg(colorCode).arg(resourceCode)),
+		        QIcon(RetroChessSettings::pieceResource(colorCode, resourceCode)),
 		        name, QString(QChar(gameCode)));
 	};
 	addChoice(tr("Queen"), 'Q', 'Q');
@@ -2265,6 +2263,10 @@ void RetroChessWindow::recordLastMove(int tile_num)
 
 void RetroChessWindow::refreshBoardTheme()
 {
+	for (int index = 0; index < m_move_history.size(); ++index) {
+		const int column = index % 2 + 1;
+		m_moveTable->setItem(index / 2, column, createMoveTableItem(m_move_history[index], column == 1));
+	}
 	const QColor borderColor = RetroChessSettings::boardTheme().dark.lighter(135);
 	const QString borderStyle = QString(
 	        "QLabel { background-color: %1; color: black; }")
@@ -2279,8 +2281,12 @@ void RetroChessWindow::refreshBoardTheme()
 			if (tile[row][column])
 				tile[row][column]->tileDisplay();
 
-	drawLastMove();
-	updateCapturedPiecesDisplay();
+	if (!m_boardHistory.isEmpty() && m_viewedHistoryPly >= 0)
+		showHistoryPly(m_viewedHistoryPly);
+	else {
+		drawLastMove();
+		updateCapturedPiecesDisplay();
+	}
 }
 
 void RetroChessWindow::closeForRematch()
@@ -2891,9 +2897,7 @@ QPixmap RetroChessWindow::renderCapturedStrip(
 
 	auto getStyledPiece = [&](char type, double size) -> QPixmap {
 		const QChar pieceCode = (type == 'H') ? 'N' : type;
-		const QString svgPath = QString(":/piece/%1%2.svg")
-		        .arg(isWhitePieces ? 'w' : 'b')
-		        .arg(pieceCode);
+		const QString svgPath = RetroChessSettings::pieceResource(isWhitePieces ? 'w' : 'b', pieceCode);
 
 		const int pSize = qMax(1, qRound(size * dpr));
 		QPixmap basePix = QIcon(svgPath).pixmap(QSize(pSize, pSize));

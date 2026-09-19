@@ -72,6 +72,7 @@ set(RETROCHESS_FORMS
 
 set(RETROCHESS_RESOURCES
     gui/RetroChess_images.qrc
+    gui/RetroChess_pieces.qrc
 )
 
 add_library(RetroChess MODULE

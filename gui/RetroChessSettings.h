@@ -24,6 +24,7 @@
 #include <QColor>
 #include <QDialog>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 #include <QDateTime>
 
@@ -39,6 +40,10 @@ struct RetroChessBoardTheme
 class RetroChessSettings
 {
 public:
+	static QStringList pieceThemes();
+	static QString pieceThemeId();
+	static void setPieceThemeId(const QString &id);
+	static QString pieceResource(QChar color, QChar piece, const QString &theme = QString());
 	static QVector<RetroChessBoardTheme> boardThemes();
 	static RetroChessBoardTheme boardTheme();
 	static QString boardThemeId();

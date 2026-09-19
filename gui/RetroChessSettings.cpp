@@ -31,6 +31,11 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QDir>
+#include <QFile>
+#include <QApplication>
+#include "chess.h"
+#include "ChessGameReviewDialog.h"
 #include <QMediaPlayer>
 #include <QPainter>
 #include <QPushButton>
@@ -54,12 +59,18 @@ public:
 	explicit ChessBoardPreviewWidget(QWidget *parent = nullptr) : QWidget(parent)
 	{
 		setFixedSize(228, 228);
-		m_pieceBB = QIcon(":/piece/bB.svg").pixmap(60, 60);
-		m_pieceBQ = QIcon(":/piece/bQ.svg").pixmap(60, 60);
-		m_pieceBP = QIcon(":/piece/bP.svg").pixmap(60, 60);
-		m_pieceWN = QIcon(":/piece/wN.svg").pixmap(60, 60);
-		m_pieceWK = QIcon(":/piece/wK.svg").pixmap(60, 60);
-		m_pieceWR = QIcon(":/piece/wR.svg").pixmap(60, 60);
+		setPieceTheme(RetroChessSettings::pieceThemeId());
+	}
+
+	void setPieceTheme(const QString &id)
+	{
+		m_pieceBB = QIcon(RetroChessSettings::pieceResource('b', 'B', id)).pixmap(60, 60);
+		m_pieceBQ = QIcon(RetroChessSettings::pieceResource('b', 'Q', id)).pixmap(60, 60);
+		m_pieceBP = QIcon(RetroChessSettings::pieceResource('b', 'P', id)).pixmap(60, 60);
+		m_pieceWN = QIcon(RetroChessSettings::pieceResource('w', 'N', id)).pixmap(60, 60);
+		m_pieceWK = QIcon(RetroChessSettings::pieceResource('w', 'K', id)).pixmap(60, 60);
+		m_pieceWR = QIcon(RetroChessSettings::pieceResource('w', 'R', id)).pixmap(60, 60);
+		update();
 	}
 
 	void setTheme(const RetroChessBoardTheme &theme)
@@ -129,6 +140,43 @@ private:
 };
 
 } // namespace
+
+QStringList RetroChessSettings::pieceThemes()
+{
+	static const QStringList available = []() {
+	QStringList themes{QStringLiteral("classic")};
+	for (const QString &id : QDir(":/piece").entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+		bool complete = true;
+		for (QChar color : QStringLiteral("wb"))
+			for (QChar piece : QStringLiteral("KQRBNP"))
+				complete = complete && QFile::exists(QString(":/piece/%1/%2%3.svg").arg(id).arg(color).arg(piece));
+		if (complete) themes.append(id);
+	}
+	return themes;
+	}();
+	return available;
+}
+
+QString RetroChessSettings::pieceThemeId()
+{
+	const QString id = Settings->valueFromGroup("RetroChess", "PieceTheme", "classic").toString();
+	return pieceThemes().contains(id) ? id : QStringLiteral("classic");
+}
+
+void RetroChessSettings::setPieceThemeId(const QString &id)
+{
+	Settings->setValueToGroup("RetroChess", "PieceTheme",
+	        pieceThemes().contains(id) ? id : QStringLiteral("classic"));
+}
+
+QString RetroChessSettings::pieceResource(QChar color, QChar piece, const QString &theme)
+{
+	const QString id = theme.isEmpty() ? pieceThemeId() : theme;
+	const QString classic = QString(":/piece/%1%2.svg").arg(color).arg(piece);
+	if (id == "classic") return classic;
+	const QString path = QString(":/piece/%1/%2%3.svg").arg(id).arg(color).arg(piece);
+	return QFile::exists(path) ? path : classic;
+}
 
 QVector<RetroChessBoardTheme> RetroChessSettings::boardThemes()
 {
@@ -244,6 +292,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	navigation->addItem(tr("General"));
 	navigation->addItem(tr("Chess profile"));
 	navigation->addItem(tr("Board colours"));
+	navigation->addItem(tr("Pieces"));
 	navigation->addItem(tr("Sounds"));
 
 	QStackedWidget *pages = new QStackedWidget(this);
@@ -518,6 +567,64 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 
 	soundsRoot->addLayout(soundRows);
 	soundsRoot->addStretch();
+
+	QWidget *piecesPage = new QWidget(pages);
+	QVBoxLayout *piecesRoot = new QVBoxLayout(piecesPage);
+	QLabel *piecesTitle = new QLabel(tr("Pieces"), piecesPage);
+	piecesTitle->setFont(titleFont);
+	piecesRoot->addWidget(piecesTitle);
+	piecesRoot->addWidget(new QLabel(tr("Choose a piece theme. Classic is the default."), piecesPage));
+	QHBoxLayout *piecesContent = new QHBoxLayout;
+	QButtonGroup *pieceGroup = new QButtonGroup(piecesPage);
+	pieceGroup->setExclusive(true);
+	QGridLayout *pieceButtons = new QGridLayout;
+	pieceButtons->setSpacing(8);
+	pieceButtons->setAlignment(Qt::AlignTop);
+	QVBoxLayout *piecePreviewLayout = new QVBoxLayout;
+	QLabel *piecePreviewTitle = new QLabel(piecesPage);
+	piecePreviewTitle->setFont(previewTitleFont);
+	ChessBoardPreviewWidget *piecePreview = new ChessBoardPreviewWidget(piecesPage);
+	piecePreview->setTheme(currentTheme);
+	piecePreviewLayout->addWidget(piecePreviewTitle);
+	piecePreviewLayout->addWidget(piecePreview);
+	piecePreviewLayout->addStretch();
+	piecesContent->addLayout(pieceButtons);
+	piecesContent->addLayout(piecePreviewLayout);
+	piecesContent->addStretch();
+	piecesRoot->addLayout(piecesContent, 1);
+	int pieceIndex = 0;
+	for (const QString &id : RetroChessSettings::pieceThemes()) {
+		QString name = id;
+		name[0] = name[0].toUpper();
+		if (id == "classic") name = tr("Classic");
+		if (id == "mpchess") name = QStringLiteral("MPChess");
+		auto *button = new QToolButton(piecesPage);
+		button->setText(name);
+		button->setIcon(QIcon(RetroChessSettings::pieceResource('w', 'N', id)));
+		button->setIconSize(QSize(52, 52));
+		button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+		button->setCheckable(true);
+		button->setFixedSize(104, 80);
+		button->setStyleSheet(buttonStyle);
+		button->setProperty("themeId", id);
+		pieceGroup->addButton(button);
+		pieceButtons->addWidget(button, pieceIndex / 3, pieceIndex % 3);
+		++pieceIndex;
+		connect(button, &QToolButton::toggled, this,
+		        [id, name, piecePreview, piecePreviewTitle, boardPreview](bool checked) {
+			if (!checked) return;
+			piecePreview->setPieceTheme(id);
+			boardPreview->setPieceTheme(id);
+			piecePreviewTitle->setText(name);
+		});
+		button->setChecked(id == RetroChessSettings::pieceThemeId());
+	}
+	for (QAbstractButton *button : group->buttons())
+		connect(button, &QAbstractButton::toggled, this, [button, piecePreview, themes](bool checked) {
+			if (checked) for (const auto &theme : themes)
+				if (theme.id == button->property("themeId").toString()) piecePreview->setTheme(theme);
+		});
+	pages->addWidget(piecesPage);
 	pages->addWidget(soundsPage);
 
 	connect(navigation, &QListWidget::currentRowChanged,
@@ -530,7 +637,9 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 	connect(buttons, &QDialogButtonBox::accepted, this,
-	        [this, cmboDateFormat, group, moveSound, captureSound, resultSound, inviteSound, identityList, preferred]() {
+	        [this, cmboDateFormat, group, pieceGroup, moveSound, captureSound, resultSound, inviteSound, identityList, preferred]() {
+		if (pieceGroup->checkedButton())
+			RetroChessSettings::setPieceThemeId(pieceGroup->checkedButton()->property("themeId").toString());
 		RetroChessSettings::setDateFormat(cmboDateFormat->currentData().toInt());
 		if (group->checkedButton()) {
 			RetroChessSettings::setBoardThemeId(
@@ -545,6 +654,10 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
             if (item->checkState() == Qt::Checked) enabledIds.push_back(RsGxsId(item->data(Qt::UserRole).toString().toStdString()));
         }
         rsRetroChess->setChessIdentities(enabledIds, RsGxsId(preferred->currentData().toString().toStdString()));
+		for (QWidget *widget : QApplication::allWidgets()) {
+			if (auto *game = qobject_cast<RetroChessWindow *>(widget)) game->refreshBoardTheme();
+			if (auto *review = qobject_cast<ChessGameReviewDialog *>(widget)) review->refreshPieceTheme();
+		}
 		accept();
 	});
 }
