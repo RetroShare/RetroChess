@@ -86,6 +86,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     m_ui(new Ui::RetroChessWindow),
     mGxsId(gxsId),
     mIsGxs(true),
+    m_isSpectator(false),
+    m_flipped(player != 0),
     m_suppressLeave(false),
     m_resultPopupShown(false),
     m_rematchRequested(false),
@@ -195,11 +197,95 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     initChessBoard();
 }
 
+RetroChessWindow::RetroChessWindow(const RsGxsId &hostId, const QString &gameKey,
+                                   const QString &whiteId, const QString &whiteName,
+                                   const QString &blackId, const QString &blackName,
+                                   QWidget *parent) :
+    QWidget(parent),
+    m_ui(new Ui::RetroChessWindow),
+    mGxsId(hostId),
+    mIsGxs(true),
+    m_isSpectator(true),
+    m_flipped(false),
+    m_suppressLeave(true),
+    m_resultPopupShown(false),
+    m_rematchRequested(false),
+    m_resultSubmitted(false),
+    m_capturedBlackLabel(nullptr),
+    m_capturedWhiteLabel(nullptr),
+    m_drawBadges{nullptr, nullptr},
+    m_winnerBadge(nullptr),
+    m_loserBadge(nullptr),
+    m_resultBar(nullptr),
+    m_resultTextLabel(nullptr),
+    m_resultInfoIcon(nullptr),
+    m_moveTable(nullptr),
+	m_historyFirstButton(nullptr),
+	m_historyPreviousButton(nullptr),
+	m_historyNextButton(nullptr),
+	m_historyLatestButton(nullptr),
+	m_viewedHistoryPly(0),
+    m_moveSound(nullptr),
+    m_captureSound(nullptr),
+    m_victorySound(nullptr),
+    m_drawSound(nullptr),
+    m_defeatSound(nullptr),
+    m_gameStatusBar(nullptr),
+    m_debugWidget(nullptr),
+    m_chessBoard(nullptr),
+    m_fullmoveNumber(1),
+    m_desynchronized(false),
+    m_gameStartedAt(QDateTime::currentDateTimeUtc()),
+    m_gameArchived(false)
+{
+    Q_UNUSED(whiteId)
+    Q_UNUSED(blackId)
+    m_ui->setupUi(this);
+    setAttribute(Qt::WA_DeleteOnClose);
+    mPeerId = hostId.toStdString();
+    mOwnGxsId = rsRetroChess ? rsRetroChess->ownGxsIdForPeer(hostId) : RsGxsId();
+    mGameId = gameKey;
+
+    m_ui->m_player1_result->hide();
+    m_ui->m_player2_result->hide();
+    m_ui->m_status_bar->hide();
+
+    m_flag_finished = 0;
+	m_checkedKingTile = -1;
+	m_enPassantPawnTile = -1;
+	m_pendingPromotionChoice = 0;
+	m_kingMoved[0] = m_kingMoved[1] = false;
+	m_rookMoved[0][0] = m_rookMoved[0][1] = false;
+	m_rookMoved[1][0] = m_rookMoved[1][1] = false;
+	m_halfmoveClock = 0;
+	click1 = nullptr;
+
+    count = 0;
+    turn = 1;
+    m_localplayer_turn = -1;
+    max = 0;
+    texp = new int[60];
+
+    // Player 1 at top: Black. Player 2 at bottom: White.
+    p1name = blackName.toUtf8().constData();
+    p2name = whiteName.toUtf8().constData();
+
+    QString title = tr("Watching: %1 (White) vs %2 (Black) [Spectator Mode]")
+            .arg(whiteName, blackName);
+    setWindowTitle(title);
+
+    initAccessories();
+    playerTurnNotice();
+    initChessBoard();
+}
+
 RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *parent) :
 	QWidget(parent),
 	m_ui( new Ui::RetroChessWindow() ),
 	mPeerId(peerid),
 	mIsGxs(false),
+	m_isSpectator(false),
+	m_flipped(player != 0),
 	m_suppressLeave(false),
 	m_resultPopupShown(false),
 	m_rematchRequested(false),
@@ -503,6 +589,20 @@ void RetroChessWindow::initAccessories()
 	abortButton->setToolTip(tr("Abort game"));
 	drawButton->setToolTip(tr("Offer a draw or claim a rule-based draw"));
 	resignButton->setToolTip(tr("Resign the game"));
+	if (m_isSpectator) {
+		abortButton->hide();
+		drawButton->hide();
+		resignButton->hide();
+		QPushButton *flipButton = new QPushButton(tr("Flip Board"), m_ui->moveHistoryFrame);
+		flipButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		flipButton->setStyleSheet("QPushButton { padding: 4px 2px; font-size: 11px; }");
+		flipButton->setToolTip(tr("Flip board view"));
+		gameControls->insertWidget(0, flipButton);
+		connect(flipButton, &QPushButton::clicked, this, [this]() {
+			m_flipped = !m_flipped;
+			layoutChessBoard();
+		});
+	}
 	m_ui->moveHistoryLayout->addLayout(gameControls);
 
 	connect(abortButton, &QPushButton::clicked, this, [this]() {
@@ -680,6 +780,11 @@ void RetroChessWindow::initAccessories()
 
 void RetroChessWindow::closeEvent(QCloseEvent *event)
 {
+	if (m_isSpectator) {
+		emit spectatorClosed(mGxsId, mGameId);
+		QWidget::closeEvent(event);
+		return;
+	}
 	if (!m_gameArchived)
 		completeGameHistory("*", tr("Game window closed before completion"));
     // send leave message
@@ -734,7 +839,7 @@ void RetroChessWindow::initChessBoard()
 	        this, &RetroChessWindow::sendMoveAction);
 
 	int i,j,k = 0;
-	const bool flipped = m_localplayer_turn == 0;
+	const bool flipped = m_flipped;
 
 	//borderDisplay (border size: 552 * 552)
 	{
@@ -910,7 +1015,7 @@ QString RetroChessWindow::activeGameDescription() const
 void RetroChessWindow::activateBoardSquare(int square)
 {
 	if (square < 0 || square >= 64 || m_flag_finished
-	        || m_localplayer_turn != turn) return;
+	        || m_isSpectator || m_localplayer_turn != turn) return;
 	showLivePosition();
 	Tile *destination = tile[square / 8][square % 8];
 	const int fromTile = count == 1 && click1 ? click1->tileNum : -1;
@@ -2173,6 +2278,53 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
     if (m_resultPopupShown)
         return;
     m_resultPopupShown = true;
+
+    if (m_isSpectator) {
+        if (RetroChessSettings::gameResultSoundEnabled()) {
+            QMediaPlayer *resultSound = draw ? m_drawSound : m_victorySound;
+            if (resultSound) {
+                resultSound->stop();
+                resultSound->setPosition(0);
+                resultSound->play();
+            }
+        }
+        QDialog *dialog = new QDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setWindowTitle(tr("Game over"));
+        dialog->setModal(true);
+        dialog->setMinimumWidth(390);
+        dialog->setStyleSheet(
+            "QDialog { background: #282725; color: white; }"
+            "QLabel#resultTitle { font-size: 25px; font-weight: bold; color: white; background: transparent; }"
+            "QLabel#resultText { font-size: 15px; color: #d6d6d6; background: transparent; }"
+            "QPushButton { min-height: 38px; padding: 4px 22px; font-size: 15px; "
+            "background: #3a3937; color: white; border: 1px solid #555; border-radius: 5px; }"
+            "QPushButton:hover { background: #4b7f2b; }"
+            "QPushButton:disabled { color: #888; background: #333; }");
+
+        QVBoxLayout *layout = new QVBoxLayout(dialog);
+        layout->setContentsMargins(24, 20, 24, 20);
+        layout->setSpacing(14);
+
+        QLabel *title = new QLabel(draw ? tr("Draw") : tr("Game over"), dialog);
+        title->setObjectName("resultTitle");
+        title->setAlignment(Qt::AlignCenter);
+        QLabel *message = new QLabel(!reason.isEmpty() ? reason : (draw ? tr("The game ended in a draw.") : tr("The game is over.")), dialog);
+        message->setObjectName("resultText");
+        message->setAlignment(Qt::AlignCenter);
+        layout->addWidget(title);
+        layout->addWidget(message);
+
+        QHBoxLayout *buttons = new QHBoxLayout;
+        QPushButton *closeButton = new QPushButton(tr("Close"), dialog);
+        buttons->addWidget(closeButton);
+        layout->addLayout(buttons);
+
+        connect(closeButton, &QPushButton::clicked, dialog, &QDialog::close);
+        dialog->show();
+        return;
+    }
+
 	submitRatedResult(localWon, draw);
 	const int winningColor = localWon ? m_localplayer_turn : 1 - m_localplayer_turn;
 	completeGameHistory(
@@ -2238,6 +2390,26 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
     dialog->show();
 }
 
+void RetroChessWindow::showSpectatorResult(const QString &result, const QString &reason)
+{
+    m_flag_finished = 1;
+    m_suppressLeave = true;
+    QString message;
+    bool isDraw = (result == "1/2-1/2");
+    if (result == "1-0")
+        message = tr("White won %1").arg(!reason.isEmpty() ? ("(" + reason + ")") : QString());
+    else if (result == "0-1")
+        message = tr("Black won %1").arg(!reason.isEmpty() ? ("(" + reason + ")") : QString());
+    else if (isDraw)
+        message = tr("Draw %1").arg(!reason.isEmpty() ? ("(" + reason + ")") : QString());
+    else
+        message = !reason.isEmpty() ? reason : tr("Game ended");
+
+    m_ui->m_status_bar->setText(message);
+    m_ui->m_status_bar->show();
+    showGameResultDialog(false, isDraw, message);
+}
+
 void RetroChessWindow::resizeEvent(QResizeEvent *event)
 {
 	QWidget::resizeEvent(event);
@@ -2280,7 +2452,7 @@ void RetroChessWindow::layoutChessBoard()
 	const int boardSide = 2 * BORDER_SIZE + 8 * tileSize;
 	const int offsetX = (board->width() - boardSide) / 2;
 	const int offsetY = (board->height() - boardSide) / 2;
-	const bool flipped = m_localplayer_turn == 0;
+	const bool flipped = m_flipped;
 
 	for (int row = 0; row < 8; ++row)
 		for (int col = 0; col < 8; ++col) {
@@ -2338,7 +2510,7 @@ void RetroChessWindow::recordBoardSnapshot(int fromTile, int toTile)
 	m_boardHistoryMoves.push_back(qMakePair(fromTile, toTile));
 	m_viewedHistoryPly = m_boardHistory.size() - 1;
 	updateHistoryControls();
-	emit sessionStateChanged(currentFen(), sessionMoveSequence());
+	emit sessionStateChanged(currentFen(), sessionMoveSequence(), fromTile, toTile, moveHistory());
 }
 
 QString RetroChessWindow::sessionFen() const
@@ -2353,7 +2525,8 @@ uint32_t RetroChessWindow::sessionMoveSequence() const
 }
 
 bool RetroChessWindow::restoreSessionPosition(
-        const QString &fen, uint32_t moveSequence, QString *error)
+        const QString &fen, uint32_t moveSequence,
+        const QStringList &moves, QString *error)
 {
 	if (!m_position.loadFen(fen, error) || !loadFen(fen, error)) return false;
 	m_boardHistory.clear();
@@ -2368,9 +2541,23 @@ bool RetroChessWindow::restoreSessionPosition(
 	m_viewedHistoryPly = m_boardHistory.size() - 1;
 	updateHistoryControls();
 	updateEndGameBadges(m_viewedHistoryPly);
-	emit sessionStateChanged(currentFen(), sessionMoveSequence());
-	showGameStatus(tr("Interrupted game restored"));
+	if (!moves.isEmpty()) {
+		setMoveHistory(moves);
+	}
+	if (!m_isSpectator) {
+		emit sessionStateChanged(currentFen(), sessionMoveSequence(), lastMoveFrom(), lastMoveTo(), moveHistory());
+		showGameStatus(tr("Interrupted game restored"));
+	} else if (moveSequence > 0) {
+		const bool wasCapture = !moves.isEmpty() && moves.last().contains('x');
+		playMoveSound(wasCapture);
+	}
 	return true;
+}
+
+bool RetroChessWindow::restoreSessionPosition(
+        const QString &fen, uint32_t moveSequence, QString *error)
+{
+	return restoreSessionPosition(fen, moveSequence, QStringList(), error);
 }
 
 void RetroChessWindow::showHistoryPly(int ply)
@@ -3045,6 +3232,11 @@ void RetroChessWindow::updateDebugWindow()
 
 void RetroChessWindow::stopForDesynchronization(const QString &reason)
 {
+	if (m_isSpectator) {
+		std::cerr << "Chess (Spectator): Desynchronization event ignored: "
+		          << reason.toStdString() << std::endl;
+		return;
+	}
 	if (m_desynchronized) return;
 	m_desynchronized = true;
 	m_flag_finished = 7;
@@ -3077,7 +3269,7 @@ void RetroChessWindow::showGameStatus(const QString &status)
 void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 {
 	if (action.startsWith("move:")) {
-		if (!remote || m_flag_finished || turn == m_localplayer_turn) return;
+		if (!remote || m_flag_finished || (!m_isSpectator && turn == m_localplayer_turn)) return;
 		const QStringList parts = action.split(':');
 		const bool verifiedPacket = parts.size() == 6;
 		const bool legacyPacket = parts.size() == 4;
@@ -3099,6 +3291,18 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 			return;
 		}
 		if (verifiedPacket && (!sequenceOk || sequence != m_boardHistory.size())) {
+			if (sequenceOk && sequence < m_boardHistory.size()) {
+				// Move has already been applied (e.g. duplicate packet from opponent or relay).
+				// Silently drop without raising an error.
+				return;
+			}
+			if (m_isSpectator) {
+				// In spectator mode, do not halt on skipped/misordered packet;
+				// the next FEN watch_state snapshot will synchronize the board.
+				std::cerr << "Chess (Spectator): Sequence mismatch (expected "
+				          << m_boardHistory.size() << " but got " << sequence << "), ignoring." << std::endl;
+				return;
+			}
 			stopForDesynchronization(tr("Expected move sequence %1 but received %2")
 			        .arg(m_boardHistory.size()).arg(sequence));
 			return;
@@ -3197,6 +3401,11 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		return;
 	}
 	if (action == "draw_offer" && remote) {
+		if (m_isSpectator) {
+			m_ui->m_status_bar->setText(tr("Draw offered by a player"));
+			m_ui->m_status_bar->show();
+			return;
+		}
 		// The question box spins a nested event loop; other network slots may
 		// destroy this window meanwhile (rematch accept, close). Do not touch
 		// any member after exec without checking.
@@ -3231,6 +3440,10 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 	if (action == "abort") {
 		m_flag_finished = 1;
 		m_suppressLeave = true;
+		if (m_isSpectator) {
+			showSpectatorResult("*", tr("Game aborted"));
+			return;
+		}
 		m_ui->m_status_bar->setText(remote ? tr("Opponent aborted the game") : tr("Game aborted"));
 		m_ui->m_status_bar->show();
 		completeGameHistory("*", remote ? tr("Opponent aborted") : tr("Game aborted"));
@@ -3238,11 +3451,19 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 	} else if (action == "resign") {
 		m_flag_finished = 1;
 		m_suppressLeave = true;
+		if (m_isSpectator) {
+			showSpectatorResult("*", tr("Player resigned"));
+			return;
+		}
 		showGameResultDialog(remote);
 		emit gameEnded(QString::fromStdString(mPeerId));
 	} else if (action == "draw_accept") {
 		m_flag_finished = 1;
 		m_suppressLeave = true;
+		if (m_isSpectator) {
+			showSpectatorResult("1/2-1/2", tr("Draw agreed"));
+			return;
+		}
 		showGameResultDialog(false, true);
 		emit gameEnded(QString::fromStdString(mPeerId));
 	}
@@ -3269,6 +3490,54 @@ void RetroChessWindow::clearLastMove()
 
         tile[ tile_num / 8][ tile_num % 8]->tileDisplay();	// revoery tile's background color
     }	// clear the last move queue
+}
+
+void RetroChessWindow::setLastMove(int fromTile, int toTile)
+{
+    clearLastMove();
+    if (fromTile >= 0 && fromTile < 64)
+        recordLastMove(fromTile);
+    if (toTile >= 0 && toTile < 64)
+        recordLastMove(toTile);
+    drawLastMove();
+    if (!m_boardHistoryMoves.isEmpty() && fromTile >= 0 && toTile >= 0) {
+        m_boardHistoryMoves.last() = qMakePair(fromTile, toTile);
+    }
+}
+
+int RetroChessWindow::lastMoveFrom() const
+{
+    if (m_last_move_que.size() >= 2)
+        return m_last_move_que.at(0);
+    return -1;
+}
+
+int RetroChessWindow::lastMoveTo() const
+{
+    if (m_last_move_que.size() >= 2)
+        return m_last_move_que.at(1);
+    return -1;
+}
+
+void RetroChessWindow::setMoveHistory(const QStringList &moves)
+{
+	m_move_history.clear();
+	m_moveTable->setRowCount(0);
+	for (int i = 0; i < moves.size(); ++i) {
+		const QString &notation = moves.at(i);
+		m_move_history.push_back(notation);
+		const int row = i / 2;
+		if (m_moveTable->rowCount() <= row) {
+			m_moveTable->insertRow(row);
+			auto *numItem = new QTableWidgetItem(QString::number(row + 1));
+			numItem->setTextAlignment(Qt::AlignCenter);
+			m_moveTable->setItem(row, 0, numItem);
+			m_moveTable->setRowHeight(row, 24);
+		}
+		const int column = (i % 2 == 0) ? 1 : 2;
+		m_moveTable->setItem(row, column, createMoveTableItem(notation, column == 1));
+	}
+	m_moveTable->scrollToBottom();
 }
 
 // 0: ongoing, 1: black win, 2: white win, 3: stalemate, 4: dead position,

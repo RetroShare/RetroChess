@@ -43,7 +43,11 @@ struct RsRetroChessGameSession
 	int localColor = 0;
 	QString fen;
 	uint32_t moveSequence = 0;
+	int lastFromTile = -1;
+	int lastToTile = -1;
+	QStringList moveHistory;
 	bool interrupted = false;
+	QString gameId;
 };
 
 struct RsRetroChessAvailablePeer
@@ -61,6 +65,7 @@ struct RsRetroChessAvailablePeer
 	time_t lastSeen = 0;
 	QString opponentId;
 	QString opponentName;
+	QString gameId;
 };
 
 class RsRetroChess ;
@@ -108,7 +113,8 @@ class RsRetroChess
 	virtual void registerGameSession(const RsRetroChessGameSession &session) = 0;
 	virtual void updateGameSession(
 	        const QString &endpointId, const QString &fen,
-	        uint32_t moveSequence) = 0;
+	        uint32_t moveSequence, int lastFromTile = -1, int lastToTile = -1,
+	        const QStringList &moveHistory = QStringList()) = 0;
 	virtual void unregisterGameSession(const QString &endpointId) = 0;
 	virtual std::vector<RsRetroChessGameSession> gameSessions() = 0;
 	virtual std::vector<RsRetroChessAvailablePeer> availableChessPeers() = 0;
@@ -127,6 +133,10 @@ class RsRetroChess
 	virtual bool sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray &data) = 0;
 	virtual void broadcastLeaderboardDataGxs(const QByteArray &data) = 0;
 	virtual std::vector<RsGxsId> activeGxsTunnels() = 0;
+
+	// Spectator / Live Chess Watching over GXS tunnels
+	virtual bool sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey) = 0;
+	virtual void sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey) = 0;
 };
 
 

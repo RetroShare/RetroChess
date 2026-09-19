@@ -125,7 +125,8 @@ public:
 	bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) override;
 	void registerGameSession(const RsRetroChessGameSession &session) override;
 	void updateGameSession(const QString &endpointId, const QString &fen,
-	                       uint32_t moveSequence) override;
+	                       uint32_t moveSequence, int lastFromTile = -1, int lastToTile = -1,
+	                       const QStringList &moveHistory = QStringList()) override;
 	void unregisterGameSession(const QString &endpointId) override;
 	std::vector<RsRetroChessGameSession> gameSessions() override;
 	std::vector<RsRetroChessAvailablePeer> availableChessPeers() override;
@@ -146,6 +147,10 @@ public:
 	bool sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray &data) override;
 	void broadcastLeaderboardDataGxs(const QByteArray &data) override;
 	std::vector<RsGxsId> activeGxsTunnels() override;
+
+	// Spectator / Live Watching
+	bool sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
+	void sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
 
 	// Async tunnel management
 	void handleGxsTick(); // Called periodically by the core
@@ -181,6 +186,7 @@ private:
 		RsGxsTunnelId probeTunnel;
 		QString opponentId;
 		QString opponentName;
+		QString gameId;
 	};
 	std::map<RsGxsId, ChessContact> mChessContacts;
 	std::set<RsGxsId> mChessIdentities;
@@ -220,6 +226,8 @@ private:
 	std::map<DistantChatPeerId, PendingDistantInvite> mPendingDistantChatInvites;
 	std::map<std::string, RsRetroChessGameSession> mGameSessions;
 	std::map<std::string, time_t> mLastSessionReconnect;
+	std::map<std::string, std::set<RsGxsId>> mSpectatorsByGame;
+	std::map<RsGxsId, QString> mPendingWatchRequests;
 
 	RsMutex mRetroChessMtx;
 	RsServiceControl *mServiceControl;

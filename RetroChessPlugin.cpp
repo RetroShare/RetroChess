@@ -80,6 +80,7 @@ RetroChessPlugin::RetroChessPlugin()
 {
 	qRegisterMetaType<RsPeerId>("RsPeerId");
 	qRegisterMetaType<RsGxsId>("RsGxsId");
+	qRegisterMetaType<uint32_t>("uint32_t");
 	mainpage = NULL ;
 	mRetroChess = NULL ;
 	mPlugInHandler = NULL;

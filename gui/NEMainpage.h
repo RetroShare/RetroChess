@@ -101,6 +101,16 @@ private slots:
 	void officialLobbyNewMessage(ChatWidget *chatWidget);
 	void archiveFinishedGame();
 	void refreshAvailablePlayers();
+	void watchSelectedActiveGame();
+	void chessWatchState(const RsGxsId &hostId, const QString &gameKey,
+	                     const QString &whiteId, const QString &whiteName,
+	                     const QString &blackId, const QString &blackName,
+	                     const QString &fen, int sequence,
+	                     int lastFrom = -1, int lastTo = -1,
+	                     const QStringList &moves = QStringList());
+	void chessWatchAction(const RsGxsId &hostId, const QString &gameKey, const QString &action);
+	void chessWatchEnd(const RsGxsId &hostId, const QString &gameKey, const QString &reason);
+	void onSpectatorClosed(const RsGxsId &hostId, const QString &gameKey);
 private:
 	RetroChessLeaderboard *mLeaderboard;
 	QTableWidget *mLeaderboardTable;
@@ -108,6 +118,7 @@ private:
 	Ui::NEMainpage *ui;
 	RetroChessNotify *mNotify;
 	RetroChessSessionService *mGameSessions;
+	QMap<QString, QPointer<RetroChessWindow>> mSpectatorWindows;
 	ChatDialog *mOfficialLobbyDialog;
 	unsigned int mLobbyUnreadCount;
 	RsEventsHandlerId_t mEventHandlerId_identity = 0;

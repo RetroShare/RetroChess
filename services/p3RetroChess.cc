@@ -486,15 +486,78 @@ void p3RetroChess::registerGameSession(const RsRetroChessGameSession &session)
 }
 
 void p3RetroChess::updateGameSession(
-        const QString &endpointId, const QString &fen, uint32_t moveSequence)
+        const QString &endpointId, const QString &fen, uint32_t moveSequence,
+        int lastFromTile, int lastToTile, const QStringList &moveHistory)
 {
+	std::vector<RsGxsTunnelId> spectatorTunnels;
+	RsRetroChessGameSession activeSession;
+	bool found = false;
 	{
 		RsStackMutex stack(mRetroChessMtx);
 		auto it = mGameSessions.find(endpointId.toStdString());
 		if (it == mGameSessions.end()) return;
 		it->second.fen = fen;
 		it->second.moveSequence = moveSequence;
+		it->second.lastFromTile = lastFromTile;
+		it->second.lastToTile = lastToTile;
+		it->second.moveHistory = moveHistory;
 		it->second.interrupted = false;
+		activeSession = it->second;
+		found = true;
+
+		auto specIt = mSpectatorsByGame.find(endpointId.toStdString());
+		if (specIt != mSpectatorsByGame.end()) {
+			for (const auto &specId : specIt->second) {
+				auto tIt = mActiveTunnels.find(specId);
+				if (tIt != mActiveTunnels.end())
+					spectatorTunnels.push_back(tIt->second);
+			}
+		}
+	}
+	if (found && !spectatorTunnels.empty() && mGxsTunnels) {
+		QString whiteId, whiteName, blackId, blackName;
+		const QString localId = activeSession.localIdentityId;
+		const QString oppId = activeSession.endpointId;
+
+		QString localName = "Player";
+		RsIdentityDetails localDetails;
+		if (rsIdentity && rsIdentity->getIdDetails(RsGxsId(localId.toStdString()), localDetails) && !localDetails.mNickname.empty())
+			localName = QString::fromUtf8(localDetails.mNickname.c_str());
+
+		QString oppName = "Opponent";
+		RsIdentityDetails oppDetails;
+		if (rsIdentity && rsIdentity->getIdDetails(RsGxsId(oppId.toStdString()), oppDetails) && !oppDetails.mNickname.empty())
+			oppName = QString::fromUtf8(oppDetails.mNickname.c_str());
+
+		if (activeSession.localColor == 0) {
+			whiteId = localId; whiteName = localName;
+			blackId = oppId; blackName = oppName;
+		} else {
+			whiteId = oppId; whiteName = oppName;
+			blackId = localId; blackName = localName;
+		}
+
+		QVariantMap reply;
+		reply["type"] = "chess_watch_state";
+		reply["version"] = 1;
+		reply["game_id"] = endpointId;
+		reply["white_id"] = whiteId;
+		reply["white_name"] = whiteName;
+		reply["black_id"] = blackId;
+		reply["black_name"] = blackName;
+		reply["fen"] = fen;
+		reply["sequence"] = static_cast<int>(moveSequence);
+		reply["last_from"] = lastFromTile;
+		reply["last_to"] = lastToTile;
+		QVariantList movesList;
+		for (const auto &m : moveHistory) movesList.append(m);
+		reply["moves"] = movesList;
+
+		const QByteArray replyBytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
+		for (const auto &tId : spectatorTunnels) {
+			mGxsTunnels->sendData(tId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+			                      reinterpret_cast<const uint8_t*>(replyBytes.constData()), replyBytes.size());
+		}
 	}
 	IndicateConfigChanged();
 }
@@ -502,10 +565,32 @@ void p3RetroChess::updateGameSession(
 void p3RetroChess::unregisterGameSession(const QString &endpointId)
 {
 	bool removed;
+	std::vector<RsGxsTunnelId> spectatorTunnels;
 	{
 		RsStackMutex stack(mRetroChessMtx);
 		removed = mGameSessions.erase(endpointId.toStdString()) > 0;
 		mLastSessionReconnect.erase(endpointId.toStdString());
+		auto specIt = mSpectatorsByGame.find(endpointId.toStdString());
+		if (specIt != mSpectatorsByGame.end()) {
+			for (const auto &specId : specIt->second) {
+				auto tIt = mActiveTunnels.find(specId);
+				if (tIt != mActiveTunnels.end())
+					spectatorTunnels.push_back(tIt->second);
+			}
+			mSpectatorsByGame.erase(specIt);
+		}
+	}
+	if (!spectatorTunnels.empty() && mGxsTunnels) {
+		QVariantMap endMsg;
+		endMsg["type"] = "chess_watch_end";
+		endMsg["version"] = 1;
+		endMsg["game_id"] = endpointId;
+		endMsg["reason"] = "Game ended";
+		const QByteArray bytes = QJsonDocument::fromVariant(endMsg).toJson(QJsonDocument::Compact);
+		for (const auto &tId : spectatorTunnels) {
+			mGxsTunnels->sendData(tId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+			                      reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+		}
 	}
 	if (removed) IndicateConfigChanged();
 }
@@ -536,6 +621,7 @@ std::vector<RsRetroChessAvailablePeer> p3RetroChess::availableChessPeers()
             peer.lastSeen = contact->second.lastSeen;
             peer.opponentId = contact->second.opponentId;
             peer.opponentName = contact->second.opponentName;
+            peer.gameId = contact->second.gameId;
         }
         result.push_back(peer);
     }
@@ -701,9 +787,9 @@ void p3RetroChess::tickChessPresence()
                 contact.nextProbe = now + std::min(60u, 15u << (contact.failures - 1));
                 if (!mActiveTunnels.count(id)) --inFlight;
                 changed = true;
-                // Presence failures must never tear down an invitation or game.
+                // Presence failures must never tear down an invitation, game, or watch request.
                 if (!mGameSessions.count(id.toStdString()) && !mInvitesToGxs.count(id)
-                        && !mInvitesFromGxs.count(id)) {
+                        && !mInvitesFromGxs.count(id) && !mPendingWatchRequests.count(id)) {
                     auto pending = mPendingTunnels.find(id);
                     auto active = mActiveTunnels.find(id);
                     RsGxsTunnelId tunnel;
@@ -721,6 +807,9 @@ void p3RetroChess::tickChessPresence()
             if (contact.lastSeen && now - contact.lastSeen > 120
                     && (contact.status == "available" || contact.status == "playing" || contact.status == "busy")) {
                 contact.status = "offline";
+                contact.opponentId.clear();
+                contact.opponentName.clear();
+                contact.gameId.clear();
                 changed = true;
             }
             if (enabled && !contact.deadline && now >= contact.nextProbe
@@ -774,6 +863,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         QString state = "available";
         QString opponentId;
         QString opponentName;
+        QString gameId;
         QByteArray reciprocalProbe;
         {
             RsStackMutex stack(mRetroChessMtx);
@@ -782,6 +872,11 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
                 if (entry.second.gxs && entry.second.localIdentityId == QString::fromStdString(info.source_gxs_id.toStdString())) {
                     state = "playing";
                     opponentId = entry.second.endpointId;
+                    gameId = entry.second.gameId;
+                    if (gameId.isEmpty()) {
+                        auto git = mGameIdByPeer.find(RsGxsId(opponentId.toStdString()));
+                        if (git != mGameIdByPeer.end()) gameId = git->second;
+                    }
                     break;
                 }
             }
@@ -828,6 +923,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         if (state == "playing" && !opponentId.isEmpty()) {
             reply["opponent_id"] = opponentId;
             if (!opponentName.isEmpty()) reply["opponent_name"] = opponentName;
+            if (!gameId.isEmpty()) reply["game_id"] = gameId;
         }
         const QByteArray bytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
         mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
@@ -842,6 +938,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         if (state != "available" && state != "playing" && state != "busy") return true;
         const QString opponentId = (state == "playing") ? message.value("opponent_id").toString() : QString();
         QString opponentName = (state == "playing") ? message.value("opponent_name").toString() : QString();
+        const QString gameId = (state == "playing") ? message.value("game_id").toString() : QString();
         if (opponentName.isEmpty() && !opponentId.isEmpty() && rsIdentity) {
             RsIdentityDetails oppDetails;
             if (rsIdentity->getIdDetails(RsGxsId(opponentId.toStdString()), oppDetails) && !oppDetails.mNickname.empty()) {
@@ -857,6 +954,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
             contact.status = state;
             contact.opponentId = opponentId;
             contact.opponentName = opponentName;
+            contact.gameId = gameId;
             contact.lastSeen = time(nullptr);
             contact.nextProbe = contact.lastSeen + 60;
             contact.deadline = 0;
@@ -905,13 +1003,18 @@ void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int 
 void p3RetroChess::requestGxsTunnel(const RsGxsId &gxsId)
 {
     // Check if we already have a tunnel
-    bool active;
+    bool active = false;
+    bool pending = false;
     {
         RsStackMutex stack(mRetroChessMtx);
         active = mActiveTunnels.count(gxsId) > 0;
+        pending = mPendingTunnels.count(gxsId) > 0;
     }
     if (active) {
         mNotify->notifyGxsTunnelReady(gxsId);
+        return;
+    }
+    if (pending) {
         return;
     }
     // Otherwise, start the async tunnel request
@@ -923,6 +1026,10 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
     if (!mGxsTunnels) return;
 
     if (to_gxs_id.isNull() || !rsIdentity || rsIdentity->isOwnId(to_gxs_id)) return;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        if (mPendingTunnels.count(to_gxs_id) > 0 || mActiveTunnels.count(to_gxs_id) > 0) return;
+    }
     const RsGxsId from_gxs_id = selectChessIdentity(to_gxs_id);
     if (from_gxs_id.isNull()) return;
 
@@ -1066,20 +1173,103 @@ bool p3RetroChess::sendRematchGxs(const RsGxsId &gxsId, int localColor)
 bool p3RetroChess::sendGameActionGxs(const RsGxsId &gxsId, const std::string &action)
 {
     RsGxsTunnelId tunnelId;
+    std::vector<RsGxsTunnelId> spectatorTunnels;
     {
         RsStackMutex stack(mRetroChessMtx);
         auto it = mActiveTunnels.find(gxsId);
         if (it == mActiveTunnels.end() || !mGxsTunnels)
             return false;
         tunnelId = it->second;
+
+        auto specIt = mSpectatorsByGame.find(gxsId.toStdString());
+        if (specIt != mSpectatorsByGame.end()) {
+            for (const auto &specId : specIt->second) {
+                auto tIt = mActiveTunnels.find(specId);
+                if (tIt != mActiveTunnels.end())
+                    spectatorTunnels.push_back(tIt->second);
+            }
+        }
     }
     QVariantMap map;
     map.insert("type", "game_action");
     map.insert("action", QString::fromStdString(action));
     const QByteArray message = QJsonDocument::fromVariant(map).toJson(QJsonDocument::Compact);
-    return mGxsTunnels->sendData(
+    bool sent = mGxsTunnels->sendData(
             tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
             reinterpret_cast<const uint8_t*>(message.constData()), message.size());
+
+    if (!spectatorTunnels.empty() && mGxsTunnels) {
+        QVariantMap specMap;
+        specMap.insert("type", "chess_watch_action");
+        specMap.insert("version", 1);
+        specMap.insert("game_id", QString::fromStdString(gxsId.toStdString()));
+        specMap.insert("action", QString::fromStdString(action));
+        const QByteArray specMsg = QJsonDocument::fromVariant(specMap).toJson(QJsonDocument::Compact);
+        for (const auto &sTunnel : spectatorTunnels) {
+            mGxsTunnels->sendData(sTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                                  reinterpret_cast<const uint8_t*>(specMsg.constData()), specMsg.size());
+        }
+    }
+
+    return sent;
+}
+
+bool p3RetroChess::sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey)
+{
+    if (hostPlayerId.isNull() || !mGxsTunnels) return false;
+
+    RsGxsTunnelId tunnelId;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto it = mActiveTunnels.find(hostPlayerId);
+        if (it != mActiveTunnels.end()) {
+            tunnelId = it->second;
+        } else {
+            mPendingWatchRequests[hostPlayerId] = gameKey;
+        }
+    }
+
+    if (!tunnelId.isNull()) {
+        std::cout << "Chess: Sending watch request to " << hostPlayerId << " over active tunnel " << tunnelId
+                  << " for game " << gameKey.toStdString() << std::endl;
+        QVariantMap req;
+        req["type"] = "chess_watch_req";
+        req["version"] = 1;
+        req["game_id"] = gameKey;
+        const QByteArray bytes = QJsonDocument::fromVariant(req).toJson(QJsonDocument::Compact);
+        return mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                                     reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+    }
+
+    std::cout << "Chess: Queueing watch request and requesting tunnel for host " << hostPlayerId
+              << " for game " << gameKey.toStdString() << std::endl;
+    // Tunnel not active yet: request it
+    requestGxsTunnel(hostPlayerId);
+    return true;
+}
+
+void p3RetroChess::sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey)
+{
+    if (hostPlayerId.isNull() || !mGxsTunnels) return;
+
+    RsGxsTunnelId tunnelId;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        mPendingWatchRequests.erase(hostPlayerId);
+        auto it = mActiveTunnels.find(hostPlayerId);
+        if (it != mActiveTunnels.end())
+            tunnelId = it->second;
+    }
+
+    if (!tunnelId.isNull()) {
+        QVariantMap msg;
+        msg["type"] = "chess_watch_leave";
+        msg["version"] = 1;
+        msg["game_id"] = gameKey;
+        const QByteArray bytes = QJsonDocument::fromVariant(msg).toJson(QJsonDocument::Compact);
+        mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                              reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+    }
 }
 
 bool p3RetroChess::sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray &data)
@@ -1349,6 +1539,18 @@ void p3RetroChess::handleGxsTick()
                 flushes.push_back(std::make_pair(it->second, inviteIt->second));
                 mPendingGxsInvites.erase(inviteIt);
             }
+            auto watchIt = mPendingWatchRequests.find(it->first);
+            if (watchIt != mPendingWatchRequests.end()) {
+                std::cout << "Chess: Tunnel ready, flushing queued watch request to " << it->first
+                          << " for game " << watchIt->second.toStdString() << std::endl;
+                QVariantMap req;
+                req["type"] = "chess_watch_req";
+                req["version"] = 1;
+                req["game_id"] = watchIt->second;
+                const std::string reqMsg = QJsonDocument::fromVariant(req).toJson(QJsonDocument::Compact).toStdString();
+                flushes.push_back(std::make_pair(it->second, reqMsg));
+                mPendingWatchRequests.erase(watchIt);
+            }
             ready.push_back(it->first);
         }
         // TUNNEL_DN is also the engine's initial, still-connecting state.
@@ -1509,7 +1711,162 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         mNotify->notifyChessRematchGxs(sender_id, remoteColor);
 
     } else if (type == "game_action") {
-        mNotify->notifyChessGameActionGxs(sender_id, map.value("action").toString());
+        const QString action = map.value("action").toString();
+        mNotify->notifyChessGameActionGxs(sender_id, action);
+
+        std::vector<RsGxsTunnelId> spectatorTunnels;
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            auto specIt = mSpectatorsByGame.find(sender_id.toStdString());
+            if (specIt != mSpectatorsByGame.end()) {
+                for (const auto &specId : specIt->second) {
+                    auto tIt = mActiveTunnels.find(specId);
+                    if (tIt != mActiveTunnels.end())
+                        spectatorTunnels.push_back(tIt->second);
+                }
+            }
+        }
+        if (!spectatorTunnels.empty() && mGxsTunnels) {
+            QVariantMap specMap;
+            specMap.insert("type", "chess_watch_action");
+            specMap.insert("version", 1);
+            specMap.insert("game_id", QString::fromStdString(sender_id.toStdString()));
+            specMap.insert("action", action);
+            const QByteArray specMsg = QJsonDocument::fromVariant(specMap).toJson(QJsonDocument::Compact);
+            for (const auto &sTunnel : spectatorTunnels) {
+                mGxsTunnels->sendData(sTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                                      reinterpret_cast<const uint8_t*>(specMsg.constData()), specMsg.size());
+            }
+        }
+
+    } else if (type == "chess_watch_req") {
+        const QString reqGameId = map.value("game_id").toString();
+        RsRetroChessGameSession activeSession;
+        bool foundSession = false;
+        std::string sessionEndpoint;
+
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            for (const auto &entry : mGameSessions) {
+                if (entry.second.gxs) {
+                    const QString oppIdStr = QString::fromStdString(entry.second.endpointId.toStdString());
+                    const QString localIdStr = entry.second.localIdentityId;
+                    if (reqGameId.isEmpty() || reqGameId.contains(oppIdStr) || reqGameId.contains(localIdStr)
+                            || (!entry.second.gameId.isEmpty() && reqGameId == entry.second.gameId)) {
+                        activeSession = entry.second;
+                        sessionEndpoint = entry.first;
+                        foundSession = true;
+                        break;
+                    }
+                }
+            }
+            if (foundSession) {
+                mSpectatorsByGame[sessionEndpoint].insert(sender_id);
+                mActiveTunnels[sender_id] = tunnel_id;
+            }
+        }
+
+        std::cout << "Chess: Received chess_watch_req from " << sender_id
+                  << " for game " << reqGameId.toStdString()
+                  << " (foundSession=" << (foundSession ? "true" : "false") << ")" << std::endl;
+
+        if (foundSession && mGxsTunnels) {
+            QString whiteId, whiteName, blackId, blackName;
+            const QString localId = activeSession.localIdentityId;
+            const QString oppId = activeSession.endpointId;
+
+            QString localName = "Player";
+            RsIdentityDetails localDetails;
+            if (rsIdentity && rsIdentity->getIdDetails(RsGxsId(localId.toStdString()), localDetails) && !localDetails.mNickname.empty())
+                localName = QString::fromUtf8(localDetails.mNickname.c_str());
+
+            QString oppName = "Opponent";
+            RsIdentityDetails oppDetails;
+            if (rsIdentity && rsIdentity->getIdDetails(RsGxsId(oppId.toStdString()), oppDetails) && !oppDetails.mNickname.empty())
+                oppName = QString::fromUtf8(oppDetails.mNickname.c_str());
+
+            if (activeSession.localColor == 0) {
+                whiteId = localId; whiteName = localName;
+                blackId = oppId; blackName = oppName;
+            } else {
+                whiteId = oppId; whiteName = oppName;
+                blackId = localId; blackName = localName;
+            }
+
+            QVariantMap reply;
+            reply["type"] = "chess_watch_state";
+            reply["version"] = 1;
+            reply["game_id"] = reqGameId.isEmpty() ? QString::fromStdString(sessionEndpoint) : reqGameId;
+            reply["white_id"] = whiteId;
+            reply["white_name"] = whiteName;
+            reply["black_id"] = blackId;
+            reply["black_name"] = blackName;
+            reply["fen"] = activeSession.fen;
+            reply["sequence"] = static_cast<int>(activeSession.moveSequence);
+            reply["last_from"] = activeSession.lastFromTile;
+            reply["last_to"] = activeSession.lastToTile;
+            QVariantList movesList;
+            for (const auto &m : activeSession.moveHistory) movesList.append(m);
+            reply["moves"] = movesList;
+
+            std::cout << "Chess: Sending chess_watch_state to spectator " << sender_id
+                      << " (FEN: " << activeSession.fen.toStdString()
+                      << ", lastMove: " << activeSession.lastFromTile << "->" << activeSession.lastToTile
+                      << ", movesCount: " << activeSession.moveHistory.size() << ")" << std::endl;
+
+            const QByteArray replyBytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
+            mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                                  reinterpret_cast<const uint8_t*>(replyBytes.constData()), replyBytes.size());
+        } else if (mGxsTunnels) {
+            QVariantMap failReply;
+            failReply["type"] = "chess_watch_end";
+            failReply["version"] = 1;
+            failReply["game_id"] = reqGameId;
+            failReply["reason"] = "Game not active";
+            const QByteArray failBytes = QJsonDocument::fromVariant(failReply).toJson(QJsonDocument::Compact);
+            mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                                  reinterpret_cast<const uint8_t*>(failBytes.constData()), failBytes.size());
+        }
+
+    } else if (type == "chess_watch_state") {
+        const QString gameId = map.value("game_id").toString();
+        const QString whiteId = map.value("white_id").toString();
+        const QString whiteName = map.value("white_name").toString();
+        const QString blackId = map.value("black_id").toString();
+        const QString blackName = map.value("black_name").toString();
+        const QString fen = map.value("fen").toString();
+        const int sequence = map.value("sequence").toInt();
+        const int lastFrom = map.contains("last_from") ? map.value("last_from").toInt() : -1;
+        const int lastTo = map.contains("last_to") ? map.value("last_to").toInt() : -1;
+        QStringList moves;
+        if (map.contains("moves")) {
+            for (const auto &v : map.value("moves").toList())
+                moves.append(v.toString());
+        }
+        std::cout << "Chess: Received chess_watch_state from " << sender_id
+                  << " for game " << gameId.toStdString() << " (FEN=" << fen.toStdString()
+                  << ", lastMove=" << lastFrom << "->" << lastTo
+                  << ", movesCount=" << moves.size() << ")" << std::endl;
+        mNotify->notifyChessWatchState(sender_id, gameId, whiteId, whiteName, blackId, blackName, fen, sequence, lastFrom, lastTo, moves);
+
+    } else if (type == "chess_watch_action") {
+        const QString gameId = map.value("game_id").toString();
+        const QString action = map.value("action").toString();
+        mNotify->notifyChessWatchAction(sender_id, gameId, action);
+
+    } else if (type == "chess_watch_end") {
+        const QString gameId = map.value("game_id").toString();
+        const QString reason = map.value("reason").toString();
+        mNotify->notifyChessWatchEnd(sender_id, gameId, reason);
+
+    } else if (type == "chess_watch_leave") {
+        const QString gameId = map.value("game_id").toString();
+        RsStackMutex stack(mRetroChessMtx);
+        for (auto &entry : mSpectatorsByGame) {
+            if (gameId.isEmpty() || gameId.contains(QString::fromStdString(entry.first))) {
+                entry.second.erase(sender_id);
+            }
+        }
 
     } else if (type == "leaderboard_receipt" || type == "leaderboard_sync" || type == "leaderboard_sync_req") {
         mNotify->notifyLeaderboardDataGxs(sender_id, QByteArray((const char*)data, data_size));
@@ -1529,14 +1886,44 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
 }
 
 void p3RetroChess::player_leave_gxs(const RsGxsId &gxs_id) {
-    RsStackMutex stack(mRetroChessMtx);
-    auto it = mActiveTunnels.find(gxs_id);
-    if (it == mActiveTunnels.end() || !mGxsTunnels) return;
+    RsGxsTunnelId tunnelId;
+    std::vector<RsGxsTunnelId> spectatorTunnels;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto it = mActiveTunnels.find(gxs_id);
+        if (it != mActiveTunnels.end()) tunnelId = it->second;
+
+        auto specIt = mSpectatorsByGame.find(gxs_id.toStdString());
+        if (specIt != mSpectatorsByGame.end()) {
+            for (const auto &specId : specIt->second) {
+                auto tIt = mActiveTunnels.find(specId);
+                if (tIt != mActiveTunnels.end())
+                    spectatorTunnels.push_back(tIt->second);
+            }
+            mSpectatorsByGame.erase(specIt);
+        }
+    }
+    if (tunnelId.isNull() || !mGxsTunnels) return;
 
     const std::string leave = "{\"type\":\"player_leave\"}";
-    if (mGxsTunnels->sendData(it->second, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                              (const uint8_t*)leave.c_str(), leave.size()))
+    if (mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                              (const uint8_t*)leave.c_str(), leave.size())) {
+        RsStackMutex stack(mRetroChessMtx);
         mPendingGxsCloses[gxs_id] = time(NULL) + 2;
+    }
+
+    if (!spectatorTunnels.empty()) {
+        QVariantMap endMsg;
+        endMsg["type"] = "chess_watch_end";
+        endMsg["version"] = 1;
+        endMsg["game_id"] = QString::fromStdString(gxs_id.toStdString());
+        endMsg["reason"] = "Player left";
+        const QByteArray bytes = QJsonDocument::fromVariant(endMsg).toJson(QJsonDocument::Compact);
+        for (const auto &tId : spectatorTunnels) {
+            mGxsTunnels->sendData(tId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                                  reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+        }
+    }
 }
 
 void p3RetroChess::closePendingGxsTunnels()

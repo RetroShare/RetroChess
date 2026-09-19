@@ -74,6 +74,10 @@ public:
 	std::string mPeerId;
 	explicit RetroChessWindow(std::string peerid, int player = 0, QWidget *parent = 0);
 	explicit RetroChessWindow(const RsGxsId &gxsId, int player = 0, QWidget *parent = 0);
+	explicit RetroChessWindow(const RsGxsId &hostId, const QString &gameKey,
+	                          const QString &whiteId, const QString &whiteName,
+	                          const QString &blackId, const QString &blackName,
+	                          QWidget *parent = 0);
 	~RetroChessWindow();
 	QString activeGameDescription() const;
 	int currentplayer;
@@ -81,6 +85,8 @@ public:
 	RsGxsId mGxsId; // Store GXS identity if using a tunnel
 	RsGxsId mOwnGxsId; // Exact local identity used by this GXS tunnel
 	bool mIsGxs;
+	bool m_isSpectator;
+	bool m_flipped;
 	bool m_suppressLeave;
 	bool m_resultPopupShown;
 	bool m_rematchRequested;
@@ -106,6 +112,10 @@ public:
 	void showLivePosition();
 	QString sessionFen() const;
 	uint32_t sessionMoveSequence() const;
+	bool restoreSessionPosition(
+	        const QString &fen, uint32_t moveSequence,
+	        const QStringList &moves,
+	        QString *error = nullptr);
 	bool restoreSessionPosition(
 	        const QString &fen, uint32_t moveSequence,
 	        QString *error = nullptr);
@@ -213,8 +223,13 @@ public:
 	void showGameStatus(const QString &status);
 	void refreshBoardTheme();
 	ChessGameRecord historyRecord() const;
+	QStringList moveHistory() const { return m_move_history; }
+	void setMoveHistory(const QStringList &moves);
     void drawLastMove();
     void clearLastMove();
+    void setLastMove(int fromTile, int toTile);
+    int lastMoveFrom() const;
+    int lastMoveTo() const;
 
     int resultJudge();	// judge result (slow method)
     void showPlayerLeaveMsg();	// show player leave message
@@ -222,6 +237,7 @@ public:
     void playerTurnNotice();
 	void closeForRematch();
 	void showGameResultDialog(bool localWon, bool draw = false, const QString &reason = QString());
+	void showSpectatorResult(const QString &result, const QString &reason);
 	void completeGameHistory(const QString &result, const QString &reason);
 	void activateBoardSquare(int square);
 	QDateTime m_gameStartedAt;
@@ -236,7 +252,8 @@ signals:
 	void gameClosed(QString gameId);
 	void gameEnded(QString gameId);
 	void gameReadyForHistory();
-	void sessionStateChanged(const QString &fen, uint32_t moveSequence);
+	void sessionStateChanged(const QString &fen, uint32_t moveSequence, int fromTile = -1, int toTile = -1, const QStringList &moves = QStringList());
+	void spectatorClosed(const RsGxsId &hostId, const QString &gameKey);
 };
 
 
