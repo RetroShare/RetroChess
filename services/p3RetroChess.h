@@ -186,6 +186,7 @@ private:
 		RsGxsTunnelId probeTunnel;
 		QString opponentId;
 		QString opponentName;
+		QString gameId;
 	};
 	std::map<RsGxsId, ChessContact> mChessContacts;
 	std::set<RsGxsId> mChessIdentities;

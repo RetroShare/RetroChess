@@ -621,6 +621,7 @@ std::vector<RsRetroChessAvailablePeer> p3RetroChess::availableChessPeers()
             peer.lastSeen = contact->second.lastSeen;
             peer.opponentId = contact->second.opponentId;
             peer.opponentName = contact->second.opponentName;
+            peer.gameId = contact->second.gameId;
         }
         result.push_back(peer);
     }
@@ -806,6 +807,9 @@ void p3RetroChess::tickChessPresence()
             if (contact.lastSeen && now - contact.lastSeen > 120
                     && (contact.status == "available" || contact.status == "playing" || contact.status == "busy")) {
                 contact.status = "offline";
+                contact.opponentId.clear();
+                contact.opponentName.clear();
+                contact.gameId.clear();
                 changed = true;
             }
             if (enabled && !contact.deadline && now >= contact.nextProbe
@@ -859,6 +863,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         QString state = "available";
         QString opponentId;
         QString opponentName;
+        QString gameId;
         QByteArray reciprocalProbe;
         {
             RsStackMutex stack(mRetroChessMtx);
@@ -867,6 +872,11 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
                 if (entry.second.gxs && entry.second.localIdentityId == QString::fromStdString(info.source_gxs_id.toStdString())) {
                     state = "playing";
                     opponentId = entry.second.endpointId;
+                    gameId = entry.second.gameId;
+                    if (gameId.isEmpty()) {
+                        auto git = mGameIdByPeer.find(RsGxsId(opponentId.toStdString()));
+                        if (git != mGameIdByPeer.end()) gameId = git->second;
+                    }
                     break;
                 }
             }
@@ -913,6 +923,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         if (state == "playing" && !opponentId.isEmpty()) {
             reply["opponent_id"] = opponentId;
             if (!opponentName.isEmpty()) reply["opponent_name"] = opponentName;
+            if (!gameId.isEmpty()) reply["game_id"] = gameId;
         }
         const QByteArray bytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
         mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
@@ -927,6 +938,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         if (state != "available" && state != "playing" && state != "busy") return true;
         const QString opponentId = (state == "playing") ? message.value("opponent_id").toString() : QString();
         QString opponentName = (state == "playing") ? message.value("opponent_name").toString() : QString();
+        const QString gameId = (state == "playing") ? message.value("game_id").toString() : QString();
         if (opponentName.isEmpty() && !opponentId.isEmpty() && rsIdentity) {
             RsIdentityDetails oppDetails;
             if (rsIdentity->getIdDetails(RsGxsId(opponentId.toStdString()), oppDetails) && !oppDetails.mNickname.empty()) {
@@ -942,6 +954,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
             contact.status = state;
             contact.opponentId = opponentId;
             contact.opponentName = opponentName;
+            contact.gameId = gameId;
             contact.lastSeen = time(nullptr);
             contact.nextProbe = contact.lastSeen + 60;
             contact.deadline = 0;
@@ -1738,7 +1751,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
                 if (entry.second.gxs) {
                     const QString oppIdStr = QString::fromStdString(entry.second.endpointId.toStdString());
                     const QString localIdStr = entry.second.localIdentityId;
-                    if (reqGameId.isEmpty() || reqGameId.contains(oppIdStr) || reqGameId.contains(localIdStr)) {
+                    if (reqGameId.isEmpty() || reqGameId.contains(oppIdStr) || reqGameId.contains(localIdStr)
+                            || (!entry.second.gameId.isEmpty() && reqGameId == entry.second.gameId)) {
                         activeSession = entry.second;
                         sessionEndpoint = entry.first;
                         foundSession = true;

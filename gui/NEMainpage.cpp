@@ -178,7 +178,9 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		RetroChessWindow *window = mGameSessions->game(key);
 		QTreeWidgetItem *item = new QTreeWidgetItem(ui->active_games);
 		item->setText(0, window ? window->activeGameDescription() : key);
-		item->setText(2, key);
+		const QString displayId = (window && !window->mGameId.isEmpty()) ? window->mGameId : key;
+		item->setText(2, displayId);
+		item->setToolTip(2, displayId);
 		item->setData(0, Qt::UserRole, key);
 		item->setData(0, Qt::UserRole + 1, "local");
 		if (window) item->setToolTip(0, window->windowTitle());
@@ -710,6 +712,7 @@ void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailab
 		QString idA;
 		QString nameB;
 		QString idB;
+		QString gameId;
 	};
 	QMap<QString, MatchInfo> activeMatches;
 
@@ -741,15 +744,22 @@ void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailab
 		}
 
 		if (!activeMatches.contains(canonicalKey)) {
-			activeMatches[canonicalKey] = {nameA, idA, nameB, idB};
+			activeMatches[canonicalKey] = {nameA, idA, nameB, idB, peer.gameId};
 		} else {
 			auto &existing = activeMatches[canonicalKey];
+			if (existing.gameId.isEmpty() && !peer.gameId.isEmpty())
+				existing.gameId = peer.gameId;
 			if (existing.idA == idB && existing.nameA == idB.left(12) && !nameB.isEmpty() && nameB != idB.left(12))
 				existing.nameA = nameB;
 			if (existing.idB == idA && existing.nameB == idA.left(12) && !nameA.isEmpty() && nameA != idA.left(12))
 				existing.nameB = nameA;
 		}
 	}
+
+	auto formatGameId = [](const MatchInfo &m) -> QString {
+		if (!m.gameId.isEmpty()) return m.gameId;
+		return QString("%1_%2").arg(m.idA.left(8), m.idB.left(8));
+	};
 
 	auto setupWatchButton = [this](QTreeWidgetItem *item) {
 		if (!ui->active_games->itemWidget(item, 1)) {
@@ -772,12 +782,15 @@ void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailab
 				retainedKeys.insert(key);
 				const auto &m = activeMatches.value(key);
 				item->setText(0, tr("%1 — %2 (Contact Match)").arg(m.nameA, m.nameB));
-				item->setText(2, tr("Contact Match"));
+				const QString displayId = formatGameId(m);
+				item->setText(2, displayId);
+				item->setToolTip(2, displayId);
 				item->setToolTip(0, tr("Active match between %1 (%2) and %3 (%4)").arg(m.nameA, m.idA, m.nameB, m.idB));
 				item->setData(0, Qt::UserRole + 2, m.idA);
 				item->setData(0, Qt::UserRole + 3, m.idB);
 				item->setData(0, Qt::UserRole + 4, m.nameA);
 				item->setData(0, Qt::UserRole + 5, m.nameB);
+				item->setData(0, Qt::UserRole + 6, m.gameId);
 				setupWatchButton(item);
 			} else {
 				delete ui->active_games->takeTopLevelItem(row);
@@ -790,13 +803,16 @@ void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailab
 			QTreeWidgetItem *item = new QTreeWidgetItem(ui->active_games);
 			const auto &m = it.value();
 			item->setText(0, tr("%1 — %2 (Contact Match)").arg(m.nameA, m.nameB));
-			item->setText(2, tr("Contact Match"));
+			const QString displayId = formatGameId(m);
+			item->setText(2, displayId);
+			item->setToolTip(2, displayId);
 			item->setData(0, Qt::UserRole, it.key());
 			item->setData(0, Qt::UserRole + 1, "contact");
 			item->setData(0, Qt::UserRole + 2, m.idA);
 			item->setData(0, Qt::UserRole + 3, m.idB);
 			item->setData(0, Qt::UserRole + 4, m.nameA);
 			item->setData(0, Qt::UserRole + 5, m.nameB);
+			item->setData(0, Qt::UserRole + 6, m.gameId);
 			item->setToolTip(0, tr("Active match between %1 (%2) and %3 (%4)").arg(m.nameA, m.idA, m.nameB, m.idB));
 			setupWatchButton(item);
 		}
@@ -1329,6 +1345,7 @@ void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 	session.lastFromTile = rcw->lastMoveFrom();
 	session.lastToTile = rcw->lastMoveTo();
 	session.moveHistory = rcw->moveHistory();
+	session.gameId = rcw->mGameId;
 	rsRetroChess->registerGameSession(session);
 	connect(rcw, &RetroChessWindow::sessionStateChanged, this,
 	        [key](const QString &fen, uint32_t sequence, int fromTile, int toTile, const QStringList &moves) {
@@ -1384,6 +1401,7 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 	session.lastFromTile = win->lastMoveFrom();
 	session.lastToTile = win->lastMoveTo();
 	session.moveHistory = win->moveHistory();
+	session.gameId = win->mGameId;
 	rsRetroChess->registerGameSession(session);
 	connect(win, &RetroChessWindow::sessionStateChanged, this,
 	        [key](const QString &fen, uint32_t sequence, int fromTile, int toTile, const QStringList &moves) {

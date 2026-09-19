@@ -47,6 +47,7 @@ struct RsRetroChessGameSession
 	int lastToTile = -1;
 	QStringList moveHistory;
 	bool interrupted = false;
+	QString gameId;
 };
 
 struct RsRetroChessAvailablePeer
@@ -64,6 +65,7 @@ struct RsRetroChessAvailablePeer
 	time_t lastSeen = 0;
 	QString opponentId;
 	QString opponentName;
+	QString gameId;
 };
 
 class RsRetroChess ;
