@@ -186,7 +186,9 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		if (window) item->setToolTip(0, window->windowTitle());
 
 		QPushButton *showBtn = new QPushButton(tr("Show"));
+		showBtn->setToolTip(tr("Bring this active game window to the front"));
 		showBtn->setStyleSheet("QPushButton { padding: 3px 10px; font-size: 11px; }");
+		item->setToolTip(1, tr("Bring this active game window to the front"));
 		connect(showBtn, &QPushButton::clicked, this, [this, key]() {
 			if (RetroChessWindow *w = mGameSessions->game(key)) {
 				w->raise();
@@ -218,9 +220,11 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		QMenu menu(this);
 		if (item->data(0, Qt::UserRole + 1).toString() == "contact") {
 			QAction *watchAction = menu.addAction(tr("Watch Game"));
+			watchAction->setToolTip(tr("Watch this live chess game as a spectator"));
 			connect(watchAction, &QAction::triggered, this, &NEMainpage::watchSelectedActiveGame);
 		} else if (item->data(0, Qt::UserRole + 1).toString() == "local") {
 			QAction *openAction = menu.addAction(tr("Show Game"));
+			openAction->setToolTip(tr("Bring this active game window to the front"));
 			connect(openAction, &QAction::triggered, this, [this, item]() {
 				const QString key = item->data(0, Qt::UserRole).toString();
 				if (RetroChessWindow *window = mGameSessions->game(key)) {
@@ -231,11 +235,11 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		}
 		menu.exec(ui->active_games->viewport()->mapToGlobal(pos));
 	});
-	ui->active_games->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-	ui->active_games->header()->setSectionResizeMode(1, QHeaderView::Fixed);
-	ui->active_games->setColumnWidth(1, 90);
-	ui->active_games->header()->setSectionResizeMode(2, QHeaderView::Interactive);
-	ui->active_games->setColumnWidth(2, 200);
+	ui->active_games->header()->setSectionResizeMode(QHeaderView::Interactive);
+	ui->active_games->header()->setStretchLastSection(false);
+	ui->active_games->setColumnWidth(0, 290);
+	ui->active_games->setColumnWidth(1, 130);
+	ui->active_games->setColumnWidth(2, 360);
 	connect(mGameSessions, &RetroChessSessionService::gameRemoved,
 	        this, [this](const QString &key) {
 		removeActiveGameListing(key);
@@ -764,6 +768,7 @@ void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailab
 	auto setupWatchButton = [this](QTreeWidgetItem *item) {
 		if (!ui->active_games->itemWidget(item, 1)) {
 			QPushButton *watchBtn = new QPushButton(tr("Watch"));
+			watchBtn->setToolTip(tr("Watch this live chess game as a spectator"));
 			connect(watchBtn, &QPushButton::clicked, this, [this, item]() {
 				ui->active_games->setCurrentItem(item);
 				watchSelectedActiveGame();
@@ -791,6 +796,7 @@ void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailab
 				item->setData(0, Qt::UserRole + 4, m.nameA);
 				item->setData(0, Qt::UserRole + 5, m.nameB);
 				item->setData(0, Qt::UserRole + 6, m.gameId);
+				item->setToolTip(1, tr("Watch this live chess game as a spectator"));
 				setupWatchButton(item);
 			} else {
 				delete ui->active_games->takeTopLevelItem(row);
@@ -814,6 +820,7 @@ void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailab
 			item->setData(0, Qt::UserRole + 5, m.nameB);
 			item->setData(0, Qt::UserRole + 6, m.gameId);
 			item->setToolTip(0, tr("Active match between %1 (%2) and %3 (%4)").arg(m.nameA, m.idA, m.nameB, m.idB));
+			item->setToolTip(1, tr("Watch this live chess game as a spectator"));
 			setupWatchButton(item);
 		}
 	}
@@ -1816,9 +1823,32 @@ void NEMainpage::loadLayoutSettings()
 	const bool hideHeader = Settings->valueFromGroup("RetroChess", "SavedContacts_HideHeader", false).toBool();
 	ui->savedContacts->header()->setHidden(hideHeader);
 
+	ui->active_games->header()->setSectionResizeMode(QHeaderView::Interactive);
+	ui->active_games->header()->setStretchLastSection(false);
+
+	const QByteArray activeGamesHeader = Settings->valueFromGroup("RetroChess", "ActiveGamesHeaderState", QByteArray()).toByteArray();
+	bool restoredActiveGames = false;
+	const QVariantList activeGamesWidths = Settings->valueFromGroup("RetroChess", "ActiveGamesColumnWidths", QVariantList()).toList();
+	if (!activeGamesHeader.isEmpty() && activeGamesWidths.size() == ui->active_games->columnCount()) {
+		restoredActiveGames = ui->active_games->header()->restoreState(activeGamesHeader);
+	}
+	if (!restoredActiveGames) {
+		if (activeGamesWidths.size() == ui->active_games->columnCount()) {
+			for (int col = 0; col < activeGamesWidths.size(); ++col) {
+				ui->active_games->setColumnWidth(col, activeGamesWidths[col].toInt());
+			}
+		} else {
+			ui->active_games->setColumnWidth(0, 290);
+			ui->active_games->setColumnWidth(1, 130);
+			ui->active_games->setColumnWidth(2, 360);
+		}
+	}
+
 	connect(ui->savedContacts->header(), &QHeaderView::sectionResized,
 	        this, &NEMainpage::saveLayoutSettings);
 	connect(ui->availablePlayers->header(), &QHeaderView::sectionResized,
+	        this, &NEMainpage::saveLayoutSettings);
+	connect(ui->active_games->header(), &QHeaderView::sectionResized,
 	        this, &NEMainpage::saveLayoutSettings);
 	connect(ui->playersSplitter, &QSplitter::splitterMoved,
 	        this, &NEMainpage::saveLayoutSettings);
@@ -1829,6 +1859,7 @@ void NEMainpage::saveLayoutSettings()
 	Settings->setValueToGroup("RetroChess", "PlayersSplitterState", ui->playersSplitter->saveState());
 	Settings->setValueToGroup("RetroChess", "SavedContactsHeaderState", ui->savedContacts->header()->saveState());
 	Settings->setValueToGroup("RetroChess", "AvailablePlayersHeaderState", ui->availablePlayers->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "ActiveGamesHeaderState", ui->active_games->header()->saveState());
 	Settings->setValueToGroup("RetroChess", "GameHistoryHeaderState", ui->gameHistory->header()->saveState());
 	Settings->setValueToGroup("RetroChess", "ShowOnlyOnlineContacts", ui->showOnlineplayersButton->isChecked());
 	Settings->setValueToGroup("RetroChess", "SavedContacts_HideLastSeen", ui->savedContacts->isColumnHidden(2));
@@ -1845,6 +1876,12 @@ void NEMainpage::saveLayoutSettings()
 		availableWidths.append(ui->availablePlayers->columnWidth(col));
 	}
 	Settings->setValueToGroup("RetroChess", "AvailablePlayersColumnWidths", availableWidths);
+
+	QVariantList activeGamesWidths;
+	for (int col = 0; col < ui->active_games->columnCount(); ++col) {
+		activeGamesWidths.append(ui->active_games->columnWidth(col));
+	}
+	Settings->setValueToGroup("RetroChess", "ActiveGamesColumnWidths", activeGamesWidths);
 
 	Settings->sync();
 }
