@@ -143,7 +143,10 @@ private:
 	void setupPlayersTab();
 	QMenu *createSavedContactsContextMenu(QMenu *contextMenu = nullptr);
 	void showSavedContactsHeaderContextMenu(const QPoint &globalPos);
+
+protected:
 	void showEvent(QShowEvent *event) override;
+	bool eventFilter(QObject *watched, QEvent *event) override;
 };
 
 #endif // NEMAINPAGE_H

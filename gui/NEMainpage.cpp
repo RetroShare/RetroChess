@@ -56,6 +56,7 @@
 #include <QPainter>
 #include <QCheckBox>
 #include <QSplitter>
+#include <QSplitterHandle>
 #include <QGroupBox>
 #include <QVBoxLayout>
 #include <QDialogButtonBox>
@@ -237,7 +238,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	});
 	ui->active_games->header()->setSectionResizeMode(QHeaderView::Interactive);
 	ui->active_games->header()->setStretchLastSection(false);
-	ui->active_games->setColumnWidth(0, 290);
+	ui->active_games->setColumnWidth(0, 310);
 	ui->active_games->setColumnWidth(1, 130);
 	ui->active_games->setColumnWidth(2, 360);
 	connect(mGameSessions, &RetroChessSessionService::gameRemoved,
@@ -1747,22 +1748,8 @@ void NEMainpage::filterSavedContacts()
 
 void NEMainpage::loadLayoutSettings()
 {
-	ui->playersSplitter->setChildrenCollapsible(false);
-	ui->playersSplitter->setStretchFactor(0, 1);
-	ui->playersSplitter->setStretchFactor(1, 2);
-
-	const QByteArray splitterState = Settings->valueFromGroup("RetroChess", "PlayersSplitterState", QByteArray()).toByteArray();
-	if (!splitterState.isEmpty()) {
-		ui->playersSplitter->restoreState(splitterState);
-	} else {
-		ui->playersSplitter->setSizes({320, 680});
-	}
-
 	ui->savedContacts->header()->setSectionResizeMode(QHeaderView::Interactive);
 	ui->savedContacts->header()->setStretchLastSection(false);
-
-	ui->availablePlayers->header()->setSectionResizeMode(QHeaderView::Interactive);
-	ui->availablePlayers->header()->setStretchLastSection(false);
 
 	const QByteArray savedHeader = Settings->valueFromGroup("RetroChess", "SavedContactsHeaderState", QByteArray()).toByteArray();
 	bool restoredSaved = false;
@@ -1776,11 +1763,54 @@ void NEMainpage::loadLayoutSettings()
 				ui->savedContacts->setColumnWidth(col, savedWidths[col].toInt());
 			}
 		} else {
-			ui->savedContacts->setColumnWidth(0, 200);
-			ui->savedContacts->setColumnWidth(1, 90);
-			ui->savedContacts->setColumnWidth(2, 130);
+			ui->savedContacts->setColumnWidth(0, 150);
+			ui->savedContacts->setColumnWidth(1, 130);
+			ui->savedContacts->setColumnWidth(2, 140);
 		}
 	}
+
+	ui->savedContacts->setColumnHidden(1, false);
+	const bool hideLastSeen = Settings->valueFromGroup("RetroChess", "SavedContacts_HideLastSeen", false).toBool();
+	ui->savedContacts->setColumnHidden(2, hideLastSeen);
+	if (ui->savedContacts->columnWidth(1) < 125) {
+		ui->savedContacts->setColumnWidth(1, 130);
+	}
+	if (!hideLastSeen && ui->savedContacts->columnWidth(2) < 120) {
+		ui->savedContacts->setColumnWidth(2, 140);
+	}
+
+	const bool hideHeader = Settings->valueFromGroup("RetroChess", "SavedContacts_HideHeader", false).toBool();
+	ui->savedContacts->header()->setHidden(hideHeader);
+
+	int columnsTotal = ui->savedContacts->columnWidth(0) + ui->savedContacts->columnWidth(1);
+	if (!hideLastSeen) {
+		columnsTotal += ui->savedContacts->columnWidth(2);
+	}
+	const int idealLeftWidth = columnsTotal + 24;
+
+	ui->playersSplitter->setChildrenCollapsible(false);
+	ui->playersSplitter->setStretchFactor(0, 0);
+	ui->playersSplitter->setStretchFactor(1, 1);
+
+	const QByteArray splitterState = Settings->valueFromGroup("RetroChess", "PlayersSplitterState", QByteArray()).toByteArray();
+	bool restoredSplitter = false;
+	if (!splitterState.isEmpty()) {
+		restoredSplitter = ui->playersSplitter->restoreState(splitterState);
+	}
+	const QList<int> splitterSizes = ui->playersSplitter->sizes();
+	if (!restoredSplitter || splitterSizes.size() < 2
+	        || splitterSizes[0] > (idealLeftWidth + 30)
+	        || splitterSizes[0] < (idealLeftWidth - 40)) {
+		const int rightWidth = (splitterSizes.size() >= 2 && splitterSizes[1] > 200) ? splitterSizes[1] : 600;
+		ui->playersSplitter->setSizes({idealLeftWidth, rightWidth});
+	}
+
+	if (QSplitterHandle *handle = ui->playersSplitter->handle(1)) {
+		handle->installEventFilter(this);
+	}
+
+	ui->availablePlayers->header()->setSectionResizeMode(QHeaderView::Interactive);
+	ui->availablePlayers->header()->setStretchLastSection(false);
 
 	const QByteArray availableHeader = Settings->valueFromGroup("RetroChess", "AvailablePlayersHeaderState", QByteArray()).toByteArray();
 	bool restoredAvailable = false;
@@ -1812,16 +1842,6 @@ void NEMainpage::loadLayoutSettings()
 	ui->showOnlineplayersButton->setToolTip(onlyOnline
 	        ? tr("Show all chess players")
 	        : tr("Show only online chess players"));
-
-	ui->savedContacts->setColumnHidden(1, false);
-	const bool hideLastSeen = Settings->valueFromGroup("RetroChess", "SavedContacts_HideLastSeen", false).toBool();
-	ui->savedContacts->setColumnHidden(2, hideLastSeen);
-	if (!hideLastSeen && ui->savedContacts->columnWidth(2) < 50) {
-		ui->savedContacts->setColumnWidth(2, 130);
-	}
-
-	const bool hideHeader = Settings->valueFromGroup("RetroChess", "SavedContacts_HideHeader", false).toBool();
-	ui->savedContacts->header()->setHidden(hideHeader);
 
 	ui->active_games->header()->setSectionResizeMode(QHeaderView::Interactive);
 	ui->active_games->header()->setStretchLastSection(false);
@@ -1948,8 +1968,40 @@ QMenu *NEMainpage::createSavedContactsContextMenu(QMenu *contextMenu)
 	connect(action, &QAction::toggled, this, [this, col](bool checked) {
 		ui->savedContacts->setColumnHidden(col, !checked);
 		if (checked && ui->savedContacts->columnWidth(col) < 50) {
-			ui->savedContacts->setColumnWidth(col, 130);
+			ui->savedContacts->setColumnWidth(col, 140);
 		}
+		int columnsTotal = ui->savedContacts->columnWidth(0) + ui->savedContacts->columnWidth(1);
+		if (checked) {
+			columnsTotal += ui->savedContacts->columnWidth(col);
+		}
+		const int idealLeftWidth = columnsTotal + 24;
+		const QList<int> currentSizes = ui->playersSplitter->sizes();
+		int totalWidth = 0;
+		for (int s : currentSizes) {
+			totalWidth += s;
+		}
+		if (totalWidth > idealLeftWidth + 100) {
+			ui->playersSplitter->setSizes({idealLeftWidth, totalWidth - idealLeftWidth});
+		}
+		saveLayoutSettings();
+	});
+
+	QAction *actFitSplitter = contextMenu->addAction(tr("Fit Splitter to Columns"));
+	connect(actFitSplitter, &QAction::triggered, this, [this]() {
+		int columnsTotal = ui->savedContacts->columnWidth(0) + ui->savedContacts->columnWidth(1);
+		if (!ui->savedContacts->isColumnHidden(2)) {
+			columnsTotal += ui->savedContacts->columnWidth(2);
+		}
+		const int idealLeftWidth = columnsTotal + 24;
+		const QList<int> currentSizes = ui->playersSplitter->sizes();
+		int totalWidth = 0;
+		for (int s : currentSizes) {
+			totalWidth += s;
+		}
+		if (totalWidth < idealLeftWidth + 200) {
+			totalWidth = idealLeftWidth + 400;
+		}
+		ui->playersSplitter->setSizes({idealLeftWidth, totalWidth - idealLeftWidth});
 		saveLayoutSettings();
 	});
 
@@ -2151,6 +2203,27 @@ void NEMainpage::setupPlayersTab()
 	});
 }
 
-
-
-
+bool NEMainpage::eventFilter(QObject *watched, QEvent *event)
+{
+	if (watched && ui && watched == ui->playersSplitter->handle(1)) {
+		if (event->type() == QEvent::MouseButtonDblClick) {
+			int columnsTotal = ui->savedContacts->columnWidth(0) + ui->savedContacts->columnWidth(1);
+			if (!ui->savedContacts->isColumnHidden(2)) {
+				columnsTotal += ui->savedContacts->columnWidth(2);
+			}
+			const int idealLeftWidth = columnsTotal + 24;
+			const QList<int> currentSizes = ui->playersSplitter->sizes();
+			int totalWidth = 0;
+			for (int s : currentSizes) {
+				totalWidth += s;
+			}
+			if (totalWidth < idealLeftWidth + 200) {
+				totalWidth = idealLeftWidth + 400;
+			}
+			ui->playersSplitter->setSizes({idealLeftWidth, totalWidth - idealLeftWidth});
+			saveLayoutSettings();
+			return true;
+		}
+	}
+	return MainPage::eventFilter(watched, event);
+}
