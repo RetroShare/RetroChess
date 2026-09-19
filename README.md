@@ -1,16 +1,20 @@
-# RetroShare 0.6 Chess Plugin
+# RetroShare Chess Plugin
 
 This is a Chess plugin, to play with your RetroShare Friends & Contacts
 
-# build & install:
+# Build & install:
 
 put/clone `RetroChess` to `RetroShare/plugins/` recommend
 
 	cd ${YOUR_DIR}/RetroShare/plugins/RetroChess/
-	qmake ..
+	qmake
 	make 
 
-Copy your RetroChess.dll to "Data/extensions6" (Windows)
+# On Linux install Qt 6 SVG library
+
+	sudo apt install libqt6svg6
+
+Copy your RetroChess.dll to `Data/extensions6` (Windows). libRetroChess.a to `./retroshare/extensions6` (Linux).
 Then restart your RetroShare. You'll see a chess logo in your chat dialog's tool-bar or home's tool-bar.
 
 # Usage
@@ -77,7 +81,7 @@ The debugger supports:
 
 ```bash
     cd plugins/RetroChess/debug
-    qmake ..
+    qmake
     make 
 ```
 
