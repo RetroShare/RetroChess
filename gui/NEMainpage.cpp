@@ -88,11 +88,16 @@ public:
     bool operator<(const QTreeWidgetItem &other) const override
     {
         const int column = treeWidget()->sortColumn();
-        if (column == 0 || column == 1) {
+        if (column == 0) {
+            const int cmp = QString::compare(text(0), other.text(0), Qt::CaseInsensitive);
+            if (cmp != 0) return cmp < 0;
+            return data(0, Qt::UserRole).toString() < other.data(0, Qt::UserRole).toString();
+        }
+        if (column == 1) {
             const int rank = data(1, Qt::UserRole).toInt();
             const int otherRank = other.data(1, Qt::UserRole).toInt();
             if (rank != otherRank) return rank < otherRank;
-            return QString::localeAwareCompare(text(0), other.text(0)) < 0;
+            return QString::compare(text(0), other.text(0), Qt::CaseInsensitive) < 0;
         }
         if (column == 3) {
             const int r1 = data(3, Qt::UserRole).toInt();
@@ -101,7 +106,7 @@ public:
             const int rd1 = data(4, Qt::UserRole).toInt();
             const int rd2 = other.data(4, Qt::UserRole).toInt();
             if (rd1 != rd2) return rd1 < rd2;
-            return QString::localeAwareCompare(text(0), other.text(0)) < 0;
+            return QString::compare(text(0), other.text(0), Qt::CaseInsensitive) < 0;
         }
         if (column == 4 && treeWidget()->columnCount() >= 7) {
             const int rd1 = data(4, Qt::UserRole).toInt();
@@ -110,7 +115,7 @@ public:
             const int r1 = data(3, Qt::UserRole).toInt();
             const int r2 = other.data(3, Qt::UserRole).toInt();
             if (r1 != r2) return r1 < r2;
-            return QString::localeAwareCompare(text(0), other.text(0)) < 0;
+            return QString::compare(text(0), other.text(0), Qt::CaseInsensitive) < 0;
         }
         const bool isLastSeen = (treeWidget()->columnCount() == 3 && column == 2)
                              || (treeWidget()->columnCount() >= 7 && column == 5);
@@ -688,6 +693,7 @@ void NEMainpage::refreshAvailablePlayers()
         for (auto it = rows.constBegin(); it != rows.constEnd(); ++it)
             if (!retained.contains(it.key())) delete it.value();
         tree->setSortingEnabled(true);
+        tree->sortItems(tree->sortColumn(), tree->header()->sortIndicatorOrder());
     }
     filterSavedContacts();
     ui->availablePlayersDescription->setText(tr("Saved chess contacts keeps all saved players, including offline contacts. Available or invited players shows players ready for a game and incoming or outgoing invitations. Right-click or double-click a player for actions."));
@@ -1911,8 +1917,9 @@ void NEMainpage::setupPlayersTab()
 		showSavedContactsHeaderContextMenu(ui->savedContacts->header()->mapToGlobal(pos));
 	});
 
+	ui->savedContacts->sortItems(0, Qt::AscendingOrder);
+	ui->availablePlayers->sortItems(1, Qt::AscendingOrder);
 	for (QTreeWidget *tree : {ui->savedContacts, ui->availablePlayers}) {
-		tree->sortItems(0, Qt::AscendingOrder);
 		tree->setContextMenuPolicy(Qt::CustomContextMenu);
 		connect(tree, &QTreeWidget::customContextMenuRequested,
 		        this, [this, tree](const QPoint &position) {
