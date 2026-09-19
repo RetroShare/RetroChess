@@ -125,7 +125,8 @@ public:
 	bool sendGameActionGxs(const RsGxsId &gxsId, const std::string &action) override;
 	void registerGameSession(const RsRetroChessGameSession &session) override;
 	void updateGameSession(const QString &endpointId, const QString &fen,
-	                       uint32_t moveSequence) override;
+	                       uint32_t moveSequence, int lastFromTile = -1, int lastToTile = -1,
+	                       const QStringList &moveHistory = QStringList()) override;
 	void unregisterGameSession(const QString &endpointId) override;
 	std::vector<RsRetroChessGameSession> gameSessions() override;
 	std::vector<RsRetroChessAvailablePeer> availableChessPeers() override;

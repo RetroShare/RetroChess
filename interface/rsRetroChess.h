@@ -43,6 +43,9 @@ struct RsRetroChessGameSession
 	int localColor = 0;
 	QString fen;
 	uint32_t moveSequence = 0;
+	int lastFromTile = -1;
+	int lastToTile = -1;
+	QStringList moveHistory;
 	bool interrupted = false;
 };
 
@@ -108,7 +111,8 @@ class RsRetroChess
 	virtual void registerGameSession(const RsRetroChessGameSession &session) = 0;
 	virtual void updateGameSession(
 	        const QString &endpointId, const QString &fen,
-	        uint32_t moveSequence) = 0;
+	        uint32_t moveSequence, int lastFromTile = -1, int lastToTile = -1,
+	        const QStringList &moveHistory = QStringList()) = 0;
 	virtual void unregisterGameSession(const QString &endpointId) = 0;
 	virtual std::vector<RsRetroChessGameSession> gameSessions() = 0;
 	virtual std::vector<RsRetroChessAvailablePeer> availableChessPeers() = 0;

@@ -2510,7 +2510,7 @@ void RetroChessWindow::recordBoardSnapshot(int fromTile, int toTile)
 	m_boardHistoryMoves.push_back(qMakePair(fromTile, toTile));
 	m_viewedHistoryPly = m_boardHistory.size() - 1;
 	updateHistoryControls();
-	emit sessionStateChanged(currentFen(), sessionMoveSequence());
+	emit sessionStateChanged(currentFen(), sessionMoveSequence(), fromTile, toTile, moveHistory());
 }
 
 QString RetroChessWindow::sessionFen() const
@@ -2525,7 +2525,8 @@ uint32_t RetroChessWindow::sessionMoveSequence() const
 }
 
 bool RetroChessWindow::restoreSessionPosition(
-        const QString &fen, uint32_t moveSequence, QString *error)
+        const QString &fen, uint32_t moveSequence,
+        const QStringList &moves, QString *error)
 {
 	if (!m_position.loadFen(fen, error) || !loadFen(fen, error)) return false;
 	m_boardHistory.clear();
@@ -2540,11 +2541,23 @@ bool RetroChessWindow::restoreSessionPosition(
 	m_viewedHistoryPly = m_boardHistory.size() - 1;
 	updateHistoryControls();
 	updateEndGameBadges(m_viewedHistoryPly);
+	if (!moves.isEmpty()) {
+		setMoveHistory(moves);
+	}
 	if (!m_isSpectator) {
-		emit sessionStateChanged(currentFen(), sessionMoveSequence());
+		emit sessionStateChanged(currentFen(), sessionMoveSequence(), lastMoveFrom(), lastMoveTo(), moveHistory());
 		showGameStatus(tr("Interrupted game restored"));
+	} else if (moveSequence > 0) {
+		const bool wasCapture = !moves.isEmpty() && moves.last().contains('x');
+		playMoveSound(wasCapture);
 	}
 	return true;
+}
+
+bool RetroChessWindow::restoreSessionPosition(
+        const QString &fen, uint32_t moveSequence, QString *error)
+{
+	return restoreSessionPosition(fen, moveSequence, QStringList(), error);
 }
 
 void RetroChessWindow::showHistoryPly(int ply)
@@ -3477,6 +3490,54 @@ void RetroChessWindow::clearLastMove()
 
         tile[ tile_num / 8][ tile_num % 8]->tileDisplay();	// revoery tile's background color
     }	// clear the last move queue
+}
+
+void RetroChessWindow::setLastMove(int fromTile, int toTile)
+{
+    clearLastMove();
+    if (fromTile >= 0 && fromTile < 64)
+        recordLastMove(fromTile);
+    if (toTile >= 0 && toTile < 64)
+        recordLastMove(toTile);
+    drawLastMove();
+    if (!m_boardHistoryMoves.isEmpty() && fromTile >= 0 && toTile >= 0) {
+        m_boardHistoryMoves.last() = qMakePair(fromTile, toTile);
+    }
+}
+
+int RetroChessWindow::lastMoveFrom() const
+{
+    if (m_last_move_que.size() >= 2)
+        return m_last_move_que.at(0);
+    return -1;
+}
+
+int RetroChessWindow::lastMoveTo() const
+{
+    if (m_last_move_que.size() >= 2)
+        return m_last_move_que.at(1);
+    return -1;
+}
+
+void RetroChessWindow::setMoveHistory(const QStringList &moves)
+{
+	m_move_history.clear();
+	m_moveTable->setRowCount(0);
+	for (int i = 0; i < moves.size(); ++i) {
+		const QString &notation = moves.at(i);
+		m_move_history.push_back(notation);
+		const int row = i / 2;
+		if (m_moveTable->rowCount() <= row) {
+			m_moveTable->insertRow(row);
+			auto *numItem = new QTableWidgetItem(QString::number(row + 1));
+			numItem->setTextAlignment(Qt::AlignCenter);
+			m_moveTable->setItem(row, 0, numItem);
+			m_moveTable->setRowHeight(row, 24);
+		}
+		const int column = (i % 2 == 0) ? 1 : 2;
+		m_moveTable->setItem(row, column, createMoveTableItem(notation, column == 1));
+	}
+	m_moveTable->scrollToBottom();
 }
 
 // 0: ongoing, 1: black win, 2: white win, 3: stalemate, 4: dead position,

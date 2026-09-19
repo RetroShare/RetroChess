@@ -486,7 +486,8 @@ void p3RetroChess::registerGameSession(const RsRetroChessGameSession &session)
 }
 
 void p3RetroChess::updateGameSession(
-        const QString &endpointId, const QString &fen, uint32_t moveSequence)
+        const QString &endpointId, const QString &fen, uint32_t moveSequence,
+        int lastFromTile, int lastToTile, const QStringList &moveHistory)
 {
 	std::vector<RsGxsTunnelId> spectatorTunnels;
 	RsRetroChessGameSession activeSession;
@@ -497,6 +498,9 @@ void p3RetroChess::updateGameSession(
 		if (it == mGameSessions.end()) return;
 		it->second.fen = fen;
 		it->second.moveSequence = moveSequence;
+		it->second.lastFromTile = lastFromTile;
+		it->second.lastToTile = lastToTile;
+		it->second.moveHistory = moveHistory;
 		it->second.interrupted = false;
 		activeSession = it->second;
 		found = true;
@@ -543,6 +547,11 @@ void p3RetroChess::updateGameSession(
 		reply["black_name"] = blackName;
 		reply["fen"] = fen;
 		reply["sequence"] = static_cast<int>(moveSequence);
+		reply["last_from"] = lastFromTile;
+		reply["last_to"] = lastToTile;
+		QVariantList movesList;
+		for (const auto &m : moveHistory) movesList.append(m);
+		reply["moves"] = movesList;
 
 		const QByteArray replyBytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
 		for (const auto &tId : spectatorTunnels) {
@@ -1780,9 +1789,16 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             reply["black_name"] = blackName;
             reply["fen"] = activeSession.fen;
             reply["sequence"] = static_cast<int>(activeSession.moveSequence);
+            reply["last_from"] = activeSession.lastFromTile;
+            reply["last_to"] = activeSession.lastToTile;
+            QVariantList movesList;
+            for (const auto &m : activeSession.moveHistory) movesList.append(m);
+            reply["moves"] = movesList;
 
             std::cout << "Chess: Sending chess_watch_state to spectator " << sender_id
-                      << " (FEN: " << activeSession.fen.toStdString() << ")" << std::endl;
+                      << " (FEN: " << activeSession.fen.toStdString()
+                      << ", lastMove: " << activeSession.lastFromTile << "->" << activeSession.lastToTile
+                      << ", movesCount: " << activeSession.moveHistory.size() << ")" << std::endl;
 
             const QByteArray replyBytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
             mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
@@ -1806,9 +1822,18 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         const QString blackName = map.value("black_name").toString();
         const QString fen = map.value("fen").toString();
         const int sequence = map.value("sequence").toInt();
+        const int lastFrom = map.contains("last_from") ? map.value("last_from").toInt() : -1;
+        const int lastTo = map.contains("last_to") ? map.value("last_to").toInt() : -1;
+        QStringList moves;
+        if (map.contains("moves")) {
+            for (const auto &v : map.value("moves").toList())
+                moves.append(v.toString());
+        }
         std::cout << "Chess: Received chess_watch_state from " << sender_id
-                  << " for game " << gameId.toStdString() << " (FEN=" << fen.toStdString() << ")" << std::endl;
-        mNotify->notifyChessWatchState(sender_id, gameId, whiteId, whiteName, blackId, blackName, fen, sequence);
+                  << " for game " << gameId.toStdString() << " (FEN=" << fen.toStdString()
+                  << ", lastMove=" << lastFrom << "->" << lastTo
+                  << ", movesCount=" << moves.size() << ")" << std::endl;
+        mNotify->notifyChessWatchState(sender_id, gameId, whiteId, whiteName, blackId, blackName, fen, sequence, lastFrom, lastTo, moves);
 
     } else if (type == "chess_watch_action") {
         const QString gameId = map.value("game_id").toString();

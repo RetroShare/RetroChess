@@ -438,7 +438,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 			QString error;
 			if (!session.fen.isEmpty()
 			        && !window->restoreSessionPosition(
-			                session.fen, session.moveSequence, &error))
+			                session.fen, session.moveSequence, session.moveHistory, &error))
 				std::cerr << "RetroChess: Could not restore session "
 				          << session.endpointId.toStdString() << ": "
 				          << error.toStdString() << std::endl;
@@ -1155,10 +1155,14 @@ void NEMainpage::watchSelectedActiveGame()
 void NEMainpage::chessWatchState(const RsGxsId &hostId, const QString &gameKey,
                                  const QString &whiteId, const QString &whiteName,
                                  const QString &blackId, const QString &blackName,
-                                 const QString &fen, int sequence)
+                                 const QString &fen, int sequence,
+                                 int lastFrom, int lastTo,
+                                 const QStringList &moves)
 {
 	std::cout << "Chess: NEMainpage::chessWatchState opening/updating spectator window for gameKey "
-	          << gameKey.toStdString() << " (FEN=" << fen.toStdString() << ")" << std::endl;
+	          << gameKey.toStdString() << " (FEN=" << fen.toStdString()
+	          << ", lastMove=" << lastFrom << "->" << lastTo
+	          << ", movesCount=" << moves.size() << ")" << std::endl;
 
 	RetroChessWindow *targetWindow = nullptr;
 	if (mSpectatorWindows.contains(gameKey) && mSpectatorWindows[gameKey]) {
@@ -1174,7 +1178,16 @@ void NEMainpage::chessWatchState(const RsGxsId &hostId, const QString &gameKey,
 	}
 
 	if (targetWindow) {
-		targetWindow->restoreSessionPosition(fen, sequence);
+		// Only restore FEN if position differs. If the move was already rendered via
+		// live move action, re-restoring FEN would wipe out the move table and highlight!
+		if (targetWindow->sessionFen() != fen) {
+			targetWindow->restoreSessionPosition(fen, sequence, moves);
+			if (lastFrom >= 0 && lastTo >= 0) {
+				targetWindow->setLastMove(lastFrom, lastTo);
+			}
+		} else if (!moves.isEmpty() && targetWindow->moveHistory().size() < moves.size()) {
+			targetWindow->setMoveHistory(moves);
+		}
 		targetWindow->show();
 		targetWindow->raise();
 		targetWindow->activateWindow();
@@ -1183,7 +1196,13 @@ void NEMainpage::chessWatchState(const RsGxsId &hostId, const QString &gameKey,
 
 	RetroChessWindow *window = new RetroChessWindow(
 	        hostId, gameKey, whiteId, whiteName, blackId, blackName, nullptr);
-	window->restoreSessionPosition(fen, sequence);
+	window->restoreSessionPosition(fen, sequence, moves);
+	if (!moves.isEmpty()) {
+		window->setMoveHistory(moves);
+	}
+	if (lastFrom >= 0 && lastTo >= 0) {
+		window->setLastMove(lastFrom, lastTo);
+	}
 	connect(window, &RetroChessWindow::spectatorClosed, this, &NEMainpage::onSpectatorClosed);
 	mSpectatorWindows[gameKey] = window;
 	window->show();
@@ -1301,10 +1320,13 @@ void NEMainpage::create_chess_window(std::string peer_id, int player_id)
 	session.endpointId = key;
 	session.localColor = player_id;
 	session.fen = rcw->sessionFen();
+	session.lastFromTile = rcw->lastMoveFrom();
+	session.lastToTile = rcw->lastMoveTo();
+	session.moveHistory = rcw->moveHistory();
 	rsRetroChess->registerGameSession(session);
 	connect(rcw, &RetroChessWindow::sessionStateChanged, this,
-	        [key](const QString &fen, uint32_t sequence) {
-		rsRetroChess->updateGameSession(key, fen, sequence);
+	        [key](const QString &fen, uint32_t sequence, int fromTile, int toTile, const QStringList &moves) {
+		rsRetroChess->updateGameSession(key, fen, sequence, fromTile, toTile, moves);
 	});
 }
 
@@ -1353,10 +1375,13 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 	session.localIdentityId = QString::fromStdString(win->mOwnGxsId.toStdString());
 	session.localColor = player_id;
 	session.fen = win->sessionFen();
+	session.lastFromTile = win->lastMoveFrom();
+	session.lastToTile = win->lastMoveTo();
+	session.moveHistory = win->moveHistory();
 	rsRetroChess->registerGameSession(session);
 	connect(win, &RetroChessWindow::sessionStateChanged, this,
-	        [key](const QString &fen, uint32_t sequence) {
-		rsRetroChess->updateGameSession(key, fen, sequence);
+	        [key](const QString &fen, uint32_t sequence, int fromTile, int toTile, const QStringList &moves) {
+		rsRetroChess->updateGameSession(key, fen, sequence, fromTile, toTile, moves);
 	});
 }
 

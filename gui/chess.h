@@ -114,6 +114,10 @@ public:
 	uint32_t sessionMoveSequence() const;
 	bool restoreSessionPosition(
 	        const QString &fen, uint32_t moveSequence,
+	        const QStringList &moves,
+	        QString *error = nullptr);
+	bool restoreSessionPosition(
+	        const QString &fen, uint32_t moveSequence,
 	        QString *error = nullptr);
 
 	int chooser(Tile *temp);
@@ -219,8 +223,13 @@ public:
 	void showGameStatus(const QString &status);
 	void refreshBoardTheme();
 	ChessGameRecord historyRecord() const;
+	QStringList moveHistory() const { return m_move_history; }
+	void setMoveHistory(const QStringList &moves);
     void drawLastMove();
     void clearLastMove();
+    void setLastMove(int fromTile, int toTile);
+    int lastMoveFrom() const;
+    int lastMoveTo() const;
 
     int resultJudge();	// judge result (slow method)
     void showPlayerLeaveMsg();	// show player leave message
@@ -243,7 +252,7 @@ signals:
 	void gameClosed(QString gameId);
 	void gameEnded(QString gameId);
 	void gameReadyForHistory();
-	void sessionStateChanged(const QString &fen, uint32_t moveSequence);
+	void sessionStateChanged(const QString &fen, uint32_t moveSequence, int fromTile = -1, int toTile = -1, const QStringList &moves = QStringList());
 	void spectatorClosed(const RsGxsId &hostId, const QString &gameKey);
 };
 
