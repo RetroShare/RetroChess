@@ -291,7 +291,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	navigation->setFixedWidth(145);
 	navigation->addItem(tr("General"));
 	navigation->addItem(tr("Chess profile"));
-	navigation->addItem(tr("Board colours"));
+	navigation->addItem(tr("Boards"));
 	navigation->addItem(tr("Pieces"));
 	navigation->addItem(tr("Sounds"));
 
@@ -398,7 +398,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	// --- Board Colours Page ---
 	QWidget *boardPage = new QWidget(pages);
 	QVBoxLayout *boardRoot = new QVBoxLayout(boardPage);
-	QLabel *title = new QLabel(tr("Board colours"), boardPage);
+	QLabel *title = new QLabel(tr("Boards"), boardPage);
 	title->setFont(titleFont);
 	boardRoot->addWidget(title);
 	boardRoot->addWidget(new QLabel(
@@ -575,12 +575,17 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	piecesRoot->addWidget(piecesTitle);
 	piecesRoot->addWidget(new QLabel(tr("Choose a piece theme. Classic is the default."), piecesPage));
 	QHBoxLayout *piecesContent = new QHBoxLayout;
+	piecesContent->setSpacing(24);
+	piecesContent->setAlignment(Qt::AlignTop);
 	QButtonGroup *pieceGroup = new QButtonGroup(piecesPage);
 	pieceGroup->setExclusive(true);
 	QGridLayout *pieceButtons = new QGridLayout;
 	pieceButtons->setSpacing(8);
 	pieceButtons->setAlignment(Qt::AlignTop);
 	QVBoxLayout *piecePreviewLayout = new QVBoxLayout;
+	piecePreviewLayout->setContentsMargins(0, 0, 0, 0);
+	piecePreviewLayout->setSpacing(8);
+	piecePreviewLayout->setAlignment(Qt::AlignTop);
 	QLabel *piecePreviewTitle = new QLabel(piecesPage);
 	piecePreviewTitle->setFont(previewTitleFont);
 	ChessBoardPreviewWidget *piecePreview = new ChessBoardPreviewWidget(piecesPage);
