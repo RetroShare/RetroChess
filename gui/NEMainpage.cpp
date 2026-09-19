@@ -82,6 +82,31 @@
 
 
 namespace {
+QString chessPlayerToolTip(
+        const QString &name, const QString &endpointId, const QPixmap &avatar,
+        const RetroChessLeaderboard::Player &player)
+{
+    const auto tr = [](const char *text) { return NEMainpage::tr(text).toHtmlEscaped(); };
+    QString embeddedAvatar;
+    RsHtml::makeEmbeddedImage(
+            avatar.scaled(70, 70, Qt::KeepAspectRatio, Qt::SmoothTransformation).toImage(),
+            embeddedAvatar, -1);
+    return QStringLiteral(
+            "<table cellspacing='4'><tr><td rowspan='4' valign='top'>%1</td>"
+            "<td colspan='2'><span style='font-size:large; font-weight:600;'>%2</span></td></tr>"
+            "<tr><td>%3</td><td><b>%4</b> &nbsp; %5</td></tr>"
+            "<tr><td>%6</td><td>%7</td></tr>"
+            "<tr><td>%8</td><td>%9</td></tr>"
+            "<tr><td colspan='3'><hr/></td></tr>"
+            "<tr><td colspan='3'><small>%10 %11</small></td></tr></table>")
+            .arg(embeddedAvatar, name.toHtmlEscaped())
+            .arg(tr("Rating")).arg(qRound(player.rating))
+            .arg(player.provisional() ? tr("Provisional") : tr("Rated"))
+            .arg(tr("RD")).arg(qRound(player.rd))
+            .arg(tr("Games")).arg(player.games())
+            .arg(tr("ID:"), endpointId.toHtmlEscaped());
+}
+
 class ChessPlayerItem : public QTreeWidgetItem
 {
 public:
@@ -498,7 +523,6 @@ void NEMainpage::refreshAvailablePlayers()
             item->setIcon(0, QIcon(avatar));
             item->setData(0, Qt::UserRole, peer.endpointId);
             item->setData(0, Qt::UserRole + 1, peer.savedContact);
-            item->setToolTip(0, peer.endpointId);
             int rank = 5;
             QColor color("#808080");
             QString label = tr("Unknown");
@@ -519,6 +543,10 @@ void NEMainpage::refreshAvailablePlayers()
             item->setText(1, label);
             item->setData(1, Qt::UserRole, rank);
             item->setData(1, Qt::UserRole + 1, status);
+            RetroChessLeaderboard::Player profile;
+            if (mLeaderboard) mLeaderboard->getPlayer(id, profile);
+            item->setToolTip(0, chessPlayerToolTip(
+                    name, peer.endpointId, avatar, profile));
             const QString lastSeenText = peer.lastSeen
                     ? RetroChessSettings::formatDateTime(QDateTime::fromSecsSinceEpoch(peer.lastSeen))
                     : tr("Never");

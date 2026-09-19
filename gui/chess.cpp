@@ -55,6 +55,13 @@
 
 namespace
 {
+void updatePlayerNameLabel(QLabel *label)
+{
+	const int availableWidth = qMax(0, label->contentsRect().width() - 2 * label->margin());
+	label->setText(label->fontMetrics().elidedText(
+	        label->toolTip(), Qt::ElideRight, availableWidth));
+}
+
 QTableWidgetItem *createMoveTableItem(const QString &notation, bool isWhite)
 {
 	if (notation.isEmpty()) {
@@ -424,6 +431,15 @@ void RetroChessWindow::initAccessories()
 	// display player's name
 	m_ui->m_player1_name->setText( p1name.c_str() );
 	m_ui->m_player2_name->setText( p2name.c_str() );
+	for (QLabel *label : {m_ui->m_player1_name, m_ui->m_player2_name}) {
+		label->setTextFormat(Qt::PlainText);
+		label->setToolTip(label->text());
+		label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+		label->setMinimumWidth(0);
+		label->setIndent(0);
+		label->installEventFilter(this);
+		updatePlayerNameLabel(label);
+	}
 	m_ui->m_move_record->hide();
 	m_ui->moveHistoryLayout->removeWidget(m_ui->m_move_record);
 	m_ui->moveHistoryLayout->setContentsMargins(4, 4, 4, 4);
@@ -2422,6 +2438,11 @@ void RetroChessWindow::resizeEvent(QResizeEvent *event)
 
 bool RetroChessWindow::eventFilter(QObject *watched, QEvent *event)
 {
+	if (m_ui && (watched == m_ui->m_player1_name || watched == m_ui->m_player2_name)
+	        && (event->type() == QEvent::Resize || event->type() == QEvent::Show
+	            || event->type() == QEvent::FontChange
+	            || event->type() == QEvent::StyleChange))
+		updatePlayerNameLabel(static_cast<QLabel *>(watched));
 	if (m_ui && watched == m_ui->m_chess_board && event->type() == QEvent::Resize)
 		layoutChessBoard();
 	return QWidget::eventFilter(watched, event);
