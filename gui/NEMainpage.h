@@ -129,6 +129,7 @@ private:
 	void create_chess_window(std::string peer_id, int player_id);
     void create_chess_window_gxs(const RsGxsId &gxs_id, int player_id);
 	void showOfficialLobby();
+	void setOfficialLobbyTabVisible(bool visible);
 	void refreshGameHistory();
 	void refreshActiveContactGames(const std::vector<RsRetroChessAvailablePeer> &peers);
 	bool selectedHistoryGame(ChessGameRecord &game) const;

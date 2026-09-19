@@ -339,6 +339,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
     loadLayoutSettings();
 
     setupPlayersTab();
+    setOfficialLobbyTabVisible(false);
+    ui->tabWidget->setCurrentWidget(ui->availablePlayersTab);
 	connect(ui->tabWidget, &QTabWidget::currentChanged,
 	        this, [this](int index) {
 		refreshAvailablePlayers();
@@ -853,7 +855,10 @@ const ChatLobbyId OFFICIAL_RETROCHESS_LOBBY_ID = 0x0174BD3E49231CDAULL;
 
 void NEMainpage::autoJoinOfficialLobby()
 {
-	if (!rsChats || !rsIdentity) return;
+	if (!rsChats || !rsIdentity) {
+		setOfficialLobbyTabVisible(false);
+		return;
+	}
 
 	std::list<ChatLobbyId> subscribedLobbies;
 	rsChats->getChatLobbyList(subscribedLobbies);
@@ -865,6 +870,7 @@ void NEMainpage::autoJoinOfficialLobby()
             rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
 		ui->officialLobbyStatus->setText(tr("Connected to the official RetroChess lobby."));
 		showOfficialLobby();
+		setOfficialLobbyTabVisible(true);
 		return;
 	}
 
@@ -880,6 +886,7 @@ void NEMainpage::autoJoinOfficialLobby()
 	if (!found) {
 		ui->officialLobbyStatus->setText(
 		        tr("Searching for official lobby 0174BD3E49231CDA…"));
+		setOfficialLobbyTabVisible(false);
 		return;
 	}
 
@@ -901,6 +908,7 @@ void NEMainpage::autoJoinOfficialLobby()
 	if (joinIdentity.isNull() || !(details.mFlags & RS_IDENTITY_FLAGS_PGP_LINKED)) {
 		ui->officialLobbyStatus->setText(
 		        tr("A PGP-linked GXS identity is required to join this lobby."));
+		setOfficialLobbyTabVisible(false);
 		return;
 	}
 
@@ -911,8 +919,10 @@ void NEMainpage::autoJoinOfficialLobby()
             rsChats->setLobbyAutoSubscribe(OFFICIAL_RETROCHESS_LOBBY_ID, true);
 		ui->officialLobbyStatus->setText(tr("Connected to the official RetroChess lobby."));
 		showOfficialLobby();
+		setOfficialLobbyTabVisible(true);
 	} else {
 		ui->officialLobbyStatus->setText(tr("The official lobby was found, but joining failed. Retrying…"));
+		setOfficialLobbyTabVisible(false);
 	}
 }
 
@@ -939,6 +949,28 @@ void NEMainpage::showOfficialLobby()
 	ui->officialLobbyStatus->hide();
 	ui->officialLobbyTopSpacer->changeSize(0, 0, QSizePolicy::Minimum, QSizePolicy::Minimum);
 	ui->officialLobbyBottomSpacer->changeSize(0, 0, QSizePolicy::Minimum, QSizePolicy::Minimum);
+}
+
+void NEMainpage::setOfficialLobbyTabVisible(bool visible)
+{
+	const int tabIndex = ui->tabWidget->indexOf(ui->tab);
+	if (!visible) {
+		if (tabIndex != -1) {
+			const bool wasCurrent = (ui->tabWidget->currentWidget() == ui->tab);
+			ui->tabWidget->removeTab(tabIndex);
+			if (wasCurrent || ui->tabWidget->currentIndex() == -1) {
+				ui->tabWidget->setCurrentWidget(ui->availablePlayersTab);
+			}
+		}
+	} else {
+		if (tabIndex == -1) {
+			QWidget *current = ui->tabWidget->currentWidget();
+			ui->tabWidget->insertTab(0, ui->tab, tr("Chess Room"));
+			if (current && current != ui->tab) {
+				ui->tabWidget->setCurrentWidget(current);
+			}
+		}
+	}
 }
 
 void NEMainpage::officialLobbyNewMessage(ChatWidget *)
