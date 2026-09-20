@@ -57,9 +57,7 @@ QTableWidgetItem *createMoveTableItem(const QString &notation, bool isWhite)
 	const QChar upper = firstChar.toUpper();
 	if (upper == 'K' || upper == 'Q' || upper == 'R' || upper == 'B' || upper == 'N' || upper == 'H') {
 		const QChar pieceCode = (upper == 'H') ? 'N' : upper;
-		const QString iconPath = QStringLiteral(":/piece/%1%2.svg")
-		        .arg(isWhite ? 'w' : 'b')
-		        .arg(pieceCode);
+		const QString iconPath = RetroChessSettings::pieceResource(isWhite ? 'w' : 'b', pieceCode);
 		const QString displayText = notation.mid(1);
 		return new QTableWidgetItem(QIcon(iconPath), displayText);
 	}
@@ -376,6 +374,15 @@ void ChessGameReviewDialog::updatePlayPauseButton()
 	m_playPause->setToolTip(playing ? tr("Pause") : tr("Play"));
 }
 
+void ChessGameReviewDialog::refreshPieceTheme()
+{
+	for (int index = 0; index < m_game.moves.size(); ++index) {
+		const int column = index % 2 + 1;
+		m_moves->setItem(index / 2, column, createMoveTableItem(m_game.moves[index], column == 1));
+	}
+	showPly(m_ply);
+}
+
 void ChessGameReviewDialog::showPly(int ply, bool playSound)
 {
 	if (m_game.positions.isEmpty()) return;
@@ -473,7 +480,7 @@ void ChessGameReviewDialog::showPly(int ply, bool playSound)
 		const QString colorPrefix = encoded.isUpper() ? "w" : "b";
 		QChar piece = encoded.toUpper();
 		if (piece == 'H') piece = 'N';
-		const QIcon icon(QString(":/piece/%1%2.svg").arg(colorPrefix).arg(piece));
+		const QIcon icon(RetroChessSettings::pieceResource(colorPrefix.at(0), piece));
 		square->setPixmap(icon.pixmap(50, 50));
 	}
 

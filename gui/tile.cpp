@@ -63,7 +63,7 @@ void Tile::display(char elem)
 	}
 
 	const QChar colorCode = this->pieceColor ? 'w' : 'b';
-	const QString resource = QString(":/piece/%1%2.svg").arg(colorCode).arg(pieceCode);
+	const QString resource = RetroChessSettings::pieceResource(colorCode, pieceCode);
 	this->setAlignment(Qt::AlignCenter);
 	// QPixmap loads an SVG at its intrinsic 45x45 size. QIcon asks the SVG
 	// engine to render directly at the 64x64 tile size, producing a larger,
@@ -85,7 +85,7 @@ void Tile::displayPosition(bool occupied, char name, int color)
 	default: clear(); return;
 	}
 	const QChar colorCode = color ? 'w' : 'b';
-	setPixmap(QIcon(QString(":/piece/%1%2.svg").arg(colorCode).arg(resourcePiece))
+	setPixmap(QIcon(RetroChessSettings::pieceResource(colorCode, resourcePiece))
 	                  .pixmap(size()));
 }
 

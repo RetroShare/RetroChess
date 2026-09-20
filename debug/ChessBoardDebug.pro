@@ -12,3 +12,4 @@ HEADERS += ../gui/ChessBoard.h \
            ../gui/ChessPosition.h
 
 RESOURCES += ../gui/RetroChess_images.qrc
+RESOURCES += ../gui/RetroChess_pieces.qrc

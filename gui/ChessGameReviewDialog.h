@@ -38,6 +38,7 @@ class ChessGameReviewDialog : public QDialog
 public:
 	explicit ChessGameReviewDialog(const ChessGameRecord &game, QWidget *parent = nullptr);
 	virtual ~ChessGameReviewDialog();
+	void refreshPieceTheme();
 
 private slots:
 	void stepForward();
