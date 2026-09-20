@@ -811,7 +811,10 @@ void NEMainpage::refreshAvailablePlayers()
         for (auto it = rows.constBegin(); it != rows.constEnd(); ++it)
             if (!retained.contains(it.key())) delete it.value();
         tree->setSortingEnabled(true);
-        tree->sortItems(tree->sortColumn(), tree->header()->sortIndicatorOrder());
+        const int sortCol = tree->header()->sortIndicatorSection() >= 0
+                ? tree->header()->sortIndicatorSection()
+                : tree->sortColumn();
+        tree->sortItems(sortCol, tree->header()->sortIndicatorOrder());
     }
     filterSavedContacts();
     ui->availablePlayersDescription->setText(tr("Saved chess contacts keeps all saved players, including offline contacts. Available or invited players shows players ready for a game and incoming or outgoing invitations. Right-click or double-click a player for actions."));
@@ -1923,6 +1926,17 @@ void NEMainpage::loadLayoutSettings()
 		}
 	}
 
+	int savedSortCol = Settings->valueFromGroup("RetroChess", "SavedContacts_SortColumn", -1).toInt();
+	int savedSortOrder = Settings->valueFromGroup("RetroChess", "SavedContacts_SortOrder", -1).toInt();
+	if (savedSortCol < 0 || savedSortCol >= ui->savedContacts->columnCount()) {
+		savedSortCol = restoredSaved ? ui->savedContacts->header()->sortIndicatorSection() : 0;
+		savedSortOrder = restoredSaved ? static_cast<int>(ui->savedContacts->header()->sortIndicatorOrder()) : static_cast<int>(Qt::AscendingOrder);
+	}
+	if (savedSortCol < 0 || savedSortCol >= ui->savedContacts->columnCount()) savedSortCol = 0;
+	if (savedSortOrder != Qt::AscendingOrder && savedSortOrder != Qt::DescendingOrder) savedSortOrder = Qt::AscendingOrder;
+	ui->savedContacts->header()->setSortIndicator(savedSortCol, static_cast<Qt::SortOrder>(savedSortOrder));
+	ui->savedContacts->sortItems(savedSortCol, static_cast<Qt::SortOrder>(savedSortOrder));
+
 	ui->savedContacts->setColumnHidden(1, false);
 	const bool hideLastSeen = Settings->valueFromGroup("RetroChess", "SavedContacts_HideLastSeen", false).toBool();
 	ui->savedContacts->setColumnHidden(2, hideLastSeen);
@@ -1993,6 +2007,17 @@ void NEMainpage::loadLayoutSettings()
 	if (ui->availablePlayers->columnWidth(1) < 130) ui->availablePlayers->setColumnWidth(1, 130);
 	if (ui->availablePlayers->columnWidth(2) < 120) ui->availablePlayers->setColumnWidth(2, 120);
 
+	int availSortCol = Settings->valueFromGroup("RetroChess", "AvailablePlayers_SortColumn", -1).toInt();
+	int availSortOrder = Settings->valueFromGroup("RetroChess", "AvailablePlayers_SortOrder", -1).toInt();
+	if (availSortCol < 0 || availSortCol >= ui->availablePlayers->columnCount()) {
+		availSortCol = restoredAvailable ? ui->availablePlayers->header()->sortIndicatorSection() : 1;
+		availSortOrder = restoredAvailable ? static_cast<int>(ui->availablePlayers->header()->sortIndicatorOrder()) : static_cast<int>(Qt::AscendingOrder);
+	}
+	if (availSortCol < 0 || availSortCol >= ui->availablePlayers->columnCount()) availSortCol = 1;
+	if (availSortOrder != Qt::AscendingOrder && availSortOrder != Qt::DescendingOrder) availSortOrder = Qt::AscendingOrder;
+	ui->availablePlayers->header()->setSortIndicator(availSortCol, static_cast<Qt::SortOrder>(availSortOrder));
+	ui->availablePlayers->sortItems(availSortCol, static_cast<Qt::SortOrder>(availSortOrder));
+
 	const bool onlyOnline = Settings->valueFromGroup("RetroChess", "ShowOnlyOnlineContacts", false).toBool();
 	ui->showOnlineplayersButton->setChecked(onlyOnline);
 	ui->showOnlineplayersButton->setToolTip(onlyOnline
@@ -2020,12 +2045,34 @@ void NEMainpage::loadLayoutSettings()
 		}
 	}
 
-	connect(ui->savedContacts->header(), &QHeaderView::sectionResized,
-	        this, &NEMainpage::saveLayoutSettings);
-	connect(ui->availablePlayers->header(), &QHeaderView::sectionResized,
-	        this, &NEMainpage::saveLayoutSettings);
-	connect(ui->active_games->header(), &QHeaderView::sectionResized,
-	        this, &NEMainpage::saveLayoutSettings);
+	int activeSortCol = Settings->valueFromGroup("RetroChess", "ActiveGames_SortColumn", -1).toInt();
+	int activeSortOrder = Settings->valueFromGroup("RetroChess", "ActiveGames_SortOrder", -1).toInt();
+	if (activeSortCol >= 0 && activeSortCol < ui->active_games->columnCount()) {
+		if (activeSortOrder != Qt::AscendingOrder && activeSortOrder != Qt::DescendingOrder) activeSortOrder = Qt::AscendingOrder;
+		ui->active_games->header()->setSortIndicator(activeSortCol, static_cast<Qt::SortOrder>(activeSortOrder));
+		ui->active_games->sortItems(activeSortCol, static_cast<Qt::SortOrder>(activeSortOrder));
+	}
+
+	ui->leaderboardTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+	const QByteArray leaderboardHeader = Settings->valueFromGroup("RetroChess", "LeaderboardHeaderState", QByteArray()).toByteArray();
+	if (!leaderboardHeader.isEmpty()) {
+		ui->leaderboardTable->horizontalHeader()->restoreState(leaderboardHeader);
+	}
+	int lbSortCol = Settings->valueFromGroup("RetroChess", "Leaderboard_SortColumn", -1).toInt();
+	int lbSortOrder = Settings->valueFromGroup("RetroChess", "Leaderboard_SortOrder", -1).toInt();
+	if (lbSortCol >= 0 && lbSortCol < ui->leaderboardTable->columnCount()) {
+		if (lbSortOrder != Qt::AscendingOrder && lbSortOrder != Qt::DescendingOrder) lbSortOrder = Qt::DescendingOrder;
+		ui->leaderboardTable->horizontalHeader()->setSortIndicator(lbSortCol, static_cast<Qt::SortOrder>(lbSortOrder));
+	} else if (leaderboardHeader.isEmpty()) {
+		ui->leaderboardTable->horizontalHeader()->setSortIndicator(2, Qt::DescendingOrder);
+	}
+
+	for (QHeaderView *hdr : {ui->savedContacts->header(), ui->availablePlayers->header(),
+	                         ui->active_games->header(), ui->leaderboardTable->horizontalHeader()}) {
+		connect(hdr, &QHeaderView::sectionResized, this, &NEMainpage::saveLayoutSettings);
+		connect(hdr, &QHeaderView::sectionMoved, this, &NEMainpage::saveLayoutSettings);
+		connect(hdr, &QHeaderView::sortIndicatorChanged, this, &NEMainpage::saveLayoutSettings);
+	}
 	connect(ui->playersSplitter, &QSplitter::splitterMoved,
 	        this, &NEMainpage::saveLayoutSettings);
 }
@@ -2033,10 +2080,27 @@ void NEMainpage::loadLayoutSettings()
 void NEMainpage::saveLayoutSettings()
 {
 	Settings->setValueToGroup("RetroChess", "PlayersSplitterState", ui->playersSplitter->saveState());
+
 	Settings->setValueToGroup("RetroChess", "SavedContactsHeaderState", ui->savedContacts->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "SavedContacts_SortColumn", ui->savedContacts->header()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "SavedContacts_SortOrder", static_cast<int>(ui->savedContacts->header()->sortIndicatorOrder()));
+
 	Settings->setValueToGroup("RetroChess", "AvailablePlayersHeaderState", ui->availablePlayers->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "AvailablePlayers_SortColumn", ui->availablePlayers->header()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "AvailablePlayers_SortOrder", static_cast<int>(ui->availablePlayers->header()->sortIndicatorOrder()));
+
 	Settings->setValueToGroup("RetroChess", "ActiveGamesHeaderState", ui->active_games->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "ActiveGames_SortColumn", ui->active_games->header()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "ActiveGames_SortOrder", static_cast<int>(ui->active_games->header()->sortIndicatorOrder()));
+
+	Settings->setValueToGroup("RetroChess", "LeaderboardHeaderState", ui->leaderboardTable->horizontalHeader()->saveState());
+	Settings->setValueToGroup("RetroChess", "Leaderboard_SortColumn", ui->leaderboardTable->horizontalHeader()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "Leaderboard_SortOrder", static_cast<int>(ui->leaderboardTable->horizontalHeader()->sortIndicatorOrder()));
+
 	Settings->setValueToGroup("RetroChess", "GameHistoryHeaderState", ui->gameHistory->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "GameHistory_SortColumn", ui->gameHistory->header()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "GameHistory_SortOrder", static_cast<int>(ui->gameHistory->header()->sortIndicatorOrder()));
+
 	Settings->setValueToGroup("RetroChess", "ShowOnlyOnlineContacts", ui->showOnlineplayersButton->isChecked());
 	Settings->setValueToGroup("RetroChess", "SavedContacts_HideLastSeen", ui->savedContacts->isColumnHidden(2));
 	Settings->setValueToGroup("RetroChess", "SavedContacts_HideHeader", ui->savedContacts->header()->isHidden());
@@ -2180,8 +2244,12 @@ void NEMainpage::setupPlayersTab()
 		showSavedContactsHeaderContextMenu(ui->savedContacts->header()->mapToGlobal(pos));
 	});
 
-	ui->savedContacts->sortItems(0, Qt::AscendingOrder);
-	ui->availablePlayers->sortItems(1, Qt::AscendingOrder);
+	ui->savedContacts->sortItems(
+	        ui->savedContacts->header()->sortIndicatorSection(),
+	        ui->savedContacts->header()->sortIndicatorOrder());
+	ui->availablePlayers->sortItems(
+	        ui->availablePlayers->header()->sortIndicatorSection(),
+	        ui->availablePlayers->header()->sortIndicatorOrder());
 	for (QTreeWidget *tree : {ui->savedContacts, ui->availablePlayers}) {
 		tree->setContextMenuPolicy(Qt::CustomContextMenu);
 		connect(tree, &QTreeWidget::customContextMenuRequested,
