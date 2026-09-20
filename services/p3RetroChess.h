@@ -152,6 +152,10 @@ public:
 	bool sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
 	void sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
 
+	ChessTimeControl timeControlForPeer(const RsGxsId &gxsId) override;
+	void setLobbySeek(bool active, const ChessTimeControl &tc) override;
+	void setTimeControlForPeer(const RsGxsId &gxsId, const ChessTimeControl &tc) override;
+
 	// Async tunnel management
 	void handleGxsTick(); // Called periodically by the core
 	void closePendingGxsTunnels();
@@ -187,12 +191,17 @@ private:
 		QString opponentId;
 		QString opponentName;
 		QString gameId;
+		/// Time control advertised by a "chess_seek" action from this peer.
+		ChessTimeControl seekTimeControl;
+		bool seeking = false;
 	};
 	std::map<RsGxsId, ChessContact> mChessContacts;
 	std::set<RsGxsId> mChessIdentities;
 	RsGxsId mPreferredChessIdentity;
 	bool mChessIdentitiesConfigured = false;
 	bool mChessBusy = false;
+	bool mLobbySeekActive = false;
+	ChessTimeControl mLobbySeek;
 	// Helper to find which friend sent the data based on the tunnel ID
 	RsGxsId findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id);
 
@@ -228,6 +237,7 @@ private:
 	std::map<std::string, time_t> mLastSessionReconnect;
 	std::map<std::string, std::set<RsGxsId>> mSpectatorsByGame;
 	std::map<RsGxsId, QString> mPendingWatchRequests;
+	std::map<RsGxsId, ChessTimeControl> mInviteTimeControlByPeer;
 
 	RsMutex mRetroChessMtx;
 	RsServiceControl *mServiceControl;

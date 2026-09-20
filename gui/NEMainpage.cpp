@@ -20,6 +20,7 @@
 
 #include "NEMainpage.h"
 #include "RetroChessLeaderboard.h"
+#include "ChessGameSetupDialog.h"
 #include <QTableWidget>
 #include <QLabel>
 #include "ui_NEMainpage.h"
@@ -363,6 +364,9 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 
     loadLayoutSettings();
 
+    connect(ui->createLobbyGameButton, &QPushButton::clicked,
+            this, &NEMainpage::onCreateLobbyGame);
+
     setupPlayersTab();
     setOfficialLobbyTabVisible(false);
     ui->tabWidget->setCurrentWidget(ui->availablePlayersTab);
@@ -474,6 +478,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		else
 			create_chess_window(session.endpointId.toStdString(), session.localColor);
 		if (RetroChessWindow *window = mGameSessions->game(session.endpointId)) {
+			if (!session.timeControl.unlimited)
+				window->setTimeControl(session.timeControl);
 			QString error;
 			if (!session.fen.isEmpty()
 			        && !window->restoreSessionPosition(
@@ -526,7 +532,7 @@ void NEMainpage::refreshAvailablePlayers()
             int rank = 5;
             QColor color("#808080");
             QString label = tr("Unknown");
-            if (status == "available") { rank = 0; color = QColor("#278342"); label = tr("Available"); }
+            if (status == "available") { rank = 0; color = QColor("#278342"); label = peer.seeking ? tr("Open game") : tr("Available"); }
             else if (status == "playing") { rank = 1; color = QColor("#327fc1"); label = tr("Playing"); }
             else if (status == "busy") { rank = 2; color = QColor("#b47b16"); label = tr("Busy"); }
             else if (status == "checking") { rank = 3; label = tr("Checking..."); }
@@ -564,7 +570,10 @@ void NEMainpage::refreshAvailablePlayers()
                 }
 
                 if (actionState != 0) {
-                    if (item->data(2, Qt::UserRole).toInt() != actionState || !tree->itemWidget(item, 2)) {
+                    const QString seekKey = peer.seeking ? peer.timeControl.toNetString() : QString();
+                    if (item->data(2, Qt::UserRole).toInt() != actionState
+                            || item->data(2, Qt::UserRole + 1).toString() != seekKey
+                            || !tree->itemWidget(item, 2)) {
                         QWidget *actionWidget = new QWidget(tree);
                         QHBoxLayout *actionLayout = new QHBoxLayout(actionWidget);
                         actionLayout->setContentsMargins(2, 1, 2, 1);
@@ -613,8 +622,14 @@ void NEMainpage::refreshAvailablePlayers()
                                 refreshAvailablePlayers();
                             });
                         } else if (actionState == 3) {
-                            actionBtn->setText(tr("Invite"));
-                            actionBtn->setToolTip(tr("Invite to chess"));
+                            const bool hasSeek = peer.seeking;
+                            if (hasSeek) {
+                                actionBtn->setText(tr("Play %1").arg(peer.timeControl.toNetString()));
+                                actionBtn->setToolTip(tr("Accept %1 challenge").arg(peer.timeControl.label()));
+                            } else {
+                                actionBtn->setText(tr("Invite"));
+                                actionBtn->setToolTip(tr("Invite to chess"));
+                            }
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
                                 "  border: 1px solid #2365a6; color: white; padding: 1px 6px; border-radius: 4px;"
@@ -623,7 +638,8 @@ void NEMainpage::refreshAvailablePlayers()
                                 "QPushButton:hover { border-color: #5dade2; }"
                                 "QPushButton:pressed { background-color: #1f5f99; }"
                             );
-                            connect(actionBtn, &QPushButton::clicked, this, [this, id]() {
+                            const ChessTimeControl peerTc = peer.timeControl;
+                            connect(actionBtn, &QPushButton::clicked, this, [this, id, peerTc, hasSeek]() {
                                 if (rsRetroChess->preferredChessIdentity().isNull()) {
                                     QMessageBox::information(this, tr("Chess invitation"),
                                         tr("Please select your chess identity in Chess profile before inviting players."));
@@ -632,6 +648,8 @@ void NEMainpage::refreshAvailablePlayers()
                                     refreshAvailablePlayers();
                                     return;
                                 }
+                                rsRetroChess->setTimeControlForPeer(id,
+                                    hasSeek ? peerTc : (m_seekActive ? m_pendingSeek : ChessTimeControl{}));
                                 if (!rsRetroChess->sendInviteToGxs(id)) {
                                     QMessageBox::warning(this, tr("Chess invitation"), tr("The chess invitation could not be sent."));
                                 }
@@ -649,6 +667,7 @@ void NEMainpage::refreshAvailablePlayers()
                         actionLayout->addWidget(actionBtn);
                         tree->setItemWidget(item, 2, actionWidget);
                         item->setData(2, Qt::UserRole, actionState);
+                        item->setData(2, Qt::UserRole + 1, seekKey);
                     }
                 } else {
                     if (tree->itemWidget(item, 2)) {
@@ -660,31 +679,54 @@ void NEMainpage::refreshAvailablePlayers()
 
                 RetroChessLeaderboard::Player p;
                 if (mLeaderboard && mLeaderboard->getPlayer(id, p)) {
-                    item->setText(3, QString::number(qRound(p.rating)));
-                    item->setData(3, Qt::UserRole, qRound(p.rating));
-                    item->setText(4, QString::number(qRound(p.rd)));
-                    item->setData(4, Qt::UserRole, qRound(p.rd));
-                    item->setToolTip(3, tr("Rating: %1 (%2, %3 games)")
+                    item->setText(5, QString::number(qRound(p.rating)));
+                    item->setData(5, Qt::UserRole, qRound(p.rating));
+                    item->setText(6, QString::number(qRound(p.rd)));
+                    item->setData(6, Qt::UserRole, qRound(p.rd));
+                    item->setToolTip(5, tr("Rating: %1 (%2, %3 games)")
                             .arg(qRound(p.rating))
                             .arg(p.provisional() ? tr("Provisional") : tr("Rated"))
                             .arg(p.games()));
-                    item->setToolTip(4, tr("Rating Deviation: %1 (lower means more reliable)")
+                    item->setToolTip(6, tr("Rating Deviation: %1 (lower means more reliable)")
                             .arg(qRound(p.rd)));
                 } else {
-                    item->setText(3, tr("1500"));
-                    item->setData(3, Qt::UserRole, 1500);
-                    item->setText(4, tr("350"));
-                    item->setData(4, Qt::UserRole, 350);
-                    item->setToolTip(3, tr("Default rating: 1500 (Provisional, no games recorded yet)"));
-                    item->setToolTip(4, tr("Default RD: 350 (Provisional)"));
+                    item->setText(5, tr("1500"));
+                    item->setData(5, Qt::UserRole, 1500);
+                    item->setText(6, tr("350"));
+                    item->setData(6, Qt::UserRole, 350);
+                    item->setToolTip(5, tr("Default rating: 1500 (Provisional, no games recorded yet)"));
+                    item->setToolTip(6, tr("Default RD: 350 (Provisional)"));
                 }
-                item->setText(5, lastSeenText);
-                item->setData(5, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
-                item->setText(6, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
+
+                // Column 3 — Time control (seek)
+                const QString timeLabel = peer.seeking
+                    ? (peer.timeControl.unlimited ? tr("Unlimited") : peer.timeControl.toNetString()) : QString();
+                item->setText(3, timeLabel);
+                item->setData(3, Qt::UserRole, peer.timeControl.unlimited ? 0 : peer.timeControl.minutes);
+                item->setForeground(3, QBrush());
+                QFont timeFont = tree->font();
+                item->setFont(3, timeFont);
+                if (peer.seeking && !peer.timeControl.unlimited) {
+                    const int s = peer.timeControl.estimatedSeconds();
+                    QColor tc = s < 179  ? QColor("#c0392b")   // Bullet
+                              : s < 479  ? QColor("#e67e22")   // Blitz
+                              : s < 1499 ? QColor("#27ae60")   // Rapid
+                              :            QColor("#2980b9");   // Classical
+                    item->setForeground(3, tc);
+                    item->setFont(3, [&]{ QFont f = item->font(3); f.setBold(true); return f; }());
+                }
+
+                // Column 4 — Mode (always Casual for now)
+                item->setText(4, peer.seeking ? tr("Casual") : QString());
+                item->setData(4, Qt::UserRole, 0);
+
+                item->setText(7, lastSeenText);
+                item->setData(7, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
+                item->setText(8, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
                         : incoming ? tr("Received") : QString());
 
                 if (incoming) {
-                    if (!tree->itemWidget(item, 7)) {
+                    if (!tree->itemWidget(item, 9)) {
                         QWidget *rejectWidget = new QWidget(tree);
                         QHBoxLayout *rejectLayout = new QHBoxLayout(rejectWidget);
                         rejectLayout->setContentsMargins(2, 1, 2, 1);
@@ -714,17 +756,35 @@ void NEMainpage::refreshAvailablePlayers()
                             refreshAvailablePlayers();
                         });
                         rejectLayout->addWidget(rejectBtn);
-                        tree->setItemWidget(item, 7, rejectWidget);
+                        tree->setItemWidget(item, 9, rejectWidget);
                     }
-                    item->setData(7, Qt::UserRole, 1);
-                    item->setText(7, QString());
+                    item->setData(9, Qt::UserRole, 1);
+                    item->setText(9, QString());
                 } else {
-                    if (tree->itemWidget(item, 7)) {
-                        tree->removeItemWidget(item, 7);
-                    }
-                    item->setData(7, Qt::UserRole, 0);
-                    item->setText(7, QString());
+                    if (tree->itemWidget(item, 9))
+                        tree->removeItemWidget(item, 9);
+                    item->setData(9, Qt::UserRole, 0);
+                    item->setText(9, QString());
                 }
+            }
+        }
+        if (!isSavedContacts && m_seekActive) {
+            const QString ownKey = QStringLiteral("local-open-game");
+            retained.insert(ownKey);
+            QTreeWidgetItem *item = rows.value(ownKey);
+            if (!item) item = new ChessPlayerItem(tree);
+            // This is a local listing, not a peer identity. Disable peer actions.
+            item->setFlags(Qt::ItemIsEnabled);
+            item->setData(0, Qt::UserRole, ownKey);
+            item->setText(0, tr("Your open game"));
+            item->setText(1, tr("Waiting for opponent"));
+            item->setData(1, Qt::UserRole, -1);
+            item->setText(3, m_pendingSeek.unlimited ? tr("Unlimited") : m_pendingSeek.toNetString());
+            item->setText(4, tr("Casual"));
+            if (!tree->itemWidget(item, 2)) {
+                QPushButton *cancel = new QPushButton(tr("Cancel game"), tree);
+                connect(cancel, &QPushButton::clicked, this, &NEMainpage::onCreateLobbyGame);
+                tree->setItemWidget(item, 2, cancel);
             }
         }
         for (auto it = rows.constBegin(); it != rows.constEnd(); ++it)
@@ -1449,6 +1509,17 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 
     // Open the window with the GXS constructor
     RetroChessWindow *win = new RetroChessWindow(gxs_id, player_id);
+    ChessTimeControl tc = rsRetroChess->timeControlForPeer(gxs_id);
+    if (!tc.unlimited) {
+        win->setTimeControl(tc);
+    }
+    if (m_seekActive) {
+        m_seekActive = false;
+        broadcastSeek(false, ChessTimeControl{});
+        m_pendingSeek = ChessTimeControl{};
+        ui->createLobbyGameButton->setText(tr("Create lobby game"));
+        refreshAvailablePlayers();
+    }
     connect(win, &RetroChessWindow::ratedResult, mLeaderboard, &RetroChessLeaderboard::submitResult);
     connect(win, SIGNAL(rematchRequested(RsGxsId,int)),
             this, SLOT(requestRematchGxs(RsGxsId,int)));
@@ -1470,6 +1541,7 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 	session.lastToTile = win->lastMoveTo();
 	session.moveHistory = win->moveHistory();
 	session.gameId = win->mGameId;
+	session.timeControl = tc;
 	rsRetroChess->registerGameSession(session);
 	connect(win, &RetroChessWindow::sessionStateChanged, this,
 	        [key](const QString &fen, uint32_t sequence, int fromTile, int toTile, const QStringList &moves) {
@@ -1886,16 +1958,18 @@ void NEMainpage::loadLayoutSettings()
 		} else {
 			ui->availablePlayers->setColumnWidth(0, 180);
 			ui->availablePlayers->setColumnWidth(1, 130);
-			ui->availablePlayers->setColumnWidth(2, 130);
-			ui->availablePlayers->setColumnWidth(3, 70);
-			ui->availablePlayers->setColumnWidth(4, 60);
-			ui->availablePlayers->setColumnWidth(5, 120);
-			ui->availablePlayers->setColumnWidth(6, 100);
-			ui->availablePlayers->setColumnWidth(7, 85);
+			ui->availablePlayers->setColumnWidth(2, 120);
+			ui->availablePlayers->setColumnWidth(3, 75);
+			ui->availablePlayers->setColumnWidth(4, 75);
+			ui->availablePlayers->setColumnWidth(5, 70);
+			ui->availablePlayers->setColumnWidth(6, 60);
+			ui->availablePlayers->setColumnWidth(7, 120);
+			ui->availablePlayers->setColumnWidth(8, 100);
+			ui->availablePlayers->setColumnWidth(9, 85);
 		}
 	}
 	if (ui->availablePlayers->columnWidth(1) < 130) ui->availablePlayers->setColumnWidth(1, 130);
-	if (ui->availablePlayers->columnWidth(2) < 130) ui->availablePlayers->setColumnWidth(2, 130);
+	if (ui->availablePlayers->columnWidth(2) < 120) ui->availablePlayers->setColumnWidth(2, 120);
 
 	const bool onlyOnline = Settings->valueFromGroup("RetroChess", "ShowOnlyOnlineContacts", false).toBool();
 	ui->showOnlineplayersButton->setChecked(onlyOnline);
@@ -2098,6 +2172,7 @@ void NEMainpage::setupPlayersTab()
 				return;
 			}
 			const QString endpoint = item->data(0, Qt::UserRole).toString();
+			if (endpoint == QLatin1String("local-open-game")) return;
 			const RsGxsId id(endpoint.toStdString());
 			const bool saved = item->data(0, Qt::UserRole + 1).toBool();
 			const bool outgoing = rsRetroChess->hasInviteToGxs(id);
@@ -2172,6 +2247,7 @@ void NEMainpage::setupPlayersTab()
 		        this, [this](QTreeWidgetItem *item, int) {
 			if (!item) return;
 			const QString endpoint = item->data(0, Qt::UserRole).toString();
+			if (endpoint == QLatin1String("local-open-game")) return;
 			const RsGxsId id(endpoint.toStdString());
 			const bool incoming = rsRetroChess->hasInviteFromGxs(id);
 			if (incoming) {
@@ -2287,3 +2363,38 @@ bool NEMainpage::eventFilter(QObject *watched, QEvent *event)
 	}
 	return MainPage::eventFilter(watched, event);
 }
+
+void NEMainpage::onCreateLobbyGame()
+{
+    if (m_seekActive) {
+        // Cancel active seek
+        m_seekActive = false;
+        broadcastSeek(false, ChessTimeControl{});
+        m_pendingSeek = ChessTimeControl{};
+        ui->createLobbyGameButton->setText(tr("Create lobby game"));
+        refreshAvailablePlayers();
+        return;
+    }
+
+    if (!rsRetroChess || rsRetroChess->preferredChessIdentity().isNull()) {
+        QMessageBox::information(this, tr("Create lobby game"),
+            tr("Please select your chess identity in Chess profile before creating a game."));
+        return;
+    }
+    ChessGameSetupDialog dlg(this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    const ChessTimeControl tc = dlg.selectedTimeControl();
+    m_pendingSeek = tc;
+    m_seekActive = true;
+    broadcastSeek(true, tc);
+    ui->createLobbyGameButton->setText(tr("Cancel seek (%1)").arg(tc.label()));
+    refreshAvailablePlayers();
+}
+
+void NEMainpage::broadcastSeek(bool active, const ChessTimeControl &tc)
+{
+    if (!rsRetroChess) return;
+    rsRetroChess->setLobbySeek(active, tc);
+}
+

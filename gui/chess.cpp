@@ -46,6 +46,7 @@
 #include "RetroChessSettings.h"
 #include "ChessDebugWidget.h"
 #include "ChessBoard.h"
+#include "ChessClockWidget.h"
 
 #include <QPointer>
 #include <QIcon>
@@ -2297,6 +2298,9 @@ void RetroChessWindow::closeForRematch()
 
 void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QString &reason)
 {
+    if (m_whiteClock) m_whiteClock->pauseClock();
+    if (m_blackClock) m_blackClock->pauseClock();
+
     if (m_resultPopupShown)
         return;
     m_resultPopupShown = true;
@@ -3126,8 +3130,14 @@ void RetroChessWindow::sendMoveAction(int fromTile, int toTile, char promotion)
 	        + (promotion == '-' ? QString() : QString(QChar(promotion)).toLower());
 	appendDebugEvent(QString("TX move %1 sequence=%2 hash=%3 FEN=%4")
 	        .arg(move).arg(sequence).arg(hash, currentFen()));
-	sendGameAction(QString("move:%1:%2:%3:%4:%5")
-	        .arg(sequence).arg(fromTile).arg(toTile).arg(QChar(promotion)).arg(hash));
+	if (m_whiteClock && m_blackClock && !m_timeControl.unlimited) {
+		sendGameAction(QString("move:%1:%2:%3:%4:%5:%6:%7")
+		        .arg(sequence).arg(fromTile).arg(toTile).arg(QChar(promotion)).arg(hash)
+		        .arg(m_whiteClock->remainingMs()).arg(m_blackClock->remainingMs()));
+	} else {
+		sendGameAction(QString("move:%1:%2:%3:%4:%5")
+		        .arg(sequence).arg(fromTile).arg(toTile).arg(QChar(promotion)).arg(hash));
+	}
 }
 
 bool RetroChessWindow::loadFen(const QString &fen, QString *error)
@@ -3296,7 +3306,8 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 	if (action.startsWith("move:")) {
 		if (!remote || m_flag_finished || (!m_isSpectator && turn == m_localplayer_turn)) return;
 		const QStringList parts = action.split(':');
-		const bool verifiedPacket = parts.size() == 6;
+		const bool timedPacket = parts.size() == 8;
+		const bool verifiedPacket = parts.size() == 6 || timedPacket;
 		const bool legacyPacket = parts.size() == 4;
 		bool sequenceOk = legacyPacket;
 		bool fromOk = false, toOk = false;
@@ -3401,6 +3412,15 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		} else {
 			appendDebugEvent("Legacy move accepted without sequence/hash verification");
 		}
+		if (timedPacket && m_whiteClock && m_blackClock) {
+			bool okW = false, okB = false;
+			const qint64 wMs = parts.at(6).toLongLong(&okW);
+			const qint64 bMs = parts.at(7).toLongLong(&okB);
+			if (okW && okB) {
+				m_whiteClock->syncTo(wMs);
+				m_blackClock->syncTo(bMs);
+			}
+		}
 		return;
 	}
 	if (action.startsWith("promotion:")) {
@@ -3490,6 +3510,17 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 			return;
 		}
 		showGameResultDialog(false, true);
+		emit gameEnded(QString::fromStdString(mPeerId));
+	} else if (action == "timeout") {
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		if (m_whiteClock) m_whiteClock->pauseClock();
+		if (m_blackClock) m_blackClock->pauseClock();
+		if (m_isSpectator) {
+			showSpectatorResult("*", tr("Time out"));
+			return;
+		}
+		showGameResultDialog(remote, false, tr("on time"));
 		emit gameEnded(QString::fromStdString(mPeerId));
 	}
 }
@@ -3707,4 +3738,62 @@ void RetroChessWindow::playerTurnNotice()
 	        : "QLabel { font-size: 13px; color: #777; }");
 	opponentStatus->setVisible(!localTurn);
 	localStatus->show();
+
+	if (m_whiteClock && m_blackClock && !m_timeControl.unlimited) {
+		if (m_flag_finished != 0) {
+			m_whiteClock->pauseClock();
+			m_blackClock->pauseClock();
+		} else if (turn == 1) {
+			m_blackClock->pauseClock();
+			m_whiteClock->startClock();
+		} else {
+			m_whiteClock->pauseClock();
+			m_blackClock->startClock();
+		}
+	}
+}
+
+void RetroChessWindow::setTimeControl(const ChessTimeControl &tc)
+{
+	m_timeControl = tc;
+	setupClocks();
+	playerTurnNotice();
+}
+
+void RetroChessWindow::setupClocks()
+{
+	if (m_timeControl.unlimited) {
+		if (m_whiteClock) m_whiteClock->hide();
+		if (m_blackClock) m_blackClock->hide();
+		return;
+	}
+	if (!m_whiteClock) {
+		m_whiteClock = new ChessClockWidget(m_ui->frame_2);
+		m_ui->gridLayout_3->addWidget(m_whiteClock, 5, 0, 1, 2);
+		connect(m_whiteClock, &ChessClockWidget::expired, this, [this]() {
+			onClockExpired(1);
+		});
+	}
+	if (!m_blackClock) {
+		m_blackClock = new ChessClockWidget(m_ui->frame);
+		m_ui->gridLayout_2->addWidget(m_blackClock, 4, 0, 1, 2);
+		connect(m_blackClock, &ChessClockWidget::expired, this, [this]() {
+			onClockExpired(0);
+		});
+	}
+	m_whiteClock->setTotalMs(m_timeControl.initialMs());
+	m_whiteClock->setIncrementMs(m_timeControl.incrementMs());
+	m_blackClock->setTotalMs(m_timeControl.initialMs());
+	m_blackClock->setIncrementMs(m_timeControl.incrementMs());
+	m_whiteClock->show();
+	m_blackClock->show();
+}
+
+void RetroChessWindow::onClockExpired(int color)
+{
+	if (m_flag_finished != 0) return;
+	if (m_localplayer_turn == color) {
+		sendGameAction("timeout");
+		applyGameAction("timeout", false);
+	}
 }

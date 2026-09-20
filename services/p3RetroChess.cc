@@ -622,6 +622,8 @@ std::vector<RsRetroChessAvailablePeer> p3RetroChess::availableChessPeers()
             peer.opponentId = contact->second.opponentId;
             peer.opponentName = contact->second.opponentName;
             peer.gameId = contact->second.gameId;
+            peer.timeControl = contact->second.seekTimeControl;
+            peer.seeking = contact->second.seeking;
         }
         result.push_back(peer);
     }
@@ -782,6 +784,8 @@ void p3RetroChess::tickChessPresence()
                 contact.deadline = 0;
                 contact.nonce.clear();
                 contact.status = "offline";
+                contact.seeking = false;
+                contact.seekTimeControl = ChessTimeControl{};
                 contact.failures = std::min(contact.failures + 1, 4u);
                 // Keep offline discovery responsive instead of backing off for eight minutes.
                 contact.nextProbe = now + std::min(60u, 15u << (contact.failures - 1));
@@ -868,6 +872,8 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         {
             RsStackMutex stack(mRetroChessMtx);
             if (mChessBusy) state = "busy";
+            reply["seeking"] = mLobbySeekActive;
+            if (mLobbySeekActive) reply["tc"] = mLobbySeek.toNetString();
             for (const auto &entry : mGameSessions) {
                 if (entry.second.gxs && entry.second.localIdentityId == QString::fromStdString(info.source_gxs_id.toStdString())) {
                     state = "playing";
@@ -920,6 +926,10 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
             }
         }
         reply["status"] = state;
+        if (state != "available") {
+            reply["seeking"] = false;
+            reply.remove("tc");
+        }
         if (state == "playing" && !opponentId.isEmpty()) {
             reply["opponent_id"] = opponentId;
             if (!opponentName.isEmpty()) reply["opponent_name"] = opponentName;
@@ -952,6 +962,9 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
                     || it->second.nonce != nonce || it->second.probeTunnel != tunnel) return true;
             ChessContact &contact = it->second;
             contact.status = state;
+            contact.seeking = state == "available" && message.value("seeking").toBool();
+            contact.seekTimeControl = contact.seeking
+                    ? ChessTimeControl::fromNetString(message.value("tc").toString()) : ChessTimeControl{};
             contact.opponentId = opponentId;
             contact.opponentName = opponentName;
             contact.gameId = gameId;
@@ -1104,17 +1117,29 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
         auto it = mActiveTunnels.find(gxsId);
         if (it != mActiveTunnels.end())
             activeTunnel = it->second;
-        else
+        else {
             // Client side: we initiated the invite but the tunnel isn't in
             // mActiveTunnels yet. Queue accept for when it becomes CAN_TALK.
-            mPendingGxsInvites[gxsId] = QJsonDocument(QJsonObject{{"type", "chess_accept"}, {"game_id", mGameIdByPeer[gxsId]}}).toJson(QJsonDocument::Compact).toStdString();
+            QJsonObject acceptObj{{"type", "chess_accept"}, {"game_id", mGameIdByPeer[gxsId]}};
+            auto tcIt = mInviteTimeControlByPeer.find(gxsId);
+            if (tcIt != mInviteTimeControlByPeer.end() && !tcIt->second.unlimited)
+                acceptObj["tc"] = tcIt->second.toNetString();
+            mPendingGxsInvites[gxsId] = QJsonDocument(acceptObj).toJson(QJsonDocument::Compact).toStdString();
+        }
     }
 
     if (!activeTunnel.isNull()) {
         // Tunnel already active (server side — invite arrived over it).
         // Send chess_accept immediately, outside the mutex.
         if (!mGxsTunnels) return;
-        const std::string accept = QJsonDocument(QJsonObject{{"type", "chess_accept"}, {"game_id", gameIdForPeer(gxsId)}}).toJson(QJsonDocument::Compact).toStdString();
+        QJsonObject acceptObj{{"type", "chess_accept"}, {"game_id", gameIdForPeer(gxsId)}};
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            auto tcIt = mInviteTimeControlByPeer.find(gxsId);
+            if (tcIt != mInviteTimeControlByPeer.end() && !tcIt->second.unlimited)
+                acceptObj["tc"] = tcIt->second.toNetString();
+        }
+        const std::string accept = QJsonDocument(acceptObj).toJson(QJsonDocument::Compact).toStdString();
         std::cout << "Chess: Sending chess_accept over tunnel " << activeTunnel << std::endl;
         mGxsTunnels->sendData(activeTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
                               (const uint8_t*)accept.c_str(), accept.size());
@@ -1393,8 +1418,14 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
 
     startNewGameIdForPeer(toId);
     { RsStackMutex stack(mRetroChessMtx); mRematchIdByPeer.erase(toId); }
-    const std::string invite = QJsonDocument(QJsonObject{{"type", "chess_invite"},
-        {"game_id", gameIdForPeer(toId)}}).toJson(QJsonDocument::Compact).toStdString();
+    QJsonObject inviteJson{{"type", "chess_invite"}, {"game_id", gameIdForPeer(toId)}};
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto tcIt = mInviteTimeControlByPeer.find(toId);
+        if (tcIt != mInviteTimeControlByPeer.end() && !tcIt->second.unlimited)
+            inviteJson["tc"] = tcIt->second.toNetString();
+    }
+    const std::string invite = QJsonDocument(inviteJson).toJson(QJsonDocument::Compact).toStdString();
     if (!activeTunnel.isNull()) {
         if (mGxsTunnels->sendData(
                     activeTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
@@ -1643,6 +1674,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             mOwnGxsIdByPeer[sender_id] = info.source_gxs_id;
             mActiveTunnels[sender_id] = tunnel_id;
             mGameIdByPeer[sender_id] = map.value("game_id").toString();
+            mInviteTimeControlByPeer[sender_id] = ChessTimeControl::fromNetString(map.value("tc").toString());
             mInvitesFromGxs.insert(sender_id);
         }
         // A new invite packet is also a refresh of an existing pending invite.
@@ -1657,7 +1689,13 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         {
             RsStackMutex stack(mRetroChessMtx);
             invited = mInvitesToGxs.erase(sender_id) > 0;
-            if (invited) mGameIdByPeer[sender_id] = map.value("game_id").toString();
+            if (invited) {
+                mGameIdByPeer[sender_id] = map.value("game_id").toString();
+                if (map.contains("tc")) {
+                    const QString tcStr = map.value("tc").toString();
+                    mInviteTimeControlByPeer[sender_id] = ChessTimeControl::fromNetString(tcStr);
+                }
+            }
         }
         if (!invited) {
             std::cerr << "Chess: Ignoring chess_accept from " << sender_id
@@ -1739,6 +1777,21 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             }
         }
 
+    } else if (type == "chess_seek") {
+        // A peer is advertising (or withdrawing) a game seek with a given time control.
+        // "tc" field: compact net string e.g. "5+3" or "unlimited". Absent means cancel.
+        const QString tcStr = map.value("tc").toString();
+        const ChessTimeControl tc = ChessTimeControl::fromNetString(
+            tcStr.isEmpty() ? QStringLiteral("unlimited") : tcStr);
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            auto it = mChessContacts.find(sender_id);
+            if (it != mChessContacts.end()) {
+                it->second.seekTimeControl = tc;
+                it->second.seeking = map.value("seeking", !tc.unlimited).toBool();
+            }
+        }
+        mNotify->notifyAvailablePeersChanged();
     } else if (type == "chess_watch_req") {
         const QString reqGameId = map.value("game_id").toString();
         RsRetroChessGameSession activeSession;
@@ -1980,6 +2033,8 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
                 auto contact = mChessContacts.find(gxs_id);
                 if (contact != mChessContacts.end()) {
                     contact->second.status = "offline";
+                    contact->second.seeking = false;
+                    contact->second.seekTimeControl = ChessTimeControl{};
                     contact->second.deadline = 0;
                     contact->second.nonce.clear();
                     contact->second.nextProbe = time(nullptr) + 15;
@@ -2044,14 +2099,19 @@ bool p3RetroChess::acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId
     std::cout << "Chess: acceptDataFromPeer: gxs=" << gxs_id
               << " tunnel=" << tunnel_id
               << " side=" << (am_I_client_side ? "client" : "server") << std::endl;
+    std::cout << "Chess: acceptDataFromPeer step1: getTunnelInfo" << std::endl;
     RsGxsTunnelService::GxsTunnelInfo tunnelInfo;
     const bool haveTunnelInfo = mGxsTunnels && mGxsTunnels->getTunnelInfo(tunnel_id, tunnelInfo);
+    std::cout << "Chess: acceptDataFromPeer step2: haveTunnelInfo=" << haveTunnelInfo << std::endl;
     if (!haveTunnelInfo || !rsIdentity || rsIdentity->isOwnId(gxs_id)) return true;
+    std::cout << "Chess: acceptDataFromPeer step3: chessIdentityEnabled" << std::endl;
     if (!chessIdentityEnabled(tunnelInfo.source_gxs_id)) {
+        std::cout << "Chess: acceptDataFromPeer step3a: checking session" << std::endl;
         RsStackMutex stack(mRetroChessMtx);
         auto game = mGameSessions.find(gxs_id.toStdString());
         if (game == mGameSessions.end() || game->second.localIdentityId != QString::fromStdString(tunnelInfo.source_gxs_id.toStdString())) return true;
     }
+    std::cout << "Chess: acceptDataFromPeer step4: storing tunnel map" << std::endl;
     {
         RsStackMutex stack(mRetroChessMtx);
         // Store the mapping so receiveData / handleRawData can identify the sender
@@ -2061,5 +2121,44 @@ bool p3RetroChess::acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId
         // local identity themselves. Otherwise probe-only peers accumulate here
         // because they never enter mActiveTunnels' disconnect cleanup path.
     }
+    std::cout << "Chess: acceptDataFromPeer step5: done, returning true" << std::endl;
     return true;
 }
+
+ChessTimeControl p3RetroChess::timeControlForPeer(const RsGxsId &gxsId)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    auto it = mInviteTimeControlByPeer.find(gxsId);
+    if (it != mInviteTimeControlByPeer.end()) return it->second;
+    auto cIt = mChessContacts.find(gxsId);
+    if (cIt != mChessContacts.end() && !cIt->second.seekTimeControl.unlimited)
+        return cIt->second.seekTimeControl;
+    return ChessTimeControl{};
+}
+
+void p3RetroChess::setTimeControlForPeer(const RsGxsId &gxsId, const ChessTimeControl &tc)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    mInviteTimeControlByPeer[gxsId] = tc;
+}
+
+void p3RetroChess::setLobbySeek(bool active, const ChessTimeControl &tc)
+{
+    std::vector<RsGxsTunnelId> tunnels;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        mLobbySeekActive = active;
+        mLobbySeek = active ? tc : ChessTimeControl{};
+        for (const auto &entry : mActiveTunnels) tunnels.push_back(entry.second);
+    }
+    QVariantMap message;
+    message["type"] = "chess_seek";
+    message["seeking"] = active;
+    if (active) message["tc"] = tc.toNetString();
+    const QByteArray bytes = QJsonDocument::fromVariant(message).toJson(QJsonDocument::Compact);
+    // Lobby advertisements are top-level packets, not game_action payloads.
+    for (const auto &tunnel : tunnels)
+        if (mGxsTunnels) mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+}
+

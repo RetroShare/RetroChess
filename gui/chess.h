@@ -36,6 +36,7 @@
 
 #include "ChessGameHistory.h"
 #include "ChessPosition.h"
+#include "ChessTimeControl.h"
 
 class QLabel;
 class QTableWidget;
@@ -44,6 +45,7 @@ class QPushButton;
 class QStatusBar;
 class ChessDebugWidget;
 class ChessBoard;
+class ChessClockWidget;
 
 namespace Ui
 {
@@ -240,6 +242,13 @@ public:
 	void showSpectatorResult(const QString &result, const QString &reason);
 	void completeGameHistory(const QString &result, const QString &reason);
 	void activateBoardSquare(int square);
+	void setupClocks();
+	void onClockExpired(int color);
+	void setTimeControl(const ChessTimeControl &tc);
+	ChessTimeControl timeControl() const { return m_timeControl; }
+	ChessTimeControl m_timeControl;
+	ChessClockWidget *m_whiteClock = nullptr;
+	ChessClockWidget *m_blackClock = nullptr;
 	QDateTime m_gameStartedAt;
 	QString m_gameResult;
 	QString m_gameEndReason;

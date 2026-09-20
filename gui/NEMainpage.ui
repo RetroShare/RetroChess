@@ -364,6 +364,16 @@
            <item>
             <layout class="QHBoxLayout" name="playerToolsLayout">
              <item>
+              <widget class="QPushButton" name="createLobbyGameButton">
+               <property name="toolTip">
+                <string>Open Game Setup to create a lobby game seek</string>
+               </property>
+               <property name="text">
+                <string>Create game</string>
+               </property>
+              </widget>
+             </item>
+             <item>
               <spacer name="horizontalSpacer">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -434,6 +444,16 @@
              <column>
               <property name="text">
                <string>Action</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Time</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Mode</string>
               </property>
              </column>
              <column>

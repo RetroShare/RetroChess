@@ -34,6 +34,8 @@
 #include <QString>
 #include <QByteArray>
 
+#include "gui/ChessTimeControl.h"
+
 struct RsRetroChessGameSession
 {
 	RsRetroChessGameSession() = default;
@@ -48,6 +50,7 @@ struct RsRetroChessGameSession
 	QStringList moveHistory;
 	bool interrupted = false;
 	QString gameId;
+	ChessTimeControl timeControl;
 };
 
 struct RsRetroChessAvailablePeer
@@ -66,6 +69,9 @@ struct RsRetroChessAvailablePeer
 	QString opponentId;
 	QString opponentName;
 	QString gameId;
+	bool seeking = false;
+	/// Time control advertised when seeking is true.
+	ChessTimeControl timeControl;
 };
 
 class RsRetroChess ;
@@ -137,6 +143,10 @@ class RsRetroChess
 	// Spectator / Live Chess Watching over GXS tunnels
 	virtual bool sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey) = 0;
 	virtual void sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey) = 0;
+
+	virtual ChessTimeControl timeControlForPeer(const RsGxsId &gxsId) { (void)gxsId; return ChessTimeControl{}; }
+	virtual void setLobbySeek(bool active, const ChessTimeControl &tc) = 0;
+	virtual void setTimeControlForPeer(const RsGxsId &gxsId, const ChessTimeControl &tc) { (void)gxsId; (void)tc; }
 };
 
 

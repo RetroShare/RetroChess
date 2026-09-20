@@ -31,6 +31,9 @@ linux-* {
 
 win32 {
 	LIBS_DIR = $$PWD/../../../libs
+	# Use the toolchain's CRT, matching RetroShare. Tunnel buffers are
+	# allocated by the core and freed by this plugin; never force -lucrt
+	# into an MSVCRT build.
 }
 
 	QMAKE_CXXFLAGS *= -Wall
@@ -61,7 +64,9 @@ SOURCES = RetroChessPlugin.cpp               \
           gui/RetroChessSettings.cpp \
           gui/RetroChessUserNotify.cpp \
           gui/toaster/ChessToaster.cpp \
-          gui/toaster/RetroChessToasterNotify.cpp
+          gui/toaster/RetroChessToasterNotify.cpp \
+          gui/ChessClockWidget.cpp \
+          gui/ChessGameSetupDialog.cpp
 
 HEADERS = RetroChessPlugin.h                 \
           gui/ChessDebugWidget.h \
@@ -82,7 +87,10 @@ HEADERS = RetroChessPlugin.h                 \
           gui/RetroChessSettings.h \
           gui/RetroChessUserNotify.h \
           gui/toaster/ChessToaster.h \
-          gui/toaster/RetroChessToasterNotify.h
+          gui/toaster/RetroChessToasterNotify.h \
+          gui/ChessTimeControl.h \
+          gui/ChessClockWidget.h \
+          gui/ChessGameSetupDialog.h
 
 FORMS += \
           gui/NEMainpage.ui \
