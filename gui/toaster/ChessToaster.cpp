@@ -60,6 +60,11 @@ void ChessToaster::initialise(const QString &playerName, bool actionable)
 {
 	ui.avatarWidget->setFrameType(AvatarWidget::NO_FRAME);
 	ui.avatarWidget->setDefaultAvatar(":/images/chess-notify.png");
+	// AvatarWidget is globally given a one-pixel frame by both standard skins.
+	// The compact toaster already provides its own spacing, so that frame makes
+	// the avatar look inset and adds an unnecessary light/dark block around it.
+	ui.avatarWidget->setStyleSheet(
+	        "AvatarWidget { border: none; padding: 0; background: transparent; }");
 	ui.toasterLabel->setText(tr("Chess invitation"));
 	ui.textLabel->setText(tr("%1 is inviting you to play chess.").arg(playerName));
 	ui.toasterButton->setText(
