@@ -27,9 +27,6 @@
 // Tick interval in ms — fine enough for smooth display without CPU waste.
 static constexpr int TICK_MS = 100;
 
-// Threshold below which the clock turns red.
-static constexpr qint64 LOW_TIME_MS = 30 * 1000;
-
 ChessClockWidget::ChessClockWidget(QWidget *parent)
     : QFrame(parent)
 {
@@ -146,35 +143,9 @@ QString ChessClockWidget::formatTime(qint64 ms) const
 
 void ChessClockWidget::applyStyle()
 {
-    const bool lowTime = (m_remainingMs > 0 && m_remainingMs <= LOW_TIME_MS);
-    const bool expired = (m_remainingMs <= 0);
-
-    QString bg, fg, fontWeight;
-
-    if (expired) {
-        bg         = QStringLiteral("#8b0000");
-        fg         = QStringLiteral("white");
-        fontWeight = QStringLiteral("bold");
-    } else if (lowTime && m_active) {
-        bg         = QStringLiteral("#c0392b");
-        fg         = QStringLiteral("white");
-        fontWeight = QStringLiteral("bold");
-    } else if (lowTime) {
-        bg         = QStringLiteral("#e74c3c");
-        fg         = QStringLiteral("white");
-        fontWeight = QStringLiteral("bold");
-    } else if (m_active) {
-        bg         = QStringLiteral("#1a1a1a");
-        fg         = QStringLiteral("white");
-        fontWeight = QStringLiteral("bold");
-    } else {
-        // Inactive — use default palette
-        setStyleSheet(QString());
-        m_label->setStyleSheet(QString());
-        return;
-    }
-
-    setStyleSheet(QStringLiteral("ChessClockWidget { background-color: %1; border-radius: 4px; }").arg(bg));
-    m_label->setStyleSheet(
-        QStringLiteral("color: %1; font-size: 18pt; font-weight: %2;").arg(fg, fontWeight));
+    // Keep the foreground/background supplied by the active RetroShare skin.
+    // Hard-coded white text is unreadable on the light skin.
+    setStyleSheet(QString());
+    m_label->setStyleSheet(QStringLiteral(
+        "font-size: 18pt; font-weight: bold;"));
 }
