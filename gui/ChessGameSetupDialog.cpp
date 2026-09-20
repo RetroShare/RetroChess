@@ -198,7 +198,9 @@ void ChessGameSetupDialog::buildRealTimeTab(QWidget *tab)
                 "  color: white;"
                 "  border-color: #4e8631;"
                 "}"
-                "QPushButton:hover:!checked { background-color: #e8e8e8; }"));
+                // Keep hover text readable with RetroShare's dark palette.
+                "QPushButton:hover:!checked { background-color: #536273; color: white; }"
+                "QPushButton:disabled { color: #666; background-color: #d6d6d6; }"));
 
         const int min = p.min;
         const int inc = p.inc;
