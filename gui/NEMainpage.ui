@@ -323,7 +323,7 @@
               </font>
              </property>
              <property name="alternatingRowColors">
-              <bool>true</bool>
+              <bool>false</bool>
              </property>
              <property name="selectionMode">
               <enum>QAbstractItemView::SingleSelection</enum>
@@ -427,7 +427,7 @@
               </font>
              </property>
              <property name="alternatingRowColors">
-              <bool>true</bool>
+              <bool>false</bool>
              </property>
              <property name="selectionMode">
               <enum>QAbstractItemView::SingleSelection</enum>
@@ -525,7 +525,7 @@
                  </font>
                 </property>
                 <property name="alternatingRowColors">
-                 <bool>true</bool>
+                 <bool>false</bool>
                 </property>
                 <property name="rootIsDecorated">
                  <bool>false</bool>
