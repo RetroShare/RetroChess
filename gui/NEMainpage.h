@@ -144,6 +144,8 @@ private:
 	void saveLayoutSettings();
 	void setupPlayersTab();
 	void onCreateLobbyGame();
+	void cancelLobbyGame();
+	void updateLobbyGameButton();
 	void broadcastSeek(bool active, const ChessTimeControl &tc);
 	QMenu *createSavedContactsContextMenu(QMenu *contextMenu = nullptr);
 	void showSavedContactsHeaderContextMenu(const QPoint &globalPos);
