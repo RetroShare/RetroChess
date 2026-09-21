@@ -2433,14 +2433,26 @@ void RetroChessWindow::showSpectatorResult(const QString &result, const QString 
 {
     m_flag_finished = 1;
     m_suppressLeave = true;
+    QString winnerName;
+    if (result == "1-0")
+        winnerName = QString::fromUtf8(p2name.c_str());
+    else if (result == "0-1")
+        winnerName = QString::fromUtf8(p1name.c_str());
+
+    // Store the result as a completed game so the board badges and result bar
+    // are rendered in spectator mode too.
+    completeGameHistory(result, reason);
+
     QString message;
     bool isDraw = (result == "1/2-1/2");
     if (result == "1-0")
-        message = tr("White won %1").arg(!reason.isEmpty() ? ("(" + reason + ")") : QString());
+        message = tr("%1 won the game %2").arg(winnerName,
+                !reason.isEmpty() ? reason : QString());
     else if (result == "0-1")
-        message = tr("Black won %1").arg(!reason.isEmpty() ? ("(" + reason + ")") : QString());
+        message = tr("%1 won the game %2").arg(winnerName,
+                !reason.isEmpty() ? reason : QString());
     else if (isDraw)
-        message = tr("Draw %1").arg(!reason.isEmpty() ? ("(" + reason + ")") : QString());
+        message = !reason.isEmpty() ? tr("Draw: %1").arg(reason) : tr("Draw");
     else
         message = !reason.isEmpty() ? reason : tr("Game ended");
 
