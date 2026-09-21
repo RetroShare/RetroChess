@@ -1558,12 +1558,34 @@ void p3RetroChess::handleGxsTick()
     // Tunnel-service calls and notifications happen outside the mutex.
     if (!mGxsTunnels) return;
 
+    // A tunnel that is neither CAN_TALK nor remotely closed within this time is
+    // given up: the queued invite is dropped and the tunnel closed.
+    static const time_t kPendingTunnelTimeoutSec = 120;
+    const time_t nowTs = time(nullptr);
+
     std::map<RsGxsId, RsGxsTunnelId> pending;
+    std::map<RsGxsId, time_t> startedAt;
     {
         RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
         pending = mPendingTunnels;
+        // Drop bookkeeping of requests that are gone or were replaced by a new tunnel.
+        for (auto sit = mPendingTunnelSince.begin(); sit != mPendingTunnelSince.end();) {
+            auto pit = pending.find(sit->first);
+            if (pit == pending.end() || pit->second != sit->second.first)
+                sit = mPendingTunnelSince.erase(sit);
+            else
+                ++sit;
+        }
+        for (auto pit = pending.begin(); pit != pending.end(); ++pit) {
+            auto sit = mPendingTunnelSince.find(pit->first);
+            if (sit == mPendingTunnelSince.end())
+                sit = mPendingTunnelSince.insert(std::make_pair(pit->first,
+                        std::make_pair(pit->second, nowTs))).first;
+            startedAt[pit->first] = sit->second.second;
+        }
     }
     if (pending.empty()) return;
+    std::list<RsGxsTunnelId> expired;
 
     std::list<std::pair<RsGxsTunnelId, std::string> > flushes;
     std::list<RsGxsId> ready;
@@ -1571,8 +1593,29 @@ void p3RetroChess::handleGxsTick()
 
     for (auto it = pending.begin(); it != pending.end(); ++it) {
         RsGxsTunnelService::GxsTunnelInfo tinfo;
-        if (!mGxsTunnels->getTunnelInfo(it->second, tinfo))
+        const bool haveInfo = mGxsTunnels->getTunnelInfo(it->second, tinfo);
+        if (!haveInfo
+                || (tinfo.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK
+                    && tinfo.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED)) {
+            // Still connecting (TUNNEL_DN is also the engine's initial state) or
+            // unknown to the tunnel service: keep waiting, but not forever.
+            if (nowTs - startedAt[it->first] > kPendingTunnelTimeoutSec) {
+                RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
+                auto pit = mPendingTunnels.find(it->first);
+                if (pit != mPendingTunnels.end() && pit->second == it->second) {
+                    std::cerr << "Chess: tunnel to " << it->first << " did not come up in "
+                              << kPendingTunnelTimeoutSec << "s, giving up" << std::endl;
+                    mPendingGxsInvites.erase(it->first);
+                    mPendingWatchRequests.erase(it->first);
+                    mInvitesToGxs.erase(it->first);
+                    mPendingTunnelSince.erase(it->first);
+                    mPendingTunnels.erase(pit);
+                    expired.push_back(it->second);
+                    pendingChanged = true;
+                }
+            }
             continue;
+        }
 
         // Check if the tunnel is "Connected" (CAN_TALK)
         if (tinfo.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK) {
@@ -1640,6 +1683,8 @@ void p3RetroChess::handleGxsTick()
             }
         }
     }
+    for (auto it = expired.begin(); it != expired.end(); ++it)
+        mGxsTunnels->closeExistingTunnel(*it, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
     for (auto it = ready.begin(); it != ready.end(); ++it)
         mNotify->notifyGxsTunnelReady(*it);
     if (!ready.empty() || pendingChanged)
@@ -1960,16 +2005,11 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         mNotify->notifyLeaderboardDataGxs(sender_id, QByteArray((const char*)data, data_size));
 
     } else {
-        // Chess move: format "col,row,count"
-        QStringList parts = QString::fromUtf8((const char*)data, data_size).split(",");
-        if (parts.size() == 3) {
-            int col   = parts[0].toInt();
-            int row   = parts[1].toInt();
-            int count = parts[2].toInt();
-            mNotify->notifyChessMoveGxs(sender_id, col, row, count);
-        } else {
-            std::cerr << "Chess: Unknown message type '" << type.toStdString() << "' ignored" << std::endl;
-        }
+        // The legacy "col,row,count" click packet is no longer accepted over
+        // GXS tunnels: moves travel as authenticated, sequence-checked
+        // "game_action" move packets, so an arbitrary payload must never be
+        // able to drive the board.
+        std::cerr << "Chess: Unknown message type '" << type.toStdString() << "' ignored" << std::endl;
     }
 }
 

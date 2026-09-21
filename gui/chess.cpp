@@ -658,6 +658,7 @@ void RetroChessWindow::initAccessories()
 			applyGameAction("draw_fifty_move", false);
 			return;
 		}
+		m_drawOfferPending = true;
 		sendGameAction("draw_offer");
 		m_ui->m_status_bar->setText(tr("Draw offer sent"));
 		m_ui->m_status_bar->show();
@@ -2312,8 +2313,8 @@ void RetroChessWindow::closeForRematch()
 
 void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QString &reason)
 {
-    if (m_whiteClock) m_whiteClock->pauseClock();
-    if (m_blackClock) m_blackClock->pauseClock();
+    if (m_whiteClock) m_whiteClock->stopClock();
+    if (m_blackClock) m_blackClock->stopClock();
 
     if (m_resultPopupShown)
         return;
@@ -3297,16 +3298,59 @@ void RetroChessWindow::stopForDesynchronization(const QString &reason)
 	           "Open Debug to save the report.").arg(reason));
 }
 
-void RetroChessWindow::sendGameAction(const QString &action)
+bool RetroChessWindow::sendGameAction(const QString &action)
 {
 	if (mIsGxs) {
-		rsRetroChess->sendGameActionGxs(mGxsId, action.toStdString());
+		// Never overtake actions that are still waiting to be resent: the peer
+		// checks move sequence numbers and would report a desynchronization.
+		if (!m_unsentActions.isEmpty()) {
+			queueUnsentAction(action);
+			return false;
+		}
+		if (rsRetroChess->sendGameActionGxs(mGxsId, action.toStdString()))
+			return true;
+		queueUnsentAction(action);
+		return false;
 	} else {
 		QVariantMap map;
 		map.insert("type", "game_action");
 		map.insert("action", action);
 		rsRetroChess->qvm_msg_peer(RsPeerId(mPeerId), map);
 	}
+	return true;
+}
+
+void RetroChessWindow::queueUnsentAction(const QString &action)
+{
+	m_unsentActions.append(action);
+	appendDebugEvent(QString("TX queued, no tunnel to opponent: %1").arg(action));
+	showGameStatus(tr("Connection to your opponent was lost. Your move will be resent when it is back."));
+	if (!m_resendTimer) {
+		m_resendTimer = new QTimer(this);
+		m_resendTimer->setInterval(1500);
+		connect(m_resendTimer, &QTimer::timeout, this, &RetroChessWindow::flushUnsentActions);
+	}
+	if (!m_resendTimer->isActive()) {
+		m_resendAttempts = 0;
+		m_resendTimer->start();
+	}
+}
+
+void RetroChessWindow::flushUnsentActions()
+{
+	while (!m_unsentActions.isEmpty()) {
+		if (!rsRetroChess->sendGameActionGxs(mGxsId, m_unsentActions.first().toStdString())) {
+			if (++m_resendAttempts >= 40) { // about a minute: stop polling, keep the queue
+				m_resendTimer->stop();
+				showGameStatus(tr("Could not reach your opponent. The last move has not been delivered."));
+			}
+			return;
+		}
+		appendDebugEvent(QString("TX resent: %1").arg(m_unsentActions.first()));
+		m_unsentActions.removeFirst();
+	}
+	m_resendTimer->stop();
+	showGameStatus(tr("Connection to your opponent is back."));
 }
 
 void RetroChessWindow::showGameStatus(const QString &status)
@@ -3431,8 +3475,26 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 			const qint64 wMs = parts.at(6).toLongLong(&okW);
 			const qint64 bMs = parts.at(7).toLongLong(&okB);
 			if (okW && okB) {
-				m_whiteClock->syncTo(wMs);
-				m_blackClock->syncTo(bMs);
+				// The remote clock values are only a display hint. A player's
+				// own clock is never overwritten by the peer, otherwise
+				// "...:0:0" would make the local side flag itself and lose.
+				// The opponent's clock is accepted, but clamped so it can
+				// neither go below zero nor gain more than one increment
+				// (plus latency tolerance) over what we measured locally.
+				constexpr qint64 kLatencyToleranceMs = 10000;
+				auto clamped = [this](const ChessClockWidget *localView, qint64 reported) {
+					const qint64 upper = localView->remainingMs()
+					        + m_timeControl.incrementMs() + kLatencyToleranceMs;
+					return qBound<qint64>(0, reported, upper);
+				};
+				if (m_isSpectator) {
+					m_whiteClock->syncTo(clamped(m_whiteClock, wMs));
+					m_blackClock->syncTo(clamped(m_blackClock, bMs));
+				} else if (m_localplayer_turn == 1) {
+					m_blackClock->syncTo(clamped(m_blackClock, bMs));
+				} else {
+					m_whiteClock->syncTo(clamped(m_whiteClock, wMs));
+				}
 			}
 		}
 		return;
@@ -3479,6 +3541,7 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		return;
 	}
 	if (action == "draw_decline") {
+		m_drawOfferPending = false;
 		const QString declinedText = tr("Draw offer declined");
 		m_ui->m_status_bar->setText(declinedText);
 		m_ui->m_status_bar->show();
@@ -3517,6 +3580,13 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		showGameResultDialog(remote);
 		emit gameEnded(QString::fromStdString(mPeerId));
 	} else if (action == "draw_accept") {
+		// A remote draw_accept is only valid as the answer to an offer that this
+		// side actually sent. Spectators only relay what the players did.
+		if (remote && !m_isSpectator && !m_drawOfferPending) {
+			appendDebugEvent("Ignored draw_accept without a pending draw offer");
+			return;
+		}
+		m_drawOfferPending = false;
 		m_flag_finished = 1;
 		m_suppressLeave = true;
 		if (m_isSpectator) {
@@ -3528,8 +3598,8 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 	} else if (action == "timeout") {
 		m_flag_finished = 1;
 		m_suppressLeave = true;
-		if (m_whiteClock) m_whiteClock->pauseClock();
-		if (m_blackClock) m_blackClock->pauseClock();
+		if (m_whiteClock) m_whiteClock->stopClock();
+		if (m_blackClock) m_blackClock->stopClock();
 		if (m_isSpectator) {
 			showSpectatorResult("*", tr("Time out"));
 			return;
@@ -3755,8 +3825,8 @@ void RetroChessWindow::playerTurnNotice()
 
 	if (m_whiteClock && m_blackClock && !m_timeControl.unlimited) {
 		if (m_flag_finished != 0) {
-			m_whiteClock->pauseClock();
-			m_blackClock->pauseClock();
+			m_whiteClock->stopClock();
+			m_blackClock->stopClock();
 		} else if (turn == 1) {
 			m_blackClock->pauseClock();
 			m_whiteClock->startClock();
@@ -3805,7 +3875,7 @@ void RetroChessWindow::setupClocks()
 
 void RetroChessWindow::onClockExpired(int color)
 {
-	if (m_flag_finished != 0) return;
+	if (m_flag_finished != 0 || m_isSpectator) return;
 	if (m_localplayer_turn == color) {
 		sendGameAction("timeout");
 		applyGameAction("timeout", false);

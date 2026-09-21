@@ -1249,7 +1249,8 @@ unsigned int NEMainpage::incomingInviteCount() const
 	if (ui && ui->availablePlayers) {
 		for (int i = 0; i < ui->availablePlayers->topLevelItemCount(); ++i) {
 			QTreeWidgetItem *item = ui->availablePlayers->topLevelItem(i);
-			if (item && item->data(7, Qt::UserRole).toInt() == 1) {
+			// Column 9 holds the "incoming invitation" flag; column 7 is "last seen".
+			if (item && item->data(9, Qt::UserRole).toInt() == 1) {
 				++count;
 			}
 		}

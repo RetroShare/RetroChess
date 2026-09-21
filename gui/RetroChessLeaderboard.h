@@ -76,7 +76,10 @@ private:
 		        const QString &r, const QString &s, qint64 f)
 		    : gameId(g), white(w), black(b), result(r), signer(s), finishedAt(f) {}
 	};
-	void consumeReceipt(const Receipt &receipt);
+	// sender is the authenticated GXS identity of the tunnel peer the receipt
+	// arrived from (null for none). Returns true when the receipt was accepted
+	// into mReceipts; see the trust rules in RetroChessLeaderboard.cpp.
+	bool consumeReceipt(const Receipt &receipt, const RsGxsId &sender);
 	void recompute();
 	void load();
 	void save() const;
@@ -87,6 +90,10 @@ private:
 	static bool validResult(const QString &result);
 
 	QMap<QString, Receipt> mReceipts;
+	// Receipts relayed by peers other than their signer. They only become part
+	// of mReceipts once enough distinct peers reported them.
+	QMap<QString, Receipt> mPending;
+	QMap<QString, QSet<QString>> mWitnesses;
 	QMap<QString, Player> mPlayers;
 	QSet<QString> mGossipedReceipts;
 	QTimer *mSyncTimer;

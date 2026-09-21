@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <QElapsedTimer>
 #include <QFrame>
 
 class QLabel;
@@ -59,7 +60,12 @@ public:
     void startClock();
 
     /// Stop ticking and add the increment (move was made).
+    /// The increment is only added if the clock was actually running, so
+    /// calling this on the idle side's clock is harmless.
     void pauseClock();
+
+    /// Stop ticking without adding the increment (game over, timeout).
+    void stopClock();
 
     /// Force-set remaining time (used to sync with remote move packet).
     void syncTo(qint64 remainingMs);
@@ -81,9 +87,12 @@ private:
     void updateDisplay();
     QString formatTime(qint64 ms) const;
     void applyStyle();
+    void accountElapsed();   ///< Subtract real elapsed wall time since last accounting.
 
     QLabel  *m_label        = nullptr;
     QTimer  *m_timer        = nullptr;
+    QElapsedTimer m_elapsed;            ///< Wall time since the last tick/start.
+    bool     m_styleApplied = false;    ///< The stylesheet is constant; set it once.
     qint64   m_remainingMs  = 0;
     qint64   m_incrementMs  = 0;
     bool     m_active       = false;

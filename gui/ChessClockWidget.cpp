@@ -52,6 +52,7 @@ void ChessClockWidget::setTotalMs(qint64 ms)
 {
     m_remainingMs   = ms;
     m_expiredEmitted = false;
+    if (m_active) m_elapsed.start();
     updateDisplay();
     applyStyle();
 }
@@ -61,52 +62,83 @@ void ChessClockWidget::setIncrementMs(qint64 ms)
     m_incrementMs = ms;
 }
 
+void ChessClockWidget::accountElapsed()
+{
+    // Measure real elapsed time instead of assuming that every timer tick
+    // took exactly TICK_MS: a busy GUI thread (modal dialog, slow repaint)
+    // delays ticks and would otherwise make the clock run slow.
+    if (!m_elapsed.isValid()) {
+        m_elapsed.start();
+        return;
+    }
+    m_remainingMs -= m_elapsed.restart();
+}
+
 void ChessClockWidget::startClock()
 {
     if (m_remainingMs <= 0) return;
+    if (m_active) return;           // already running: keep the elapsed reference
     m_active = true;
+    m_elapsed.start();
     m_timer->start();
-    applyStyle();
 }
 
 void ChessClockWidget::pauseClock()
 {
+    const bool wasActive = m_active;
+    if (wasActive) {
+        accountElapsed();
+        // The move was made before the flag fell; expiry is detected by
+        // onTick(), never from inside a move. Keep the clock alive.
+        if (m_remainingMs <= 0) m_remainingMs = 1;
+    }
     m_active = false;
     m_timer->stop();
-    // Add increment now that the move has been made.
-    if (m_incrementMs > 0)
-        m_remainingMs = qMin(m_remainingMs + m_incrementMs, m_remainingMs + m_incrementMs);
+    // The increment is earned by completing a move, so it is only added when
+    // this clock was actually running. pauseClock() is also called on the idle
+    // side's clock every turn change and at game start, which must not
+    // grant any time.
+    if (wasActive && m_incrementMs > 0)
+        m_remainingMs += m_incrementMs;
     updateDisplay();
-    applyStyle();
+}
+
+void ChessClockWidget::stopClock()
+{
+    if (m_active) {
+        accountElapsed();
+        if (m_remainingMs < 0) m_remainingMs = 0;
+    }
+    m_active = false;
+    m_timer->stop();
+    updateDisplay();
 }
 
 void ChessClockWidget::syncTo(qint64 remainingMs)
 {
     m_remainingMs = remainingMs;
+    if (m_active) m_elapsed.start();
     if (!m_expiredEmitted && m_remainingMs <= 0) {
         m_remainingMs = 0;
         m_active = false;
         m_timer->stop();
         m_expiredEmitted = true;
         updateDisplay();
-        applyStyle();
         emit expired();
         return;
     }
     updateDisplay();
-    applyStyle();
 }
 
 void ChessClockWidget::onTick()
 {
     if (!m_active) return;
-    m_remainingMs -= TICK_MS;
+    accountElapsed();
     if (m_remainingMs <= 0) {
         m_remainingMs = 0;
         m_active = false;
         m_timer->stop();
         updateDisplay();
-        applyStyle();
         if (!m_expiredEmitted) {
             m_expiredEmitted = true;
             emit expired();
@@ -114,7 +146,6 @@ void ChessClockWidget::onTick()
         return;
     }
     updateDisplay();
-    applyStyle();
 }
 
 void ChessClockWidget::updateDisplay()
@@ -143,6 +174,8 @@ QString ChessClockWidget::formatTime(qint64 ms) const
 
 void ChessClockWidget::applyStyle()
 {
+    if (m_styleApplied) return;
+    m_styleApplied = true;
     // Keep the foreground/background supplied by the active RetroShare skin.
     // Hard-coded white text is unreadable on the light skin.
     setStyleSheet(QString());

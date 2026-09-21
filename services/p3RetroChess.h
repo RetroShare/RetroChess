@@ -217,6 +217,9 @@ private:
 
 	// Tracks GXS IDs that we are currently trying to connect to
 	std::map<RsGxsId, RsGxsTunnelId> mPendingTunnels;
+	// When each pending tunnel request was first seen by handleGxsTick(), so a
+	// peer that never answers does not stay pending (and re-polled) forever.
+	std::map<RsGxsId, std::pair<RsGxsTunnelId, time_t> > mPendingTunnelSince;
 	// Tracks established tunnels ready for data
 	std::map<RsGxsId, RsGxsTunnelId> mActiveTunnels;
 	// Pending invite messages to send once a tunnel becomes CAN_TALK
