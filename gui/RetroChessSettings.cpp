@@ -665,7 +665,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 	connect(buttons, &QDialogButtonBox::accepted, this,
-	        [this, cmboDateFormat, group, pieceGroup, moveSound, captureSound, resultSound, inviteSound, alwaysQueen, confirmActions, identityList, preferred]() {
+	        [this, cmboDateFormat, group, pieceGroup, moveSound, captureSound, resultSound, inviteSound, alwaysQueen, confirmActions, identityList, preferred, enabled, preferredId]() {
 		if (pieceGroup->checkedButton())
 			RetroChessSettings::setPieceThemeId(pieceGroup->checkedButton()->property("themeId").toString());
 		RetroChessSettings::setDateFormat(cmboDateFormat->currentData().toInt());
@@ -682,7 +682,11 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
             const QListWidgetItem *item = identityList->item(row);
             if (item->checkState() == Qt::Checked) enabledIds.push_back(RsGxsId(item->data(Qt::UserRole).toString().toStdString()));
         }
-        rsRetroChess->setChessIdentities(enabledIds, RsGxsId(preferred->currentData().toString().toStdString()));
+        const RsGxsId selectedPreferred(preferred->currentData().toString().toStdString());
+        std::set<RsGxsId> oldIds(enabled.begin(), enabled.end());
+        std::set<RsGxsId> newIds(enabledIds.begin(), enabledIds.end());
+        if (oldIds != newIds || selectedPreferred != RsGxsId(preferredId.toStdString()))
+            rsRetroChess->setChessIdentities(enabledIds, selectedPreferred);
 		for (QWidget *widget : QApplication::allWidgets()) {
 			if (auto *game = qobject_cast<RetroChessWindow *>(widget)) game->refreshBoardTheme();
 			if (auto *review = qobject_cast<ChessGameReviewDialog *>(widget)) review->refreshPieceTheme();
