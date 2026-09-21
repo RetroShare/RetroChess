@@ -786,9 +786,11 @@ void p3RetroChess::tickChessPresence()
                 contact.status = "offline";
                 contact.seeking = false;
                 contact.seekTimeControl = ChessTimeControl{};
-                contact.failures = std::min(contact.failures + 1, 4u);
-                // Keep offline discovery responsive instead of backing off for eight minutes.
-                contact.nextProbe = now + std::min(60u, 15u << (contact.failures - 1));
+                contact.failures = std::min(contact.failures + 1, 6u);
+                // Stay responsive for the first retries, then back off so that long-offline contacts do not
+                // cause a new GXS tunnel discovery / DH handshake every minute (15s, 30s, 1min, 2min, 4min, 5min).
+                static const unsigned int kOfflineRetryDelaySec[6] = { 15, 30, 60, 120, 240, 300 };
+                contact.nextProbe = now + kOfflineRetryDelaySec[contact.failures - 1];
                 if (!mActiveTunnels.count(id)) --inFlight;
                 changed = true;
                 // Presence failures must never tear down an invitation, game, or watch request.
