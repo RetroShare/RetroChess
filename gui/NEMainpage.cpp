@@ -580,6 +580,8 @@ void NEMainpage::refreshAvailablePlayers()
                             || item->data(2, Qt::UserRole + 1).toString() != seekKey
                             || !tree->itemWidget(item, 2)) {
                         QWidget *actionWidget = new QWidget(tree);
+                        actionWidget->setObjectName("chessActionContainer");
+                        actionWidget->setStyleSheet("QWidget#chessActionContainer { background: transparent; }");
                         QHBoxLayout *actionLayout = new QHBoxLayout(actionWidget);
                         actionLayout->setContentsMargins(2, 1, 2, 1);
                         actionLayout->setAlignment(Qt::AlignCenter);
@@ -671,6 +673,7 @@ void NEMainpage::refreshAvailablePlayers()
                         }
                         actionLayout->addWidget(actionBtn);
                         tree->setItemWidget(item, 2, actionWidget);
+                        actionWidget->setAutoFillBackground(false);
                         item->setData(2, Qt::UserRole, actionState);
                         item->setData(2, Qt::UserRole + 1, seekKey);
                     }
@@ -733,6 +736,8 @@ void NEMainpage::refreshAvailablePlayers()
                 if (incoming) {
                     if (!tree->itemWidget(item, 9)) {
                         QWidget *rejectWidget = new QWidget(tree);
+                        rejectWidget->setObjectName("chessActionContainer");
+                        rejectWidget->setStyleSheet("QWidget#chessActionContainer { background: transparent; }");
                         QHBoxLayout *rejectLayout = new QHBoxLayout(rejectWidget);
                         rejectLayout->setContentsMargins(2, 1, 2, 1);
                         rejectLayout->setAlignment(Qt::AlignCenter);
@@ -762,6 +767,7 @@ void NEMainpage::refreshAvailablePlayers()
                         });
                         rejectLayout->addWidget(rejectBtn);
                         tree->setItemWidget(item, 9, rejectWidget);
+                        rejectWidget->setAutoFillBackground(false);
                     }
                     item->setData(9, Qt::UserRole, 1);
                     item->setText(9, QString());
@@ -796,6 +802,8 @@ void NEMainpage::refreshAvailablePlayers()
             item->setText(4, tr("Casual"));
             if (!tree->itemWidget(item, 2)) {
                 QWidget *actions = new QWidget(tree);
+                actions->setObjectName("chessActionContainer");
+                actions->setStyleSheet("QWidget#chessActionContainer { background: transparent; }");
                 QHBoxLayout *layout = new QHBoxLayout(actions);
                 layout->setContentsMargins(2, 1, 2, 1);
                 layout->setAlignment(Qt::AlignCenter);
@@ -806,6 +814,7 @@ void NEMainpage::refreshAvailablePlayers()
                 connect(cancel, &QPushButton::clicked, this, &NEMainpage::cancelLobbyGame);
                 layout->addWidget(cancel);
                 tree->setItemWidget(item, 2, actions);
+                actions->setAutoFillBackground(false);
             }
         }
         for (auto it = rows.constBegin(); it != rows.constEnd(); ++it)
@@ -1666,6 +1675,9 @@ void NEMainpage::refreshGameHistory()
 		ui->gameHistory->addTopLevelItem(item);
 
 		QWidget *reviewWidget = new QWidget(ui->gameHistory);
+		reviewWidget->setObjectName("chessActionContainer");
+		reviewWidget->setStyleSheet("QWidget#chessActionContainer { background: transparent; }");
+		reviewWidget->setAutoFillBackground(false);
 		QHBoxLayout *reviewLayout = new QHBoxLayout(reviewWidget);
 		reviewLayout->setContentsMargins(4, 2, 4, 2);
 		reviewLayout->setAlignment(Qt::AlignCenter);
