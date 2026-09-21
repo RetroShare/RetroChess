@@ -637,14 +637,17 @@ void RetroChessWindow::initAccessories()
 		applyGameAction("abort", false);
 	});
 	connect(resignButton, &QPushButton::clicked, this, [this]() {
-		if (m_flag_finished || QMessageBox::question(
-		        this, tr("Resign"), tr("Are you sure you want to resign?")) != QMessageBox::Yes)
+		if (m_flag_finished || (RetroChessSettings::confirmResignOrDraw() && QMessageBox::question(
+		        this, tr("Resign"), tr("Are you sure you want to resign?")) != QMessageBox::Yes))
 			return;
 		sendGameAction("resign");
 		applyGameAction("resign", false);
 	});
 	connect(drawButton, &QPushButton::clicked, this, [this]() {
 		if (m_flag_finished) return;
+		if (RetroChessSettings::confirmResignOrDraw() && QMessageBox::question(
+		        this, tr("Draw"), tr("Are you sure you want to offer a draw?")) != QMessageBox::Yes)
+			return;
 		if (turn == m_localplayer_turn && canClaimThreefoldRepetition()) {
 			sendGameAction("draw_repetition");
 			applyGameAction("draw_repetition", false);
@@ -1941,6 +1944,8 @@ void RetroChessWindow::updateCastlingRights(
 
 char RetroChessWindow::promotionChoiceForPawn(int color)
 {
+	if (color == m_localplayer_turn && RetroChessSettings::alwaysPromoteToQueen())
+		return 'Q';
 	if (color != m_localplayer_turn) {
 		const char choice = m_pendingPromotionChoice;
 		m_pendingPromotionChoice = 0;

@@ -56,6 +56,9 @@ public:
 	static int dateFormat();
 	static void setDateFormat(int format);
 	static QString formatDateTime(const QDateTime &dt);
+	static bool alwaysPromoteToQueen();
+	static bool confirmResignOrDraw();
+	static void setGameplayOptions(bool alwaysPromoteToQueen, bool confirmResignOrDraw);
 };
 
 class RetroChessSettingsDialog : public QDialog
