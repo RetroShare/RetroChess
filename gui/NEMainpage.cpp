@@ -654,7 +654,7 @@ void NEMainpage::refreshAvailablePlayers()
                                     return;
                                 }
                                 rsRetroChess->setTimeControlForPeer(id,
-                                    hasSeek ? peerTc : (m_seekActive ? m_pendingSeek : ChessTimeControl{}));
+                                    hasSeek ? peerTc : ChessTimeControl{});
                                 if (!rsRetroChess->sendInviteToGxs(id, hasSeek)) {
                                     QMessageBox::warning(this, tr("Chess invitation"), tr("The chess invitation could not be sent."));
                                 }

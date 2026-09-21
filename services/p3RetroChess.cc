@@ -1425,11 +1425,16 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
     startNewGameIdForPeer(toId);
     { RsStackMutex stack(mRetroChessMtx); mRematchIdByPeer.erase(toId); }
     QJsonObject inviteJson{{"type", "chess_invite"}, {"game_id", gameIdForPeer(toId)}};
-    // Preserve the purpose independently of the time control: unlimited games
-    // can be joined too, and a timed invitation need not be a join request.
+    // Preserve the purpose independently of the time control: unlimited open
+    // games can be joined too.
     inviteJson["join_open_game"] = joinOpenGame;
     {
         RsStackMutex stack(mRetroChessMtx);
+        // Normal invitations always start an unlimited game, independently of
+        // any advertised seek or previous invitation to this peer. Keep an
+        // explicit entry so timeControlForPeer cannot fall back to their seek.
+        if (!joinOpenGame)
+            mInviteTimeControlByPeer[toId] = ChessTimeControl{};
         auto tcIt = mInviteTimeControlByPeer.find(toId);
         if (tcIt != mInviteTimeControlByPeer.end() && !tcIt->second.unlimited)
             inviteJson["tc"] = tcIt->second.toNetString();
