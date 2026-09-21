@@ -65,6 +65,8 @@ private:
 	void layoutChessBoard();
 	RsPeerId p1id;
 	RsPeerId p2id;
+	RsGxsId mSpectatorWhiteId;
+	RsGxsId mSpectatorBlackId;
 	std::string p1name;
 	std::string p2name;
 

@@ -245,8 +245,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &hostId, const QString &gameKey
     m_gameStartedAt(QDateTime::currentDateTimeUtc()),
     m_gameArchived(false)
 {
-    Q_UNUSED(whiteId)
-    Q_UNUSED(blackId)
+    mSpectatorWhiteId = RsGxsId(whiteId.toStdString());
+    mSpectatorBlackId = RsGxsId(blackId.toStdString());
     m_ui->setupUi(this);
     setAttribute(Qt::WA_DeleteOnClose);
     mPeerId = hostId.toStdString();
@@ -754,16 +754,14 @@ void RetroChessWindow::initAccessories()
 		setPeerAvatar(m_ui->m_player1_avatar, p1avatar);
 		setPeerAvatar(m_ui->m_player2_avatar, p2avatar);
 	} else {
-		// GXS mode: retrieve avatars via the GXS identity service.
-		// Determine which slot is "us" and which is the remote peer,
-		// mirroring the same player/role logic used in the constructor.
+		// Resolve the identities displayed in the Black and White slots.
 		QPixmap p1avatar, p2avatar;
-		// p1 is always the identity shown in the player-1 slot (set in constructor)
-		// p2 is the identity shown in the player-2 slot
-		// The remote peer is mGxsId; our own is myGxsId.
-		// Which slot each maps to depends on the player role (set by the constructor).
 		RsGxsId slot1Id, slot2Id;
-		if (m_localplayer_turn == 0) {
+		if (m_isSpectator) {
+			// The watch host and our tunnel identity are not the two players.
+			slot1Id = mSpectatorBlackId;
+			slot2Id = mSpectatorWhiteId;
+		} else if (m_localplayer_turn == 0) {
 			// We are black (player 1 slot = us, player 2 slot = remote)
 			slot1Id = mOwnGxsId;
 			slot2Id = mGxsId;
