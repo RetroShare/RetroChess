@@ -23,6 +23,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QShortcut>
 #include <QHeaderView>
 #include <QTableWidget>
 #include <QStatusBar>
@@ -423,6 +424,14 @@ public:
 
 void RetroChessWindow::initAccessories()
 {
+	QShortcut *closeShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+	closeShortcut->setContext(Qt::WindowShortcut);
+	closeShortcut->setAutoRepeat(false);
+	connect(closeShortcut, &QShortcut::activated, this, [this]() {
+		if (m_flag_finished)
+			close();
+	});
+
 	m_ui->frame_3->setFixedWidth(PLAYER_PANEL_WIDTH);
 	m_ui->moveHistoryFrame->setFixedWidth(MOVES_PANEL_WIDTH);
 	m_ui->gameAreaLayout->setAlignment(Qt::AlignCenter);
