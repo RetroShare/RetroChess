@@ -26,6 +26,7 @@
 #include <QSet>
 #include <QString>
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <retroshare/rstypes.h>
 
 class QTableWidget;
@@ -89,4 +90,7 @@ private:
 	QMap<QString, Player> mPlayers;
 	QSet<QString> mGossipedReceipts;
 	QTimer *mSyncTimer;
+	QElapsedTimer mSyncClock;
+	QMap<RsGxsId, qint64> mLastSyncRequest;
+	QMap<RsGxsId, qint64> mLastSyncResponse;
 };

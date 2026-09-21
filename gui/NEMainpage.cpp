@@ -41,6 +41,7 @@
 #include <QShortcut>
 #include <QToolButton>
 #include <QTimer>
+#include <QBuffer>
 #include <QShowEvent>
 #include <QDateTime>
 #include <QCoreApplication>
@@ -88,10 +89,14 @@ QString chessPlayerToolTip(
         const RetroChessLeaderboard::Player &player)
 {
     const auto tr = [](const char *text) { return NEMainpage::tr(text).toHtmlEscaped(); };
-    QString embeddedAvatar;
-    RsHtml::makeEmbeddedImage(
-            avatar.scaled(70, 70, Qt::KeepAspectRatio, Qt::SmoothTransformation).toImage(),
-            embeddedAvatar, -1);
+    QByteArray imageBytes;
+    QBuffer buffer(&imageBytes);
+    buffer.open(QIODevice::WriteOnly);
+    const bool saved = avatar.scaled(70, 70, Qt::KeepAspectRatio,
+            Qt::SmoothTransformation).save(&buffer, "PNG");
+    const QString embeddedAvatar = saved
+            ? QStringLiteral("<img src=\"data:image/png;base64,%1\">")
+                    .arg(QString::fromLatin1(imageBytes.toBase64())) : QString();
     return QStringLiteral(
             "<table cellspacing='4'><tr><td rowspan='4' valign='top'>%1</td>"
             "<td colspan='2'><span style='font-size:large; font-weight:600;'>%2</span></td></tr>"
@@ -112,6 +117,40 @@ class ChessPlayerItem : public QTreeWidgetItem
 {
 public:
     explicit ChessPlayerItem(QTreeWidget *tree) : QTreeWidgetItem(tree) {}
+
+    void updatePlayer(const RsGxsId &id, const QString &name,
+                      const QByteArray &avatarBytes,
+                      const RetroChessLeaderboard::Player &profile)
+    {
+        const QString endpoint = QString::fromStdString(id.toStdString());
+        const bool avatarChanged = mAvatar.isNull() || mAvatarBytes != avatarBytes
+                || mEndpoint != endpoint;
+        if (avatarChanged) {
+            mAvatarBytes = avatarBytes;
+            if (avatarBytes.isEmpty() || !GxsIdDetails::loadPixmapFromData(
+                    reinterpret_cast<const unsigned char *>(avatarBytes.constData()),
+                    avatarBytes.size(), mAvatar, GxsIdDetails::MEDIUM))
+                mAvatar = GxsIdDetails::makeDefaultIcon(id, GxsIdDetails::MEDIUM);
+            setIcon(0, QIcon(mAvatar));
+        }
+        if (avatarChanged || mName != name || mEndpoint != endpoint
+                || mProfile.rating != profile.rating || mProfile.rd != profile.rd
+                || mProfile.games() != profile.games())
+            mToolTip.clear();
+        mName = name;
+        mEndpoint = endpoint;
+        mProfile = profile;
+    }
+
+    QVariant data(int column, int role) const override
+    {
+        if (column == 0 && role == Qt::ToolTipRole) {
+            if (mToolTip.isEmpty())
+                mToolTip = chessPlayerToolTip(mName, mEndpoint, mAvatar, mProfile);
+            return mToolTip;
+        }
+        return QTreeWidgetItem::data(column, role);
+    }
     bool operator<(const QTreeWidgetItem &other) const override
     {
         const int column = treeWidget()->sortColumn();
@@ -152,6 +191,12 @@ public:
         }
         return QTreeWidgetItem::operator<(other);
     }
+private:
+    QByteArray mAvatarBytes;
+    QPixmap mAvatar;
+    QString mName, mEndpoint;
+    RetroChessLeaderboard::Player mProfile;
+    mutable QString mToolTip;
 };
 }
 
@@ -526,12 +571,10 @@ void NEMainpage::refreshAvailablePlayers()
             const bool known = rsIdentity && rsIdentity->getIdDetails(id, details);
             const QString name = known && !details.mNickname.empty()
                     ? QString::fromUtf8(details.mNickname.c_str()) : peer.endpointId;
-            QPixmap avatar;
-            if (!known || !details.mAvatar.mSize || !GxsIdDetails::loadPixmapFromData(
-                    details.mAvatar.mData, details.mAvatar.mSize, avatar, GxsIdDetails::MEDIUM))
-                avatar = GxsIdDetails::makeDefaultIcon(id, GxsIdDetails::MEDIUM);
+            const QByteArray avatarBytes = known && details.mAvatar.mSize
+                    ? QByteArray(reinterpret_cast<const char *>(details.mAvatar.mData),
+                                 details.mAvatar.mSize) : QByteArray();
             item->setText(0, name);
-            item->setIcon(0, QIcon(avatar));
             item->setData(0, Qt::UserRole, peer.endpointId);
             item->setData(0, Qt::UserRole + 1, peer.savedContact);
             int rank = 5;
@@ -556,8 +599,7 @@ void NEMainpage::refreshAvailablePlayers()
             item->setData(1, Qt::UserRole + 1, status);
             RetroChessLeaderboard::Player profile;
             if (mLeaderboard) mLeaderboard->getPlayer(id, profile);
-            item->setToolTip(0, chessPlayerToolTip(
-                    name, peer.endpointId, avatar, profile));
+            static_cast<ChessPlayerItem *>(item)->updatePlayer(id, name, avatarBytes, profile);
             const QString lastSeenText = peer.lastSeen
                     ? RetroChessSettings::formatDateTime(QDateTime::fromSecsSinceEpoch(peer.lastSeen))
                     : tr("Never");

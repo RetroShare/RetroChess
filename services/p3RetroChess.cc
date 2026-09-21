@@ -1058,7 +1058,6 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
             RsStackMutex stack(mRetroChessMtx);
             mPendingTunnels[to_gxs_id] = tunnel_id;
             mOwnGxsIdByPeer[to_gxs_id] = from_gxs_id;
-            std::cout << "Chess Tunnel requested. Pending ID: " << tunnel_id << std::endl;
         }
         mNotify->notifyAvailablePeersChanged();
     }
@@ -2133,22 +2132,15 @@ void p3RetroChess::connectToGxsTunnelService(RsGxsTunnelService *tunnel_service)
 
 bool p3RetroChess::acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side)
 {
-    std::cout << "Chess: acceptDataFromPeer: gxs=" << gxs_id
-              << " tunnel=" << tunnel_id
-              << " side=" << (am_I_client_side ? "client" : "server") << std::endl;
-    std::cout << "Chess: acceptDataFromPeer step1: getTunnelInfo" << std::endl;
+    Q_UNUSED(am_I_client_side);
     RsGxsTunnelService::GxsTunnelInfo tunnelInfo;
     const bool haveTunnelInfo = mGxsTunnels && mGxsTunnels->getTunnelInfo(tunnel_id, tunnelInfo);
-    std::cout << "Chess: acceptDataFromPeer step2: haveTunnelInfo=" << haveTunnelInfo << std::endl;
     if (!haveTunnelInfo || !rsIdentity || rsIdentity->isOwnId(gxs_id)) return true;
-    std::cout << "Chess: acceptDataFromPeer step3: chessIdentityEnabled" << std::endl;
     if (!chessIdentityEnabled(tunnelInfo.source_gxs_id)) {
-        std::cout << "Chess: acceptDataFromPeer step3a: checking session" << std::endl;
         RsStackMutex stack(mRetroChessMtx);
         auto game = mGameSessions.find(gxs_id.toStdString());
         if (game == mGameSessions.end() || game->second.localIdentityId != QString::fromStdString(tunnelInfo.source_gxs_id.toStdString())) return true;
     }
-    std::cout << "Chess: acceptDataFromPeer step4: storing tunnel map" << std::endl;
     {
         RsStackMutex stack(mRetroChessMtx);
         // Store the mapping so receiveData / handleRawData can identify the sender
@@ -2158,7 +2150,6 @@ bool p3RetroChess::acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId
         // local identity themselves. Otherwise probe-only peers accumulate here
         // because they never enter mActiveTunnels' disconnect cleanup path.
     }
-    std::cout << "Chess: acceptDataFromPeer step5: done, returning true" << std::endl;
     return true;
 }
 

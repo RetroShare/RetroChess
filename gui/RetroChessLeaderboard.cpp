@@ -161,7 +161,8 @@ RetroChessLeaderboard::RetroChessLeaderboard(QObject *parent) : QObject(parent),
 {
 	load();
 	connect(mSyncTimer, &QTimer::timeout, this, &RetroChessLeaderboard::synchronizeTunnels);
-	mSyncTimer->setInterval(15000);
+	mSyncClock.start();
+	mSyncTimer->setInterval(5 * 60 * 1000);
 	mSyncTimer->start();
 	QTimer::singleShot(0, this, &RetroChessLeaderboard::synchronizeTunnels);
 }
@@ -525,6 +526,11 @@ void RetroChessLeaderboard::broadcastReceipt(const Receipt &r, const RsGxsId &ex
 void RetroChessLeaderboard::sendSyncToPeer(const RsGxsId &peerId)
 {
 	if (!rsRetroChess || peerId.isNull() || mReceipts.isEmpty()) return;
+	// Older peers may still request the full history every 15 seconds.
+	const qint64 now = mSyncClock.elapsed();
+	if (mLastSyncResponse.contains(peerId)
+	        && now - mLastSyncResponse.value(peerId) < 5 * 60 * 1000) return;
+	mLastSyncResponse.insert(peerId, now);
 	QJsonArray currentBatch;
 	for (const Receipt &r : mReceipts) {
 		currentBatch.append(QJsonObject{
@@ -558,17 +564,29 @@ void RetroChessLeaderboard::sendSyncToPeer(const RsGxsId &peerId)
 void RetroChessLeaderboard::sendSyncRequest(const RsGxsId &peerId)
 {
 	if (!rsRetroChess || peerId.isNull()) return;
+	bool online = false;
+	for (const auto &peer : rsRetroChess->availableChessPeers()) {
+		if (peer.gxs && peer.endpointId == QString::fromStdString(peerId.toStdString())
+		        && (peer.status == "available" || peer.status == "busy" || peer.status == "playing")) {
+			online = true;
+			break;
+		}
+	}
+	if (!online) return;
+	const qint64 now = mSyncClock.elapsed();
+	if (mLastSyncRequest.contains(peerId)
+	        && now - mLastSyncRequest.value(peerId) < 5 * 60 * 1000) return;
 	QJsonObject req{
 		{"type", "leaderboard_sync_req"},
 		{"version", 1}
 	};
-	rsRetroChess->sendLeaderboardDataGxs(peerId, QJsonDocument(req).toJson(QJsonDocument::Compact));
+	if (rsRetroChess->sendLeaderboardDataGxs(peerId, QJsonDocument(req).toJson(QJsonDocument::Compact)))
+		mLastSyncRequest.insert(peerId, now);
 }
 
 void RetroChessLeaderboard::handleTunnelReady(const RsGxsId &peerId)
 {
 	if (peerId.isNull()) return;
-	sendSyncToPeer(peerId);
 	sendSyncRequest(peerId);
 }
 
@@ -590,7 +608,7 @@ void RetroChessLeaderboard::handleTunnelData(const RsGxsId &sender, const QByteA
 		const QString key = canonicalKey(r) + '|' + r.signer;
 		const bool isNew = !mReceipts.contains(key);
 		consumeReceipt(r);
-		if (isNew && !mGossipedReceipts.contains(key)) {
+		if (isNew && mReceipts.contains(key) && !mGossipedReceipts.contains(key)) {
 			broadcastReceipt(r, sender);
 		}
 	} else if (type == "leaderboard_sync") {
@@ -608,7 +626,7 @@ void RetroChessLeaderboard::handleTunnelData(const RsGxsId &sender, const QByteA
 			const QString key = canonicalKey(r) + '|' + r.signer;
 			const bool isNew = !mReceipts.contains(key);
 			consumeReceipt(r);
-			if (isNew && !mGossipedReceipts.contains(key)) {
+			if (isNew && mReceipts.contains(key) && !mGossipedReceipts.contains(key)) {
 				broadcastReceipt(r, sender);
 			}
 		}
@@ -619,6 +637,16 @@ void RetroChessLeaderboard::synchronizeTunnels()
 {
 	if (!rsRetroChess) return;
 	const auto active = rsRetroChess->activeGxsTunnels();
+	for (auto it = mLastSyncRequest.begin(); it != mLastSyncRequest.end();) {
+		if (std::find(active.begin(), active.end(), it.key()) == active.end())
+			it = mLastSyncRequest.erase(it);
+		else ++it;
+	}
+	for (auto it = mLastSyncResponse.begin(); it != mLastSyncResponse.end();) {
+		if (mSyncClock.elapsed() - it.value() >= 5 * 60 * 1000)
+			it = mLastSyncResponse.erase(it);
+		else ++it;
+	}
 	for (const RsGxsId &peer : active) {
 		sendSyncRequest(peer);
 	}
