@@ -1407,6 +1407,13 @@ bool p3RetroChess::sendInvite_chat(const ChatId &chatId)
 bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId, bool joinOpenGame)
 {
     if (!rsIdentity || toId.isNull() || rsIdentity->isOwnId(toId) || !chessIdentityEnabled(ownId)) return false;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        if (mChessBusy) {
+            std::cerr << "Chess: refusing distant invitation while busy" << std::endl;
+            return false;
+        }
+    }
     std::cout << "Chess: doSendInviteOverGxs: to=" << toId << " from=" << ownId << std::endl;
 
     if (!mGxsTunnels) {
@@ -1678,6 +1685,17 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         RsGxsTunnelService::GxsTunnelInfo info;
         if (!mGxsTunnels || !mGxsTunnels->getTunnelInfo(tunnel_id, info)
                 || !chessIdentityEnabled(info.source_gxs_id)) return;
+        {
+            RsStackMutex stack(mRetroChessMtx);
+            if (mChessBusy) {
+                std::cerr << "Chess: ignoring distant invitation while busy" << std::endl;
+                QJsonObject busyJson{{"type", "chess_busy"}};
+                const QByteArray busy = QJsonDocument(busyJson).toJson(QJsonDocument::Compact);
+                mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
+                                      reinterpret_cast<const uint8_t*>(busy.constData()), busy.size());
+                return;
+            }
+        }
         std::cout << "Chess: Received invite from GXS " << sender_id << std::endl;
         {
             RsStackMutex stack(mRetroChessMtx);
@@ -1697,6 +1715,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         // Always notify the UI so the toaster and chat action reappear.
         mNotify->notifyChessInviteGxs(sender_id);
 
+    } else if (type == "chess_busy") {
+        mNotify->notifyChessBusyGxs(sender_id);
     } else if (type == "chess_accept") {
         // Only honour an accept for an invitation we actually sent, like
         // hasInviteTo() on the direct-peer path. Otherwise any identity able

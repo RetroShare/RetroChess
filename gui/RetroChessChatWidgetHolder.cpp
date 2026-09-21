@@ -114,6 +114,7 @@ RetroChessChatWidgetHolder::RetroChessChatWidgetHolder(ChatWidget *chatWidget, R
 	connect(notify, SIGNAL(chessStart(RsPeerId)), this, SLOT(inviteAccepted(RsPeerId)));
 	connect(notify, SIGNAL(chessStartGxs(RsGxsId)), this, SLOT(inviteAcceptedGxs(RsGxsId)));
 	connect(notify, SIGNAL(chessInviteClearedGxs(RsGxsId)), this, SLOT(inviteClearedGxs(RsGxsId)));
+	connect(notify, SIGNAL(chessBusyGxs(RsGxsId)), this, SLOT(chessBusyGxs(RsGxsId)));
 
 	// A GXS invite can arrive before this holder is constructed. Recover it from
 	// the service's persistent invite state once the chat metadata is available.
@@ -162,6 +163,17 @@ void RetroChessChatWidgetHolder::inviteClearedGxs(const RsGxsId &gxs_id)
 	displayedGxsInvites.erase(gxs_id);
 	clearInviteButtons();
 	if (playChessButton) playChessButton->show();
+}
+
+void RetroChessChatWidgetHolder::chessBusyGxs(const RsGxsId &gxs_id)
+{
+    ChatId chatId = mChatWidget->getChatId();
+    if (!chatId.isDistantChatId()) return;
+    DistantChatPeerInfo info;
+    if (!rsChats->getDistantChatStatus(chatId.toDistantChatId(), info) || info.to_id != gxs_id) return;
+    mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(), QDateTime::currentDateTime(),
+                            tr("%1 is currently busy and cannot accept a chess invitation.").arg(QString::fromStdString(gxs_id.toStdString()).left(8)),
+                            ChatWidget::MSGTYPE_SYSTEM);
 }
 
 void RetroChessChatWidgetHolder::chessnotify(RsPeerId from_peer_id)
@@ -313,6 +325,19 @@ void RetroChessChatWidgetHolder::chessPressed()
 	ChatId chatId = mChatWidget->getChatId();
 	QString peerName;
 	if (chatId.isDistantChatId()) {
+		DistantChatPeerInfo dcpinfo;
+		if (rsChats->getDistantChatStatus(chatId.toDistantChatId(), dcpinfo)
+		    && !dcpinfo.to_id.isNull()) {
+			for (const RsRetroChessAvailablePeer &peer : rsRetroChess->availableChessPeers()) {
+				if (peer.endpointId == QString::fromStdString(dcpinfo.to_id.toStdString())
+				        && peer.status == "busy") {
+					mChatWidget->addChatMsg(true, tr("Chess Status"), QDateTime::currentDateTime(),
+							QDateTime::currentDateTime(), tr("%1 is currently busy and cannot accept a chess invitation.")
+							.arg(dcpinfo.to_id.toStdString().c_str()), ChatWidget::MSGTYPE_SYSTEM);
+					return;
+				}
+			}
+		}
 		// sendInvite_chat() handles everything:
 		// - if the GXS tunnel is ready: requests tunnel + queues invite immediately
 		// - if not ready yet: stores chatId and retries automatically on each tick()
@@ -329,7 +354,6 @@ void RetroChessChatWidgetHolder::chessPressed()
 			return;
 		}
 
-		DistantChatPeerInfo dcpinfo;
 		if (rsChats->getDistantChatStatus(chatId.toDistantChatId(), dcpinfo)
 		    && !dcpinfo.to_id.isNull()) {
 			peerName = QString::fromStdString(dcpinfo.to_id.toStdString()).left(8);
