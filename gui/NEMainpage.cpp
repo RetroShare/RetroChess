@@ -655,7 +655,7 @@ void NEMainpage::refreshAvailablePlayers()
                                 }
                                 rsRetroChess->setTimeControlForPeer(id,
                                     hasSeek ? peerTc : (m_seekActive ? m_pendingSeek : ChessTimeControl{}));
-                                if (!rsRetroChess->sendInviteToGxs(id)) {
+                                if (!rsRetroChess->sendInviteToGxs(id, hasSeek)) {
                                     QMessageBox::warning(this, tr("Chess invitation"), tr("The chess invitation could not be sent."));
                                 }
                                 refreshAvailablePlayers();
@@ -2006,6 +2006,13 @@ void NEMainpage::loadLayoutSettings()
 	}
 	if (ui->availablePlayers->columnWidth(1) < 130) ui->availablePlayers->setColumnWidth(1, 130);
 	if (ui->availablePlayers->columnWidth(2) < 120) ui->availablePlayers->setColumnWidth(2, 120);
+
+	// Display Rating, RD, Time, Mode after Action, including for saved layouts.
+	// Move header sections so data, widths and saved sorting retain their logical columns.
+	QHeaderView *availablePlayersHeader = ui->availablePlayers->header();
+	const int detailColumns[] = {5, 6, 3, 4};
+	for (int i = 0; i < 4; ++i)
+		availablePlayersHeader->moveSection(availablePlayersHeader->visualIndex(detailColumns[i]), 3 + i);
 
 	int availSortCol = Settings->valueFromGroup("RetroChess", "AvailablePlayers_SortColumn", -1).toInt();
 	int availSortOrder = Settings->valueFromGroup("RetroChess", "AvailablePlayers_SortOrder", -1).toInt();

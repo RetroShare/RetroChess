@@ -1064,11 +1064,17 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
     }
 }
 
-bool p3RetroChess::sendInviteToGxs(const RsGxsId &gxsId)
+bool p3RetroChess::sendInviteToGxs(const RsGxsId &gxsId, bool joinOpenGame)
 {
 	const RsGxsId ownId = selectChessIdentity(gxsId);
 	if (ownId.isNull()) return false;
-	return doSendInviteOverGxs(gxsId, ownId);
+	return doSendInviteOverGxs(gxsId, ownId, joinOpenGame);
+}
+
+bool p3RetroChess::isJoinRequestFromGxs(const RsGxsId &gxsId)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    return mInvitesFromGxs.count(gxsId) && mJoinRequestsFromGxs.count(gxsId);
 }
 
 bool p3RetroChess::hasInviteToGxs(const RsGxsId &gxsId)
@@ -1398,7 +1404,7 @@ bool p3RetroChess::sendInvite_chat(const ChatId &chatId)
     return doSendInviteOverGxs(info.to_id, info.own_id);
 }
 
-bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId)
+bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId, bool joinOpenGame)
 {
     if (!rsIdentity || toId.isNull() || rsIdentity->isOwnId(toId) || !chessIdentityEnabled(ownId)) return false;
     std::cout << "Chess: doSendInviteOverGxs: to=" << toId << " from=" << ownId << std::endl;
@@ -1419,6 +1425,9 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
     startNewGameIdForPeer(toId);
     { RsStackMutex stack(mRetroChessMtx); mRematchIdByPeer.erase(toId); }
     QJsonObject inviteJson{{"type", "chess_invite"}, {"game_id", gameIdForPeer(toId)}};
+    // Preserve the purpose independently of the time control: unlimited games
+    // can be joined too, and a timed invitation need not be a join request.
+    inviteJson["join_open_game"] = joinOpenGame;
     {
         RsStackMutex stack(mRetroChessMtx);
         auto tcIt = mInviteTimeControlByPeer.find(toId);
@@ -1675,6 +1684,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             mActiveTunnels[sender_id] = tunnel_id;
             mGameIdByPeer[sender_id] = map.value("game_id").toString();
             mInviteTimeControlByPeer[sender_id] = ChessTimeControl::fromNetString(map.value("tc").toString());
+            mJoinRequestsFromGxs.erase(sender_id);
+            if (map.value("join_open_game").toBool()) mJoinRequestsFromGxs.insert(sender_id);
             mInvitesFromGxs.insert(sender_id);
         }
         // A new invite packet is also a refresh of an existing pending invite.
@@ -2040,6 +2051,7 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
                     contact->second.nextProbe = time(nullptr) + 15;
                 }
                 mInvitesFromGxs.erase(gxs_id);
+                mJoinRequestsFromGxs.erase(gxs_id);
                 mInvitesToGxs.erase(gxs_id);
                 mPendingGxsInvites.erase(gxs_id);
                 mPendingGxsCloses.erase(gxs_id);

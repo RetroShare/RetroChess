@@ -49,7 +49,13 @@ ChessToaster::ChessToaster(
 	if (name.isEmpty()) name = tr("An identity");
 	initialise(name, actionable);
 	const ChessTimeControl tc = rsRetroChess ? rsRetroChess->timeControlForPeer(gxsId) : ChessTimeControl{};
-	if (!tc.unlimited) {
+	if (rsRetroChess && rsRetroChess->isJoinRequestFromGxs(gxsId)) {
+		ui.toasterLabel->setText(tr("Player wants to join"));
+		ui.textLabel->setText(tc.unlimited
+		        ? tr("%1 wants to join your unlimited game.").arg(name)
+		        : tr("%1 wants to join your %2 game.").arg(name, tc.label()));
+		ui.toasterButton->setText(actionable ? tr("Accept player") : tr("Close preview"));
+	} else if (!tc.unlimited) {
 		ui.toasterLabel->setText(tr("Chess challenge"));
 		ui.textLabel->setText(tr("%1 offers a %2 game.").arg(name, tc.label()));
 		ui.toasterButton->setText(actionable ? tr("Accept challenge") : tr("Close preview"));

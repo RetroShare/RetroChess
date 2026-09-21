@@ -111,7 +111,8 @@ public:
 	void player_leave_gxs(const RsGxsId &gxs_id);
 
 	void sendGxsInvite(const RsGxsId &toGxsId);
-	bool sendInviteToGxs(const RsGxsId &gxsId) override;
+	bool sendInviteToGxs(const RsGxsId &gxsId, bool joinOpenGame = false) override;
+	bool isJoinRequestFromGxs(const RsGxsId &gxsId) override;
 	bool hasInviteToGxs(const RsGxsId &gxsId) override;
 	bool cancelInviteToGxs(const RsGxsId &gxsId) override;
 	void acceptedInviteGxs(const RsGxsId &gxsId);
@@ -161,7 +162,7 @@ public:
 	void closePendingGxsTunnels();
 	void retryPendingDistantChatInvites(); // Retry invites queued before the tunnel was ready
 	void reconnectInterruptedSessions();
-	bool doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId); // Actually request tunnel + queue invite
+	bool doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId, bool joinOpenGame = false); // Actually request tunnel + queue invite
 
 	virtual uint32_t getGxsTunnelServiceId() const { 
 			return RETRO_CHESS_GXS_TUNNEL_SERVICE_ID; 
@@ -238,6 +239,7 @@ private:
 	std::map<std::string, std::set<RsGxsId>> mSpectatorsByGame;
 	std::map<RsGxsId, QString> mPendingWatchRequests;
 	std::map<RsGxsId, ChessTimeControl> mInviteTimeControlByPeer;
+	std::set<RsGxsId> mJoinRequestsFromGxs;
 
 	RsMutex mRetroChessMtx;
 	RsServiceControl *mServiceControl;
