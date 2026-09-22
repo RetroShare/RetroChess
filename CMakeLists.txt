@@ -45,6 +45,7 @@ set(RETROCHESS_SOURCES
 set(RETROCHESS_HEADERS
     RetroChessPlugin.h
     services/p3RetroChess.h
+    services/RetroChessTunnelDebug.h
     services/rsRetroChessItems.h
     interface/rsRetroChess.h
     gui/NEMainpage.h

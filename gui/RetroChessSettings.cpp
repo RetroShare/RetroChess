@@ -290,6 +290,18 @@ bool RetroChessSettings::confirmResignOrDraw()
 	return Settings->valueFromGroup("RetroChess", "ConfirmResignOrDraw", true).toBool();
 }
 
+bool RetroChessSettings::tunnelDebugLogging()
+{
+	return Settings->valueFromGroup("RetroChess", "TunnelDebugLogging", false).toBool();
+}
+
+void RetroChessSettings::setTunnelDebugLogging(bool enabled)
+{
+	Settings->setValueToGroup("RetroChess", "TunnelDebugLogging", enabled);
+	Settings->sync();
+	if (rsRetroChess) rsRetroChess->setTunnelDebugEnabled(enabled);
+}
+
 void RetroChessSettings::setGameplayOptions(bool alwaysQueen, bool confirmActions)
 {
 	Settings->setValueToGroup("RetroChess", "AlwaysPromoteToQueen", alwaysQueen);
@@ -363,6 +375,13 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	QCheckBox *confirmActions = new QCheckBox(tr("Confirm Resign or Draw"), generalPage);
 	confirmActions->setChecked(RetroChessSettings::confirmResignOrDraw());
 	generalRoot->addWidget(confirmActions);
+	QCheckBox *tunnelDebug = new QCheckBox(tr("Log tunnel activity (debug)"), generalPage);
+	tunnelDebug->setToolTip(tr("Writes every tunnel request, status change, close and packet "
+	                           "sent/received by RetroChess to retrochess_tunnels.log in your "
+	                           "RetroShare profile folder, plus a tunnel overview every minute."));
+	tunnelDebug->setChecked(RetroChessSettings::tunnelDebugLogging()
+	                        || (rsRetroChess && rsRetroChess->tunnelDebugEnabled()));
+	generalRoot->addWidget(tunnelDebug);
 	dateLayout->addWidget(cmboDateFormat);
 	generalRoot->addWidget(dateGroup);
 	generalRoot->addStretch();
@@ -665,7 +684,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 	connect(buttons, &QDialogButtonBox::accepted, this,
-	        [this, cmboDateFormat, group, pieceGroup, moveSound, captureSound, resultSound, inviteSound, alwaysQueen, confirmActions, identityList, preferred, enabled, preferredId]() {
+	        [this, cmboDateFormat, group, pieceGroup, moveSound, captureSound, resultSound, inviteSound, alwaysQueen, confirmActions, tunnelDebug, identityList, preferred, enabled, preferredId]() {
 		if (pieceGroup->checkedButton())
 			RetroChessSettings::setPieceThemeId(pieceGroup->checkedButton()->property("themeId").toString());
 		RetroChessSettings::setDateFormat(cmboDateFormat->currentData().toInt());
@@ -677,6 +696,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 		        moveSound->isChecked(), captureSound->isChecked(),
 		        resultSound->isChecked(), inviteSound->isChecked());
 		RetroChessSettings::setGameplayOptions(alwaysQueen->isChecked(), confirmActions->isChecked());
+		RetroChessSettings::setTunnelDebugLogging(tunnelDebug->isChecked());
         std::list<RsGxsId> enabledIds;
         for (int row = 0; row < identityList->count(); ++row) {
             const QListWidgetItem *item = identityList->item(row);

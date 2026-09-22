@@ -59,6 +59,9 @@ public:
 	static bool alwaysPromoteToQueen();
 	static bool confirmResignOrDraw();
 	static void setGameplayOptions(bool alwaysPromoteToQueen, bool confirmResignOrDraw);
+	// Tunnel debug logging (stderr + retrochess_tunnels.log in the account directory)
+	static bool tunnelDebugLogging();
+	static void setTunnelDebugLogging(bool enabled);
 };
 
 class RetroChessSettingsDialog : public QDialog

@@ -30,6 +30,7 @@
 #include <retroshare/rstypes.h>
 
 class QTableWidget;
+class QJsonObject;
 class QTimer;
 class QPixmap;
 struct ChatMessage;
@@ -77,6 +78,13 @@ private:
 	struct Receipt {
 		QString gameId, white, black, result, signer;
 		qint64 finishedAt = 0;
+		// Local, in-memory insertion order (not saved, not sent as receipt
+		// data). Used for incremental sync: a peer only asks for receipts
+		// with a sequence number above the last one it got from us.
+		quint64 seq = 0;
+		// Peer we learned this receipt from (in memory only): never echoed
+		// back to it by the sync.
+		QString learnedFrom;
 		Receipt() = default;
 		Receipt(const QString &g, const QString &w, const QString &b,
 		        const QString &r, const QString &s, qint64 f)
@@ -86,11 +94,14 @@ private:
 	// arrived from (null for none). Returns true when the receipt was accepted
 	// into mReceipts; see the trust rules in RetroChessLeaderboard.cpp.
 	bool consumeReceipt(const Receipt &receipt, const RsGxsId &sender);
+	// Inserts into mReceipts and assigns the next sync sequence number.
+	void storeReceipt(const QString &key, Receipt receipt, const RsGxsId &from = RsGxsId());
 	void recompute();
 	void load();
 	void save() const;
 	void broadcastReceipt(const Receipt &receipt, const RsGxsId &excludePeer = RsGxsId());
-	void sendSyncToPeer(const RsGxsId &peerId);
+	// request: the peer's leaderboard_sync_req ("epoch"/"since" select an incremental answer).
+	void sendSyncToPeer(const RsGxsId &peerId, const QJsonObject &request);
 	void sendSyncRequest(const RsGxsId &peerId);
 	static QString canonicalKey(const Receipt &r);
 	static bool validResult(const QString &result);
@@ -105,5 +116,14 @@ private:
 	QTimer *mSyncTimer;
 	QElapsedTimer mSyncClock;
 	QMap<RsGxsId, qint64> mLastSyncRequest;
-	QMap<RsGxsId, qint64> mLastSyncResponse;
+	QMap<RsGxsId, qint64> mLastSyncResponse;      // any answer to a peer
+	QMap<RsGxsId, qint64> mLastFullSyncResponse;  // full-history answers only
+
+	// Incremental sync. mSyncEpoch identifies this run's sequence numbering
+	// (random per start); a peer quoting another epoch gets a full sync once.
+	QString mSyncEpoch;
+	quint64 mNextSeq = 0;
+	struct SyncCursor { QString epoch; quint64 seq = 0; };
+	// Per peer: the last epoch/sequence we received from its sync answers.
+	QMap<RsGxsId, SyncCursor> mSyncCursors;
 };

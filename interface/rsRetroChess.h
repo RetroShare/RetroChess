@@ -148,6 +148,11 @@ class RsRetroChess
 	virtual ChessTimeControl timeControlForPeer(const RsGxsId &gxsId) { (void)gxsId; return ChessTimeControl{}; }
 	virtual void setLobbySeek(bool active, const ChessTimeControl &tc) = 0;
 	virtual void setTimeControlForPeer(const RsGxsId &gxsId, const ChessTimeControl &tc) { (void)gxsId; (void)tc; }
+
+	// Tunnel debug tracing: logs every tunnel request, status change, close
+	// and packet to stderr and <account dir>/retrochess_tunnels.log.
+	virtual void setTunnelDebugEnabled(bool enabled) { (void)enabled; }
+	virtual bool tunnelDebugEnabled() { return false; }
 };
 
 
