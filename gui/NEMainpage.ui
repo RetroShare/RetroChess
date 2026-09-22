@@ -323,7 +323,7 @@
               </font>
              </property>
              <property name="alternatingRowColors">
-              <bool>true</bool>
+              <bool>false</bool>
              </property>
              <property name="selectionMode">
               <enum>QAbstractItemView::SingleSelection</enum>
@@ -363,6 +363,26 @@
           <layout class="QVBoxLayout" name="availablePlayersListLayout">
            <item>
             <layout class="QHBoxLayout" name="playerToolsLayout">
+             <item>
+              <widget class="QPushButton" name="createLobbyGameButton">
+               <property name="toolTip">
+                <string>Open Game Setup to create a lobby game seek</string>
+               </property>
+               <property name="text">
+                <string>Create game</string>
+               </property>
+               <property name="icon">
+                <iconset resource="RetroChess_images.qrc">
+                 <normaloff>:/images/community.png</normaloff>:/images/community.png</iconset>
+               </property>
+               <property name="iconSize">
+                <size>
+                 <width>24</width>
+                 <height>24</height>
+                </size>
+               </property>
+              </widget>
+             </item>
              <item>
               <spacer name="horizontalSpacer">
                <property name="orientation">
@@ -407,7 +427,7 @@
               </font>
              </property>
              <property name="alternatingRowColors">
-              <bool>true</bool>
+              <bool>false</bool>
              </property>
              <property name="selectionMode">
               <enum>QAbstractItemView::SingleSelection</enum>
@@ -434,6 +454,16 @@
              <column>
               <property name="text">
                <string>Action</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Time</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Mode</string>
               </property>
              </column>
              <column>
@@ -495,7 +525,7 @@
                  </font>
                 </property>
                 <property name="alternatingRowColors">
-                 <bool>true</bool>
+                 <bool>false</bool>
                 </property>
                 <property name="rootIsDecorated">
                  <bool>false</bool>

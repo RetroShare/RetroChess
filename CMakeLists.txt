@@ -38,6 +38,8 @@ set(RETROCHESS_SOURCES
     gui/RetroChessUserNotify.cpp
     gui/toaster/ChessToaster.cpp
     gui/toaster/RetroChessToasterNotify.cpp
+    gui/ChessClockWidget.cpp
+    gui/ChessGameSetupDialog.cpp
 )
 
 set(RETROCHESS_HEADERS
@@ -56,6 +58,9 @@ set(RETROCHESS_HEADERS
     gui/ChessGameHistory.h
     gui/ChessGameReviewDialog.h
     gui/tile.h
+    gui/ChessTimeControl.h
+    gui/ChessClockWidget.h
+    gui/ChessGameSetupDialog.h
 
     gui/RetroChessChatWidgetHolder.h
     gui/RetroChessSettings.h

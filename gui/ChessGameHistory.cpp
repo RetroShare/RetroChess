@@ -22,17 +22,30 @@
 
 #include "gui/settings/rsharesettings.h"
 
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSaveFile>
 #include <QSet>
 #include <QUuid>
 #include <algorithm>
+#include <retroshare/rsinit.h>
 
 namespace
 {
 const char *HISTORY_KEY = "GameHistory";
 const int MAX_SAVED_GAMES = 500;
+
+QString historyFilePath()
+{
+	const std::string accDir = RsAccounts::AccountDirectory();
+	if (accDir.empty()) {
+		return QString();
+	}
+	return QString::fromUtf8(accDir.c_str()) + "/retrochess_history.json";
+}
 
 QJsonArray stringsToJson(const QStringList &values)
 {
@@ -94,10 +107,48 @@ ChessGameRecord fromJson(const QJsonObject &object)
 	return game;
 }
 
+QVector<ChessGameRecord> parseGamesJson(const QJsonDocument &document)
+{
+	QVector<ChessGameRecord> result;
+	QJsonArray array;
+	if (document.isArray()) {
+		array = document.array();
+	} else if (document.isObject()) {
+		array = document.object().value("games").toArray();
+	} else {
+		return result;
+	}
+
+	for (const QJsonValue &value : array) {
+		if (!value.isObject()) continue;
+		ChessGameRecord game = fromJson(value.toObject());
+		if (!game.id.isEmpty() && !game.positions.isEmpty()) result.append(game);
+	}
+	return result;
+}
+
 bool saveGames(const QVector<ChessGameRecord> &games)
 {
 	QJsonArray array;
 	for (const ChessGameRecord &game : games) array.append(toJson(game));
+
+	const QString filePath = historyFilePath();
+	if (!filePath.isEmpty()) {
+		QJsonObject root;
+		root["version"] = 1;
+		root["games"] = array;
+
+		QSaveFile saveFile(filePath);
+		if (saveFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+			saveFile.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+			if (saveFile.commit()) {
+				return true;
+			}
+			saveFile.cancelWriting();
+		}
+	}
+
+	// Fallback to Settings if account directory is unavailable
 	Settings->setValueToGroup(
 	        "RetroChess", HISTORY_KEY,
 	        QJsonDocument(array).toJson(QJsonDocument::Compact));
@@ -108,17 +159,32 @@ bool saveGames(const QVector<ChessGameRecord> &games)
 
 QVector<ChessGameRecord> ChessGameHistory::games()
 {
+	const QString filePath = historyFilePath();
+	if (!filePath.isEmpty() && QFile::exists(filePath)) {
+		QFile file(filePath);
+		if (file.open(QIODevice::ReadOnly)) {
+			const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+			return parseGamesJson(document);
+		}
+	}
+
+	// Check legacy data in Settings
 	const QByteArray encoded = Settings->valueFromGroup(
 	        "RetroChess", HISTORY_KEY, QByteArray()).toByteArray();
-	const QJsonDocument document = QJsonDocument::fromJson(encoded);
-	QVector<ChessGameRecord> result;
-	if (!document.isArray()) return result;
-	for (const QJsonValue &value : document.array()) {
-		if (!value.isObject()) continue;
-		ChessGameRecord game = fromJson(value.toObject());
-		if (!game.id.isEmpty() && !game.positions.isEmpty()) result.append(game);
+	if (!encoded.isEmpty()) {
+		const QJsonDocument document = QJsonDocument::fromJson(encoded);
+		const QVector<ChessGameRecord> migrated = parseGamesJson(document);
+		if (!migrated.isEmpty()) {
+			if (!filePath.isEmpty()) {
+				saveGames(migrated);
+				Settings->remove(QString("RetroChess/%1").arg(HISTORY_KEY));
+				Settings->sync();
+			}
+			return migrated;
+		}
 	}
-	return result;
+
+	return {};
 }
 
 bool ChessGameHistory::addGame(const ChessGameRecord &value)

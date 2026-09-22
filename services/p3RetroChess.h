@@ -111,7 +111,8 @@ public:
 	void player_leave_gxs(const RsGxsId &gxs_id);
 
 	void sendGxsInvite(const RsGxsId &toGxsId);
-	bool sendInviteToGxs(const RsGxsId &gxsId) override;
+	bool sendInviteToGxs(const RsGxsId &gxsId, bool joinOpenGame = false) override;
+	bool isJoinRequestFromGxs(const RsGxsId &gxsId) override;
 	bool hasInviteToGxs(const RsGxsId &gxsId) override;
 	bool cancelInviteToGxs(const RsGxsId &gxsId) override;
 	void acceptedInviteGxs(const RsGxsId &gxsId);
@@ -152,12 +153,16 @@ public:
 	bool sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
 	void sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
 
+	ChessTimeControl timeControlForPeer(const RsGxsId &gxsId) override;
+	void setLobbySeek(bool active, const ChessTimeControl &tc) override;
+	void setTimeControlForPeer(const RsGxsId &gxsId, const ChessTimeControl &tc) override;
+
 	// Async tunnel management
 	void handleGxsTick(); // Called periodically by the core
 	void closePendingGxsTunnels();
 	void retryPendingDistantChatInvites(); // Retry invites queued before the tunnel was ready
 	void reconnectInterruptedSessions();
-	bool doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId); // Actually request tunnel + queue invite
+	bool doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId, bool joinOpenGame = false); // Actually request tunnel + queue invite
 
 	virtual uint32_t getGxsTunnelServiceId() const { 
 			return RETRO_CHESS_GXS_TUNNEL_SERVICE_ID; 
@@ -187,12 +192,17 @@ private:
 		QString opponentId;
 		QString opponentName;
 		QString gameId;
+		/// Time control advertised by a "chess_seek" action from this peer.
+		ChessTimeControl seekTimeControl;
+		bool seeking = false;
 	};
 	std::map<RsGxsId, ChessContact> mChessContacts;
 	std::set<RsGxsId> mChessIdentities;
 	RsGxsId mPreferredChessIdentity;
 	bool mChessIdentitiesConfigured = false;
 	bool mChessBusy = false;
+	bool mLobbySeekActive = false;
+	ChessTimeControl mLobbySeek;
 	// Helper to find which friend sent the data based on the tunnel ID
 	RsGxsId findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id);
 
@@ -207,6 +217,9 @@ private:
 
 	// Tracks GXS IDs that we are currently trying to connect to
 	std::map<RsGxsId, RsGxsTunnelId> mPendingTunnels;
+	// When each pending tunnel request was first seen by handleGxsTick(), so a
+	// peer that never answers does not stay pending (and re-polled) forever.
+	std::map<RsGxsId, std::pair<RsGxsTunnelId, time_t> > mPendingTunnelSince;
 	// Tracks established tunnels ready for data
 	std::map<RsGxsId, RsGxsTunnelId> mActiveTunnels;
 	// Pending invite messages to send once a tunnel becomes CAN_TALK
@@ -228,6 +241,8 @@ private:
 	std::map<std::string, time_t> mLastSessionReconnect;
 	std::map<std::string, std::set<RsGxsId>> mSpectatorsByGame;
 	std::map<RsGxsId, QString> mPendingWatchRequests;
+	std::map<RsGxsId, ChessTimeControl> mInviteTimeControlByPeer;
+	std::set<RsGxsId> mJoinRequestsFromGxs;
 
 	RsMutex mRetroChessMtx;
 	RsServiceControl *mServiceControl;

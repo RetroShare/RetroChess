@@ -36,6 +36,7 @@
 #include "gui/RetroChessNotify.h"
 
 #include "gui/chess.h"
+#include "gui/ChessTimeControl.h"
 
 #include <QWidget>
 #include <QSet>
@@ -142,8 +143,15 @@ private:
 	void loadLayoutSettings();
 	void saveLayoutSettings();
 	void setupPlayersTab();
+	void onCreateLobbyGame();
+	void cancelLobbyGame();
+	void updateLobbyGameButton();
+	void broadcastSeek(bool active, const ChessTimeControl &tc);
 	QMenu *createSavedContactsContextMenu(QMenu *contextMenu = nullptr);
 	void showSavedContactsHeaderContextMenu(const QPoint &globalPos);
+
+	ChessTimeControl m_pendingSeek;
+	bool m_seekActive = false;
 
 protected:
 	void showEvent(QShowEvent *event) override;

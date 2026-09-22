@@ -280,6 +280,23 @@ QString RetroChessSettings::formatDateTime(const QDateTime &dt)
 	       QLocale::system().toString(local.time(), QLocale::ShortFormat);
 }
 
+bool RetroChessSettings::alwaysPromoteToQueen()
+{
+	return Settings->valueFromGroup("RetroChess", "AlwaysPromoteToQueen", false).toBool();
+}
+
+bool RetroChessSettings::confirmResignOrDraw()
+{
+	return Settings->valueFromGroup("RetroChess", "ConfirmResignOrDraw", true).toBool();
+}
+
+void RetroChessSettings::setGameplayOptions(bool alwaysQueen, bool confirmActions)
+{
+	Settings->setValueToGroup("RetroChess", "AlwaysPromoteToQueen", alwaysQueen);
+	Settings->setValueToGroup("RetroChess", "ConfirmResignOrDraw", confirmActions);
+	Settings->sync();
+}
+
 RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identitiesPage) : QDialog(parent)
 {
 	setWindowTitle(tr("RetroChess Settings"));
@@ -340,6 +357,12 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 		cmboDateFormat->setCurrentIndex(dateIndex);
 	}
 
+	QCheckBox *alwaysQueen = new QCheckBox(tr("Always Promote to Queen"), generalPage);
+	alwaysQueen->setChecked(RetroChessSettings::alwaysPromoteToQueen());
+	generalRoot->addWidget(alwaysQueen);
+	QCheckBox *confirmActions = new QCheckBox(tr("Confirm Resign or Draw"), generalPage);
+	confirmActions->setChecked(RetroChessSettings::confirmResignOrDraw());
+	generalRoot->addWidget(confirmActions);
 	dateLayout->addWidget(cmboDateFormat);
 	generalRoot->addWidget(dateGroup);
 	generalRoot->addStretch();
@@ -642,7 +665,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 	connect(buttons, &QDialogButtonBox::accepted, this,
-	        [this, cmboDateFormat, group, pieceGroup, moveSound, captureSound, resultSound, inviteSound, identityList, preferred]() {
+	        [this, cmboDateFormat, group, pieceGroup, moveSound, captureSound, resultSound, inviteSound, alwaysQueen, confirmActions, identityList, preferred, enabled, preferredId]() {
 		if (pieceGroup->checkedButton())
 			RetroChessSettings::setPieceThemeId(pieceGroup->checkedButton()->property("themeId").toString());
 		RetroChessSettings::setDateFormat(cmboDateFormat->currentData().toInt());
@@ -653,12 +676,17 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 		RetroChessSettings::setSoundOptions(
 		        moveSound->isChecked(), captureSound->isChecked(),
 		        resultSound->isChecked(), inviteSound->isChecked());
+		RetroChessSettings::setGameplayOptions(alwaysQueen->isChecked(), confirmActions->isChecked());
         std::list<RsGxsId> enabledIds;
         for (int row = 0; row < identityList->count(); ++row) {
             const QListWidgetItem *item = identityList->item(row);
             if (item->checkState() == Qt::Checked) enabledIds.push_back(RsGxsId(item->data(Qt::UserRole).toString().toStdString()));
         }
-        rsRetroChess->setChessIdentities(enabledIds, RsGxsId(preferred->currentData().toString().toStdString()));
+        const RsGxsId selectedPreferred(preferred->currentData().toString().toStdString());
+        std::set<RsGxsId> oldIds(enabled.begin(), enabled.end());
+        std::set<RsGxsId> newIds(enabledIds.begin(), enabledIds.end());
+        if (oldIds != newIds || selectedPreferred != RsGxsId(preferredId.toStdString()))
+            rsRetroChess->setChessIdentities(enabledIds, selectedPreferred);
 		for (QWidget *widget : QApplication::allWidgets()) {
 			if (auto *game = qobject_cast<RetroChessWindow *>(widget)) game->refreshBoardTheme();
 			if (auto *review = qobject_cast<ChessGameReviewDialog *>(widget)) review->refreshPieceTheme();

@@ -48,6 +48,17 @@ namespace {
 constexpr double kScale = 173.7178;
 constexpr double kTau = 0.5;
 
+// Receipts carry no cryptographic signature (the public RetroShare plugin API
+// exposes no GXS signing call), so authenticity comes from the tunnel:
+//  - a receipt received from the tunnel peer that is its signer is first-hand;
+//  - a receipt relayed by anybody else is hearsay and only counts once
+//    kMinWitnesses distinct peers reported it.
+// The caps bound memory growth from peers that flood receipts.
+constexpr int kMinWitnesses = 2;
+constexpr int kMaxWitnesses = 8;
+constexpr int kMaxReceipts = 50000;
+constexpr int kMaxPending = 2000;
+
 QString leaderboardFilePath()
 {
 	const std::string accDir = RsAccounts::AccountDirectory();
@@ -161,7 +172,8 @@ RetroChessLeaderboard::RetroChessLeaderboard(QObject *parent) : QObject(parent),
 {
 	load();
 	connect(mSyncTimer, &QTimer::timeout, this, &RetroChessLeaderboard::synchronizeTunnels);
-	mSyncTimer->setInterval(15000);
+	mSyncClock.start();
+	mSyncTimer->setInterval(5 * 60 * 1000);
 	mSyncTimer->start();
 	QTimer::singleShot(0, this, &RetroChessLeaderboard::synchronizeTunnels);
 }
@@ -185,7 +197,8 @@ void RetroChessLeaderboard::submitResult(const QString &gameId, const RsGxsId &w
 	              (rsIdentity->isOwnId(white) ? white : black)).toStdString()),
 	          QDateTime::currentSecsSinceEpoch()};
 	if (r.signer.isEmpty()) return;
-	consumeReceipt(r);
+	// Our own receipt: the signer is a local identity, so it is first-hand.
+	consumeReceipt(r, RsGxsId(r.signer.toStdString()));
 	broadcastReceipt(r);
 }
 
@@ -193,23 +206,52 @@ void RetroChessLeaderboard::receiveResult(const RsGxsId &signer, const QString &
 	                                       const RsGxsId &white, const RsGxsId &black,
 	                                       const QString &result, qint64 finishedAt)
 {
+	// The caller must already have authenticated `signer` (for example from
+	// the tunnel the result arrived on).
 	consumeReceipt(Receipt{gameId, QString::fromStdString(white.toStdString()),
 	        QString::fromStdString(black.toStdString()), result,
-	        QString::fromStdString(signer.toStdString()), finishedAt});
+	        QString::fromStdString(signer.toStdString()), finishedAt}, signer);
 }
 
-void RetroChessLeaderboard::consumeReceipt(const Receipt &r)
+bool RetroChessLeaderboard::consumeReceipt(const Receipt &r, const RsGxsId &sender)
 {
 	if (r.gameId.isEmpty() || r.gameId.size() > 128 || r.white == r.black
         || RsGxsId(r.white.toStdString()).isNull() || RsGxsId(r.black.toStdString()).isNull()
         || r.finishedAt <= 0 || !validResult(r.result)
-	    || (r.signer != r.white && r.signer != r.black)) return;
+	    || (r.signer != r.white && r.signer != r.black)) return false;
 	const QString key = canonicalKey(r) + '|' + r.signer;
 	// Duplicate posts cannot count twice. Pick a stable timestamp regardless of
     // arrival order; retain conflicting claims so every node excludes them.
-    if (mReceipts.contains(key) && mReceipts.value(key).finishedAt <= r.finishedAt) return;
-	mReceipts.insert(key, r);
+    if (mReceipts.contains(key) && mReceipts.value(key).finishedAt <= r.finishedAt) return false;
+
+	// Only the signer itself can vouch for its own receipt. Anything relayed
+	// by another peer is hearsay: without this, any peer could post receipts
+	// naming other identities as signer and move their ratings.
+	const bool firstHand = !sender.isNull() && RsGxsId(r.signer.toStdString()) == sender;
+	if (!firstHand) {
+		if (sender.isNull()) return false;
+		if (!mPending.contains(key)) {
+			if (mPending.size() >= kMaxPending) return false;
+			mPending.insert(key, r);
+		}
+		QSet<QString> &witnesses = mWitnesses[key];
+		if (witnesses.size() < kMaxWitnesses)
+			witnesses.insert(QString::fromStdString(sender.toStdString()));
+		if (witnesses.size() < kMinWitnesses) return false;
+		// Corroborated by enough distinct peers: accept the first version seen.
+		const Receipt accepted = mPending.value(key);
+		mPending.remove(key);
+		mWitnesses.remove(key);
+		if (mReceipts.size() >= kMaxReceipts && !mReceipts.contains(key)) return false;
+		mReceipts.insert(key, accepted);
+	} else {
+		mPending.remove(key);
+		mWitnesses.remove(key);
+		if (mReceipts.size() >= kMaxReceipts && !mReceipts.contains(key)) return false;
+		mReceipts.insert(key, r);
+	}
 	save(); recompute(); emit changed();
+	return true;
 }
 
 void RetroChessLeaderboard::recompute()
@@ -498,7 +540,7 @@ void RetroChessLeaderboard::broadcastReceipt(const Receipt &r, const RsGxsId &ex
 	if (!rsRetroChess) return;
 	const QString key = canonicalKey(r) + '|' + r.signer;
 	mGossipedReceipts.insert(key);
-	save();
+	if (mReceipts.contains(key)) save();
 	QJsonObject obj{
 		{"type", "leaderboard_receipt"},
 		{"version", 1},
@@ -525,6 +567,11 @@ void RetroChessLeaderboard::broadcastReceipt(const Receipt &r, const RsGxsId &ex
 void RetroChessLeaderboard::sendSyncToPeer(const RsGxsId &peerId)
 {
 	if (!rsRetroChess || peerId.isNull() || mReceipts.isEmpty()) return;
+	// Older peers may still request the full history every 15 seconds.
+	const qint64 now = mSyncClock.elapsed();
+	if (mLastSyncResponse.contains(peerId)
+	        && now - mLastSyncResponse.value(peerId) < 5 * 60 * 1000) return;
+	mLastSyncResponse.insert(peerId, now);
 	QJsonArray currentBatch;
 	for (const Receipt &r : mReceipts) {
 		currentBatch.append(QJsonObject{
@@ -558,17 +605,29 @@ void RetroChessLeaderboard::sendSyncToPeer(const RsGxsId &peerId)
 void RetroChessLeaderboard::sendSyncRequest(const RsGxsId &peerId)
 {
 	if (!rsRetroChess || peerId.isNull()) return;
+	bool online = false;
+	for (const auto &peer : rsRetroChess->availableChessPeers()) {
+		if (peer.gxs && peer.endpointId == QString::fromStdString(peerId.toStdString())
+		        && (peer.status == "available" || peer.status == "busy" || peer.status == "playing")) {
+			online = true;
+			break;
+		}
+	}
+	if (!online) return;
+	const qint64 now = mSyncClock.elapsed();
+	if (mLastSyncRequest.contains(peerId)
+	        && now - mLastSyncRequest.value(peerId) < 5 * 60 * 1000) return;
 	QJsonObject req{
 		{"type", "leaderboard_sync_req"},
 		{"version", 1}
 	};
-	rsRetroChess->sendLeaderboardDataGxs(peerId, QJsonDocument(req).toJson(QJsonDocument::Compact));
+	if (rsRetroChess->sendLeaderboardDataGxs(peerId, QJsonDocument(req).toJson(QJsonDocument::Compact)))
+		mLastSyncRequest.insert(peerId, now);
 }
 
 void RetroChessLeaderboard::handleTunnelReady(const RsGxsId &peerId)
 {
 	if (peerId.isNull()) return;
-	sendSyncToPeer(peerId);
 	sendSyncRequest(peerId);
 }
 
@@ -588,9 +647,12 @@ void RetroChessLeaderboard::handleTunnelData(const RsGxsId &sender, const QByteA
 			static_cast<qint64>(obj.value("finished_at").toDouble())
 		};
 		const QString key = canonicalKey(r) + '|' + r.signer;
-		const bool isNew = !mReceipts.contains(key);
-		consumeReceipt(r);
-		if (isNew && !mGossipedReceipts.contains(key)) {
+		const bool isNew = !mReceipts.contains(key) && !mPending.contains(key);
+		consumeReceipt(r, sender);
+		// Relay newly seen receipts (also unconfirmed ones, so that peers
+		// further away can still collect enough witnesses).
+		if (isNew && (mReceipts.contains(key) || mPending.contains(key))
+		        && !mGossipedReceipts.contains(key)) {
 			broadcastReceipt(r, sender);
 		}
 	} else if (type == "leaderboard_sync") {
@@ -606,9 +668,10 @@ void RetroChessLeaderboard::handleTunnelData(const RsGxsId &sender, const QByteA
 				static_cast<qint64>(o.value("finished_at").toDouble())
 			};
 			const QString key = canonicalKey(r) + '|' + r.signer;
-			const bool isNew = !mReceipts.contains(key);
-			consumeReceipt(r);
-			if (isNew && !mGossipedReceipts.contains(key)) {
+			const bool isNew = !mReceipts.contains(key) && !mPending.contains(key);
+			consumeReceipt(r, sender);
+			if (isNew && (mReceipts.contains(key) || mPending.contains(key))
+			        && !mGossipedReceipts.contains(key)) {
 				broadcastReceipt(r, sender);
 			}
 		}
@@ -619,6 +682,16 @@ void RetroChessLeaderboard::synchronizeTunnels()
 {
 	if (!rsRetroChess) return;
 	const auto active = rsRetroChess->activeGxsTunnels();
+	for (auto it = mLastSyncRequest.begin(); it != mLastSyncRequest.end();) {
+		if (std::find(active.begin(), active.end(), it.key()) == active.end())
+			it = mLastSyncRequest.erase(it);
+		else ++it;
+	}
+	for (auto it = mLastSyncResponse.begin(); it != mLastSyncResponse.end();) {
+		if (mSyncClock.elapsed() - it.value() >= 5 * 60 * 1000)
+			it = mLastSyncResponse.erase(it);
+		else ++it;
+	}
 	for (const RsGxsId &peer : active) {
 		sendSyncRequest(peer);
 	}

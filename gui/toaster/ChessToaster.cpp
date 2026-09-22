@@ -48,12 +48,29 @@ ChessToaster::ChessToaster(
 	if (name.isEmpty()) name = QString::fromStdString(gxsId.toStdString()).left(8);
 	if (name.isEmpty()) name = tr("An identity");
 	initialise(name, actionable);
+	const ChessTimeControl tc = rsRetroChess ? rsRetroChess->timeControlForPeer(gxsId) : ChessTimeControl{};
+	if (rsRetroChess && rsRetroChess->isJoinRequestFromGxs(gxsId)) {
+		ui.toasterLabel->setText(tr("Player wants to join"));
+		ui.textLabel->setText(tc.unlimited
+		        ? tr("%1 wants to join your unlimited game.").arg(name)
+		        : tr("%1 wants to join your %2 game.").arg(name, tc.label()));
+		ui.toasterButton->setText(actionable ? tr("Accept player") : tr("Close preview"));
+	} else if (!tc.unlimited) {
+		ui.toasterLabel->setText(tr("Chess challenge"));
+		ui.textLabel->setText(tr("%1 offers a %2 game.").arg(name, tc.label()));
+		ui.toasterButton->setText(actionable ? tr("Accept challenge") : tr("Close preview"));
+	}
 }
 
 void ChessToaster::initialise(const QString &playerName, bool actionable)
 {
 	ui.avatarWidget->setFrameType(AvatarWidget::NO_FRAME);
 	ui.avatarWidget->setDefaultAvatar(":/images/chess-notify.png");
+	// AvatarWidget is globally given a one-pixel frame by both standard skins.
+	// The compact toaster already provides its own spacing, so that frame makes
+	// the avatar look inset and adds an unnecessary light/dark block around it.
+	ui.avatarWidget->setStyleSheet(
+	        "AvatarWidget { border: none; padding: 0; background: transparent; }");
 	ui.toasterLabel->setText(tr("Chess invitation"));
 	ui.textLabel->setText(tr("%1 is inviting you to play chess.").arg(playerName));
 	ui.toasterButton->setText(

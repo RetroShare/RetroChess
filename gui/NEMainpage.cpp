@@ -20,6 +20,7 @@
 
 #include "NEMainpage.h"
 #include "RetroChessLeaderboard.h"
+#include "ChessGameSetupDialog.h"
 #include <QTableWidget>
 #include <QLabel>
 #include "ui_NEMainpage.h"
@@ -40,6 +41,7 @@
 #include <QShortcut>
 #include <QToolButton>
 #include <QTimer>
+#include <QBuffer>
 #include <QShowEvent>
 #include <QDateTime>
 #include <QCoreApplication>
@@ -87,10 +89,14 @@ QString chessPlayerToolTip(
         const RetroChessLeaderboard::Player &player)
 {
     const auto tr = [](const char *text) { return NEMainpage::tr(text).toHtmlEscaped(); };
-    QString embeddedAvatar;
-    RsHtml::makeEmbeddedImage(
-            avatar.scaled(70, 70, Qt::KeepAspectRatio, Qt::SmoothTransformation).toImage(),
-            embeddedAvatar, -1);
+    QByteArray imageBytes;
+    QBuffer buffer(&imageBytes);
+    buffer.open(QIODevice::WriteOnly);
+    const bool saved = avatar.scaled(70, 70, Qt::KeepAspectRatio,
+            Qt::SmoothTransformation).save(&buffer, "PNG");
+    const QString embeddedAvatar = saved
+            ? QStringLiteral("<img src=\"data:image/png;base64,%1\">")
+                    .arg(QString::fromLatin1(imageBytes.toBase64())) : QString();
     return QStringLiteral(
             "<table cellspacing='4'><tr><td rowspan='4' valign='top'>%1</td>"
             "<td colspan='2'><span style='font-size:large; font-weight:600;'>%2</span></td></tr>"
@@ -111,6 +117,40 @@ class ChessPlayerItem : public QTreeWidgetItem
 {
 public:
     explicit ChessPlayerItem(QTreeWidget *tree) : QTreeWidgetItem(tree) {}
+
+    void updatePlayer(const RsGxsId &id, const QString &name,
+                      const QByteArray &avatarBytes,
+                      const RetroChessLeaderboard::Player &profile)
+    {
+        const QString endpoint = QString::fromStdString(id.toStdString());
+        const bool avatarChanged = mAvatar.isNull() || mAvatarBytes != avatarBytes
+                || mEndpoint != endpoint;
+        if (avatarChanged) {
+            mAvatarBytes = avatarBytes;
+            if (avatarBytes.isEmpty() || !GxsIdDetails::loadPixmapFromData(
+                    reinterpret_cast<const unsigned char *>(avatarBytes.constData()),
+                    avatarBytes.size(), mAvatar, GxsIdDetails::MEDIUM))
+                mAvatar = GxsIdDetails::makeDefaultIcon(id, GxsIdDetails::MEDIUM);
+            setIcon(0, QIcon(mAvatar));
+        }
+        if (avatarChanged || mName != name || mEndpoint != endpoint
+                || mProfile.rating != profile.rating || mProfile.rd != profile.rd
+                || mProfile.games() != profile.games())
+            mToolTip.clear();
+        mName = name;
+        mEndpoint = endpoint;
+        mProfile = profile;
+    }
+
+    QVariant data(int column, int role) const override
+    {
+        if (column == 0 && role == Qt::ToolTipRole) {
+            if (mToolTip.isEmpty())
+                mToolTip = chessPlayerToolTip(mName, mEndpoint, mAvatar, mProfile);
+            return mToolTip;
+        }
+        return QTreeWidgetItem::data(column, role);
+    }
     bool operator<(const QTreeWidgetItem &other) const override
     {
         const int column = treeWidget()->sortColumn();
@@ -151,6 +191,12 @@ public:
         }
         return QTreeWidgetItem::operator<(other);
     }
+private:
+    QByteArray mAvatarBytes;
+    QPixmap mAvatar;
+    QString mName, mEndpoint;
+    RetroChessLeaderboard::Player mProfile;
+    mutable QString mToolTip;
 };
 }
 
@@ -363,6 +409,13 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 
     loadLayoutSettings();
 
+    connect(ui->createLobbyGameButton, &QPushButton::clicked,
+            this, &NEMainpage::onCreateLobbyGame);
+    connect(mGameSessions, &RetroChessSessionService::gameAdded,
+            this, &NEMainpage::updateLobbyGameButton);
+    connect(mGameSessions, &RetroChessSessionService::gameRemoved,
+            this, &NEMainpage::updateLobbyGameButton);
+
     setupPlayersTab();
     setOfficialLobbyTabVisible(false);
     ui->tabWidget->setCurrentWidget(ui->availablePlayersTab);
@@ -474,6 +527,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 		else
 			create_chess_window(session.endpointId.toStdString(), session.localColor);
 		if (RetroChessWindow *window = mGameSessions->game(session.endpointId)) {
+			if (!session.timeControl.unlimited)
+				window->setTimeControl(session.timeControl);
 			QString error;
 			if (!session.fen.isEmpty()
 			        && !window->restoreSessionPosition(
@@ -488,6 +543,7 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 void NEMainpage::refreshAvailablePlayers()
 {
     if (!ui->savedContacts || !ui->availablePlayers) return;
+    updateLobbyGameButton();
     const auto peers = rsRetroChess->availableChessPeers();
     for (QTreeWidget *tree : {ui->savedContacts, ui->availablePlayers}) {
         const bool isSavedContacts = (tree == ui->savedContacts);
@@ -515,18 +571,16 @@ void NEMainpage::refreshAvailablePlayers()
             const bool known = rsIdentity && rsIdentity->getIdDetails(id, details);
             const QString name = known && !details.mNickname.empty()
                     ? QString::fromUtf8(details.mNickname.c_str()) : peer.endpointId;
-            QPixmap avatar;
-            if (!known || !details.mAvatar.mSize || !GxsIdDetails::loadPixmapFromData(
-                    details.mAvatar.mData, details.mAvatar.mSize, avatar, GxsIdDetails::MEDIUM))
-                avatar = GxsIdDetails::makeDefaultIcon(id, GxsIdDetails::MEDIUM);
+            const QByteArray avatarBytes = known && details.mAvatar.mSize
+                    ? QByteArray(reinterpret_cast<const char *>(details.mAvatar.mData),
+                                 details.mAvatar.mSize) : QByteArray();
             item->setText(0, name);
-            item->setIcon(0, QIcon(avatar));
             item->setData(0, Qt::UserRole, peer.endpointId);
             item->setData(0, Qt::UserRole + 1, peer.savedContact);
             int rank = 5;
             QColor color("#808080");
             QString label = tr("Unknown");
-            if (status == "available") { rank = 0; color = QColor("#278342"); label = tr("Available"); }
+            if (status == "available") { rank = 0; color = QColor("#278342"); label = peer.seeking ? tr("Open game") : tr("Available"); }
             else if (status == "playing") { rank = 1; color = QColor("#327fc1"); label = tr("Playing"); }
             else if (status == "busy") { rank = 2; color = QColor("#b47b16"); label = tr("Busy"); }
             else if (status == "checking") { rank = 3; label = tr("Checking..."); }
@@ -545,8 +599,7 @@ void NEMainpage::refreshAvailablePlayers()
             item->setData(1, Qt::UserRole + 1, status);
             RetroChessLeaderboard::Player profile;
             if (mLeaderboard) mLeaderboard->getPlayer(id, profile);
-            item->setToolTip(0, chessPlayerToolTip(
-                    name, peer.endpointId, avatar, profile));
+            static_cast<ChessPlayerItem *>(item)->updatePlayer(id, name, avatarBytes, profile);
             const QString lastSeenText = peer.lastSeen
                     ? RetroChessSettings::formatDateTime(QDateTime::fromSecsSinceEpoch(peer.lastSeen))
                     : tr("Never");
@@ -564,8 +617,13 @@ void NEMainpage::refreshAvailablePlayers()
                 }
 
                 if (actionState != 0) {
-                    if (item->data(2, Qt::UserRole).toInt() != actionState || !tree->itemWidget(item, 2)) {
+                    const QString seekKey = peer.seeking ? peer.timeControl.toNetString() : QString();
+                    if (item->data(2, Qt::UserRole).toInt() != actionState
+                            || item->data(2, Qt::UserRole + 1).toString() != seekKey
+                            || !tree->itemWidget(item, 2)) {
                         QWidget *actionWidget = new QWidget(tree);
+                        actionWidget->setObjectName("chessActionContainer");
+                        actionWidget->setStyleSheet("QWidget#chessActionContainer { background: transparent; }");
                         QHBoxLayout *actionLayout = new QHBoxLayout(actionWidget);
                         actionLayout->setContentsMargins(2, 1, 2, 1);
                         actionLayout->setAlignment(Qt::AlignCenter);
@@ -613,8 +671,14 @@ void NEMainpage::refreshAvailablePlayers()
                                 refreshAvailablePlayers();
                             });
                         } else if (actionState == 3) {
-                            actionBtn->setText(tr("Invite"));
-                            actionBtn->setToolTip(tr("Invite to chess"));
+                            const bool hasSeek = peer.seeking;
+                            if (hasSeek) {
+                                actionBtn->setText(tr("Play").arg(peer.timeControl.toNetString()));
+                                actionBtn->setToolTip(tr("Accept %1 challenge").arg(peer.timeControl.label()));
+                            } else {
+                                actionBtn->setText(tr("Invite"));
+                                actionBtn->setToolTip(tr("Invite to chess"));
+                            }
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
                                 "  border: 1px solid #2365a6; color: white; padding: 1px 6px; border-radius: 4px;"
@@ -623,7 +687,8 @@ void NEMainpage::refreshAvailablePlayers()
                                 "QPushButton:hover { border-color: #5dade2; }"
                                 "QPushButton:pressed { background-color: #1f5f99; }"
                             );
-                            connect(actionBtn, &QPushButton::clicked, this, [this, id]() {
+                            const ChessTimeControl peerTc = peer.timeControl;
+                            connect(actionBtn, &QPushButton::clicked, this, [this, id, peerTc, hasSeek]() {
                                 if (rsRetroChess->preferredChessIdentity().isNull()) {
                                     QMessageBox::information(this, tr("Chess invitation"),
                                         tr("Please select your chess identity in Chess profile before inviting players."));
@@ -632,7 +697,9 @@ void NEMainpage::refreshAvailablePlayers()
                                     refreshAvailablePlayers();
                                     return;
                                 }
-                                if (!rsRetroChess->sendInviteToGxs(id)) {
+                                rsRetroChess->setTimeControlForPeer(id,
+                                    hasSeek ? peerTc : ChessTimeControl{});
+                                if (!rsRetroChess->sendInviteToGxs(id, hasSeek)) {
                                     QMessageBox::warning(this, tr("Chess invitation"), tr("The chess invitation could not be sent."));
                                 }
                                 refreshAvailablePlayers();
@@ -648,7 +715,9 @@ void NEMainpage::refreshAvailablePlayers()
                         }
                         actionLayout->addWidget(actionBtn);
                         tree->setItemWidget(item, 2, actionWidget);
+                        actionWidget->setAutoFillBackground(false);
                         item->setData(2, Qt::UserRole, actionState);
+                        item->setData(2, Qt::UserRole + 1, seekKey);
                     }
                 } else {
                     if (tree->itemWidget(item, 2)) {
@@ -660,32 +729,57 @@ void NEMainpage::refreshAvailablePlayers()
 
                 RetroChessLeaderboard::Player p;
                 if (mLeaderboard && mLeaderboard->getPlayer(id, p)) {
-                    item->setText(3, QString::number(qRound(p.rating)));
-                    item->setData(3, Qt::UserRole, qRound(p.rating));
-                    item->setText(4, QString::number(qRound(p.rd)));
-                    item->setData(4, Qt::UserRole, qRound(p.rd));
-                    item->setToolTip(3, tr("Rating: %1 (%2, %3 games)")
+                    item->setText(5, QString::number(qRound(p.rating)));
+                    item->setData(5, Qt::UserRole, qRound(p.rating));
+                    item->setText(6, QString::number(qRound(p.rd)));
+                    item->setData(6, Qt::UserRole, qRound(p.rd));
+                    item->setToolTip(5, tr("Rating: %1 (%2, %3 games)")
                             .arg(qRound(p.rating))
                             .arg(p.provisional() ? tr("Provisional") : tr("Rated"))
                             .arg(p.games()));
-                    item->setToolTip(4, tr("Rating Deviation: %1 (lower means more reliable)")
+                    item->setToolTip(6, tr("Rating Deviation: %1 (lower means more reliable)")
                             .arg(qRound(p.rd)));
                 } else {
-                    item->setText(3, tr("1500"));
-                    item->setData(3, Qt::UserRole, 1500);
-                    item->setText(4, tr("350"));
-                    item->setData(4, Qt::UserRole, 350);
-                    item->setToolTip(3, tr("Default rating: 1500 (Provisional, no games recorded yet)"));
-                    item->setToolTip(4, tr("Default RD: 350 (Provisional)"));
+                    item->setText(5, tr("1500"));
+                    item->setData(5, Qt::UserRole, 1500);
+                    item->setText(6, tr("350"));
+                    item->setData(6, Qt::UserRole, 350);
+                    item->setToolTip(5, tr("Default rating: 1500 (Provisional, no games recorded yet)"));
+                    item->setToolTip(6, tr("Default RD: 350 (Provisional)"));
                 }
-                item->setText(5, lastSeenText);
-                item->setData(5, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
-                item->setText(6, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
+
+                // Column 3 — Time control (seek)
+                const QString timeLabel = peer.seeking
+                    ? (peer.timeControl.unlimited ? tr("Unlimited") : peer.timeControl.toNetString()) : QString();
+                item->setText(3, timeLabel);
+                item->setData(3, Qt::UserRole, peer.timeControl.unlimited ? 0 : peer.timeControl.minutes);
+                item->setForeground(3, QBrush());
+                QFont timeFont = tree->font();
+                item->setFont(3, timeFont);
+                if (peer.seeking && !peer.timeControl.unlimited) {
+                    const int s = peer.timeControl.estimatedSeconds();
+                    QColor tc = s < 179  ? QColor("#c0392b")   // Bullet
+                              : s < 479  ? QColor("#e67e22")   // Blitz
+                              : s < 1499 ? QColor("#27ae60")   // Rapid
+                              :            QColor("#2980b9");   // Classical
+                    item->setForeground(3, tc);
+                    item->setFont(3, [&]{ QFont f = item->font(3); f.setBold(true); return f; }());
+                }
+
+                // Column 4 — Mode (always Casual for now)
+                item->setText(4, peer.seeking ? tr("Casual") : QString());
+                item->setData(4, Qt::UserRole, 0);
+
+                item->setText(7, lastSeenText);
+                item->setData(7, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
+                item->setText(8, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
                         : incoming ? tr("Received") : QString());
 
                 if (incoming) {
-                    if (!tree->itemWidget(item, 7)) {
+                    if (!tree->itemWidget(item, 9)) {
                         QWidget *rejectWidget = new QWidget(tree);
+                        rejectWidget->setObjectName("chessActionContainer");
+                        rejectWidget->setStyleSheet("QWidget#chessActionContainer { background: transparent; }");
                         QHBoxLayout *rejectLayout = new QHBoxLayout(rejectWidget);
                         rejectLayout->setContentsMargins(2, 1, 2, 1);
                         rejectLayout->setAlignment(Qt::AlignCenter);
@@ -714,23 +808,64 @@ void NEMainpage::refreshAvailablePlayers()
                             refreshAvailablePlayers();
                         });
                         rejectLayout->addWidget(rejectBtn);
-                        tree->setItemWidget(item, 7, rejectWidget);
+                        tree->setItemWidget(item, 9, rejectWidget);
+                        rejectWidget->setAutoFillBackground(false);
                     }
-                    item->setData(7, Qt::UserRole, 1);
-                    item->setText(7, QString());
+                    item->setData(9, Qt::UserRole, 1);
+                    item->setText(9, QString());
                 } else {
-                    if (tree->itemWidget(item, 7)) {
-                        tree->removeItemWidget(item, 7);
-                    }
-                    item->setData(7, Qt::UserRole, 0);
-                    item->setText(7, QString());
+                    if (tree->itemWidget(item, 9))
+                        tree->removeItemWidget(item, 9);
+                    item->setData(9, Qt::UserRole, 0);
+                    item->setText(9, QString());
                 }
+            }
+        }
+        if (!isSavedContacts && m_seekActive) {
+            const QString ownKey = QStringLiteral("local-open-game");
+            retained.insert(ownKey);
+            QTreeWidgetItem *item = rows.value(ownKey);
+            if (!item) item = new ChessPlayerItem(tree);
+            // This is a local listing, not a peer identity. Disable peer actions.
+            item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            item->setData(0, Qt::UserRole, ownKey);
+            item->setText(0, tr("Your open game"));
+            const RsGxsId ownId = rsRetroChess->preferredChessIdentity();
+            RsIdentityDetails ownDetails;
+            QPixmap avatar;
+            if (!rsIdentity || !rsIdentity->getIdDetails(ownId, ownDetails)
+                    || !ownDetails.mAvatar.mSize || !GxsIdDetails::loadPixmapFromData(
+                        ownDetails.mAvatar.mData, ownDetails.mAvatar.mSize, avatar, GxsIdDetails::MEDIUM))
+                avatar = GxsIdDetails::makeDefaultIcon(ownId, GxsIdDetails::MEDIUM);
+            item->setIcon(0, QIcon(avatar));
+            item->setText(1, tr("Waiting for opponent"));
+            item->setData(1, Qt::UserRole, -1);
+            item->setText(3, m_pendingSeek.unlimited ? tr("Unlimited") : m_pendingSeek.toNetString());
+            item->setText(4, tr("Casual"));
+            if (!tree->itemWidget(item, 2)) {
+                QWidget *actions = new QWidget(tree);
+                actions->setObjectName("chessActionContainer");
+                actions->setStyleSheet("QWidget#chessActionContainer { background: transparent; }");
+                QHBoxLayout *layout = new QHBoxLayout(actions);
+                layout->setContentsMargins(2, 1, 2, 1);
+                layout->setAlignment(Qt::AlignCenter);
+                QPushButton *cancel = new QPushButton(tr("Cancel"), actions);
+                cancel->setToolTip(tr("Cancel game"));
+                cancel->setFont(tree->font());
+                cancel->setFixedSize(96, 22);
+                connect(cancel, &QPushButton::clicked, this, &NEMainpage::cancelLobbyGame);
+                layout->addWidget(cancel);
+                tree->setItemWidget(item, 2, actions);
+                actions->setAutoFillBackground(false);
             }
         }
         for (auto it = rows.constBegin(); it != rows.constEnd(); ++it)
             if (!retained.contains(it.key())) delete it.value();
         tree->setSortingEnabled(true);
-        tree->sortItems(tree->sortColumn(), tree->header()->sortIndicatorOrder());
+        const int sortCol = tree->header()->sortIndicatorSection() >= 0
+                ? tree->header()->sortIndicatorSection()
+                : tree->sortColumn();
+        tree->sortItems(sortCol, tree->header()->sortIndicatorOrder());
     }
     filterSavedContacts();
     ui->availablePlayersDescription->setText(tr("Saved chess contacts keeps all saved players, including offline contacts. Available or invited players shows players ready for a game and incoming or outgoing invitations. Right-click or double-click a player for actions."));
@@ -1114,7 +1249,8 @@ unsigned int NEMainpage::incomingInviteCount() const
 	if (ui && ui->availablePlayers) {
 		for (int i = 0; i < ui->availablePlayers->topLevelItemCount(); ++i) {
 			QTreeWidgetItem *item = ui->availablePlayers->topLevelItem(i);
-			if (item && item->data(7, Qt::UserRole).toInt() == 1) {
+			// Column 9 holds the "incoming invitation" flag; column 7 is "last seen".
+			if (item && item->data(9, Qt::UserRole).toInt() == 1) {
 				++count;
 			}
 		}
@@ -1141,6 +1277,7 @@ void NEMainpage::removeActiveGame(QString gameId)
 
 void NEMainpage::removeActiveGameListing(QString gameId)
 {
+    updateLobbyGameButton();
 	for (int row = ui->active_games->topLevelItemCount() - 1; row >= 0; --row) {
 		if (ui->active_games->topLevelItem(row)->data(0, Qt::UserRole).toString() == gameId)
 			delete ui->active_games->takeTopLevelItem(row);
@@ -1449,6 +1586,17 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 
     // Open the window with the GXS constructor
     RetroChessWindow *win = new RetroChessWindow(gxs_id, player_id);
+    ChessTimeControl tc = rsRetroChess->timeControlForPeer(gxs_id);
+    if (!tc.unlimited) {
+        win->setTimeControl(tc);
+    }
+    if (m_seekActive) {
+        m_seekActive = false;
+        broadcastSeek(false, ChessTimeControl{});
+        m_pendingSeek = ChessTimeControl{};
+        ui->createLobbyGameButton->setText(tr("Create game"));
+        refreshAvailablePlayers();
+    }
     connect(win, &RetroChessWindow::ratedResult, mLeaderboard, &RetroChessLeaderboard::submitResult);
     connect(win, SIGNAL(rematchRequested(RsGxsId,int)),
             this, SLOT(requestRematchGxs(RsGxsId,int)));
@@ -1470,6 +1618,7 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 	session.lastToTile = win->lastMoveTo();
 	session.moveHistory = win->moveHistory();
 	session.gameId = win->mGameId;
+	session.timeControl = tc;
 	rsRetroChess->registerGameSession(session);
 	connect(win, &RetroChessWindow::sessionStateChanged, this,
 	        [key](const QString &fen, uint32_t sequence, int fromTile, int toTile, const QStringList &moves) {
@@ -1569,6 +1718,9 @@ void NEMainpage::refreshGameHistory()
 		ui->gameHistory->addTopLevelItem(item);
 
 		QWidget *reviewWidget = new QWidget(ui->gameHistory);
+		reviewWidget->setObjectName("chessActionContainer");
+		reviewWidget->setStyleSheet("QWidget#chessActionContainer { background: transparent; }");
+		reviewWidget->setAutoFillBackground(false);
 		QHBoxLayout *reviewLayout = new QHBoxLayout(reviewWidget);
 		reviewLayout->setContentsMargins(4, 2, 4, 2);
 		reviewLayout->setAlignment(Qt::AlignCenter);
@@ -1829,6 +1981,17 @@ void NEMainpage::loadLayoutSettings()
 		}
 	}
 
+	int savedSortCol = Settings->valueFromGroup("RetroChess", "SavedContacts_SortColumn", -1).toInt();
+	int savedSortOrder = Settings->valueFromGroup("RetroChess", "SavedContacts_SortOrder", -1).toInt();
+	if (savedSortCol < 0 || savedSortCol >= ui->savedContacts->columnCount()) {
+		savedSortCol = restoredSaved ? ui->savedContacts->header()->sortIndicatorSection() : 0;
+		savedSortOrder = restoredSaved ? static_cast<int>(ui->savedContacts->header()->sortIndicatorOrder()) : static_cast<int>(Qt::AscendingOrder);
+	}
+	if (savedSortCol < 0 || savedSortCol >= ui->savedContacts->columnCount()) savedSortCol = 0;
+	if (savedSortOrder != Qt::AscendingOrder && savedSortOrder != Qt::DescendingOrder) savedSortOrder = Qt::AscendingOrder;
+	ui->savedContacts->header()->setSortIndicator(savedSortCol, static_cast<Qt::SortOrder>(savedSortOrder));
+	ui->savedContacts->sortItems(savedSortCol, static_cast<Qt::SortOrder>(savedSortOrder));
+
 	ui->savedContacts->setColumnHidden(1, false);
 	const bool hideLastSeen = Settings->valueFromGroup("RetroChess", "SavedContacts_HideLastSeen", false).toBool();
 	ui->savedContacts->setColumnHidden(2, hideLastSeen);
@@ -1886,16 +2049,36 @@ void NEMainpage::loadLayoutSettings()
 		} else {
 			ui->availablePlayers->setColumnWidth(0, 180);
 			ui->availablePlayers->setColumnWidth(1, 130);
-			ui->availablePlayers->setColumnWidth(2, 130);
-			ui->availablePlayers->setColumnWidth(3, 70);
-			ui->availablePlayers->setColumnWidth(4, 60);
-			ui->availablePlayers->setColumnWidth(5, 120);
-			ui->availablePlayers->setColumnWidth(6, 100);
-			ui->availablePlayers->setColumnWidth(7, 85);
+			ui->availablePlayers->setColumnWidth(2, 120);
+			ui->availablePlayers->setColumnWidth(3, 75);
+			ui->availablePlayers->setColumnWidth(4, 75);
+			ui->availablePlayers->setColumnWidth(5, 70);
+			ui->availablePlayers->setColumnWidth(6, 60);
+			ui->availablePlayers->setColumnWidth(7, 120);
+			ui->availablePlayers->setColumnWidth(8, 100);
+			ui->availablePlayers->setColumnWidth(9, 85);
 		}
 	}
 	if (ui->availablePlayers->columnWidth(1) < 130) ui->availablePlayers->setColumnWidth(1, 130);
-	if (ui->availablePlayers->columnWidth(2) < 130) ui->availablePlayers->setColumnWidth(2, 130);
+	if (ui->availablePlayers->columnWidth(2) < 120) ui->availablePlayers->setColumnWidth(2, 120);
+
+	// Display Rating, RD, Time, Mode after Action, including for saved layouts.
+	// Move header sections so data, widths and saved sorting retain their logical columns.
+	QHeaderView *availablePlayersHeader = ui->availablePlayers->header();
+	const int detailColumns[] = {5, 6, 3, 4};
+	for (int i = 0; i < 4; ++i)
+		availablePlayersHeader->moveSection(availablePlayersHeader->visualIndex(detailColumns[i]), 3 + i);
+
+	int availSortCol = Settings->valueFromGroup("RetroChess", "AvailablePlayers_SortColumn", -1).toInt();
+	int availSortOrder = Settings->valueFromGroup("RetroChess", "AvailablePlayers_SortOrder", -1).toInt();
+	if (availSortCol < 0 || availSortCol >= ui->availablePlayers->columnCount()) {
+		availSortCol = restoredAvailable ? ui->availablePlayers->header()->sortIndicatorSection() : 1;
+		availSortOrder = restoredAvailable ? static_cast<int>(ui->availablePlayers->header()->sortIndicatorOrder()) : static_cast<int>(Qt::AscendingOrder);
+	}
+	if (availSortCol < 0 || availSortCol >= ui->availablePlayers->columnCount()) availSortCol = 1;
+	if (availSortOrder != Qt::AscendingOrder && availSortOrder != Qt::DescendingOrder) availSortOrder = Qt::AscendingOrder;
+	ui->availablePlayers->header()->setSortIndicator(availSortCol, static_cast<Qt::SortOrder>(availSortOrder));
+	ui->availablePlayers->sortItems(availSortCol, static_cast<Qt::SortOrder>(availSortOrder));
 
 	const bool onlyOnline = Settings->valueFromGroup("RetroChess", "ShowOnlyOnlineContacts", false).toBool();
 	ui->showOnlineplayersButton->setChecked(onlyOnline);
@@ -1924,12 +2107,34 @@ void NEMainpage::loadLayoutSettings()
 		}
 	}
 
-	connect(ui->savedContacts->header(), &QHeaderView::sectionResized,
-	        this, &NEMainpage::saveLayoutSettings);
-	connect(ui->availablePlayers->header(), &QHeaderView::sectionResized,
-	        this, &NEMainpage::saveLayoutSettings);
-	connect(ui->active_games->header(), &QHeaderView::sectionResized,
-	        this, &NEMainpage::saveLayoutSettings);
+	int activeSortCol = Settings->valueFromGroup("RetroChess", "ActiveGames_SortColumn", -1).toInt();
+	int activeSortOrder = Settings->valueFromGroup("RetroChess", "ActiveGames_SortOrder", -1).toInt();
+	if (activeSortCol >= 0 && activeSortCol < ui->active_games->columnCount()) {
+		if (activeSortOrder != Qt::AscendingOrder && activeSortOrder != Qt::DescendingOrder) activeSortOrder = Qt::AscendingOrder;
+		ui->active_games->header()->setSortIndicator(activeSortCol, static_cast<Qt::SortOrder>(activeSortOrder));
+		ui->active_games->sortItems(activeSortCol, static_cast<Qt::SortOrder>(activeSortOrder));
+	}
+
+	ui->leaderboardTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+	const QByteArray leaderboardHeader = Settings->valueFromGroup("RetroChess", "LeaderboardHeaderState", QByteArray()).toByteArray();
+	if (!leaderboardHeader.isEmpty()) {
+		ui->leaderboardTable->horizontalHeader()->restoreState(leaderboardHeader);
+	}
+	int lbSortCol = Settings->valueFromGroup("RetroChess", "Leaderboard_SortColumn", -1).toInt();
+	int lbSortOrder = Settings->valueFromGroup("RetroChess", "Leaderboard_SortOrder", -1).toInt();
+	if (lbSortCol >= 0 && lbSortCol < ui->leaderboardTable->columnCount()) {
+		if (lbSortOrder != Qt::AscendingOrder && lbSortOrder != Qt::DescendingOrder) lbSortOrder = Qt::DescendingOrder;
+		ui->leaderboardTable->horizontalHeader()->setSortIndicator(lbSortCol, static_cast<Qt::SortOrder>(lbSortOrder));
+	} else if (leaderboardHeader.isEmpty()) {
+		ui->leaderboardTable->horizontalHeader()->setSortIndicator(2, Qt::DescendingOrder);
+	}
+
+	for (QHeaderView *hdr : {ui->savedContacts->header(), ui->availablePlayers->header(),
+	                         ui->active_games->header(), ui->leaderboardTable->horizontalHeader()}) {
+		connect(hdr, &QHeaderView::sectionResized, this, &NEMainpage::saveLayoutSettings);
+		connect(hdr, &QHeaderView::sectionMoved, this, &NEMainpage::saveLayoutSettings);
+		connect(hdr, &QHeaderView::sortIndicatorChanged, this, &NEMainpage::saveLayoutSettings);
+	}
 	connect(ui->playersSplitter, &QSplitter::splitterMoved,
 	        this, &NEMainpage::saveLayoutSettings);
 }
@@ -1937,10 +2142,27 @@ void NEMainpage::loadLayoutSettings()
 void NEMainpage::saveLayoutSettings()
 {
 	Settings->setValueToGroup("RetroChess", "PlayersSplitterState", ui->playersSplitter->saveState());
+
 	Settings->setValueToGroup("RetroChess", "SavedContactsHeaderState", ui->savedContacts->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "SavedContacts_SortColumn", ui->savedContacts->header()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "SavedContacts_SortOrder", static_cast<int>(ui->savedContacts->header()->sortIndicatorOrder()));
+
 	Settings->setValueToGroup("RetroChess", "AvailablePlayersHeaderState", ui->availablePlayers->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "AvailablePlayers_SortColumn", ui->availablePlayers->header()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "AvailablePlayers_SortOrder", static_cast<int>(ui->availablePlayers->header()->sortIndicatorOrder()));
+
 	Settings->setValueToGroup("RetroChess", "ActiveGamesHeaderState", ui->active_games->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "ActiveGames_SortColumn", ui->active_games->header()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "ActiveGames_SortOrder", static_cast<int>(ui->active_games->header()->sortIndicatorOrder()));
+
+	Settings->setValueToGroup("RetroChess", "LeaderboardHeaderState", ui->leaderboardTable->horizontalHeader()->saveState());
+	Settings->setValueToGroup("RetroChess", "Leaderboard_SortColumn", ui->leaderboardTable->horizontalHeader()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "Leaderboard_SortOrder", static_cast<int>(ui->leaderboardTable->horizontalHeader()->sortIndicatorOrder()));
+
 	Settings->setValueToGroup("RetroChess", "GameHistoryHeaderState", ui->gameHistory->header()->saveState());
+	Settings->setValueToGroup("RetroChess", "GameHistory_SortColumn", ui->gameHistory->header()->sortIndicatorSection());
+	Settings->setValueToGroup("RetroChess", "GameHistory_SortOrder", static_cast<int>(ui->gameHistory->header()->sortIndicatorOrder()));
+
 	Settings->setValueToGroup("RetroChess", "ShowOnlyOnlineContacts", ui->showOnlineplayersButton->isChecked());
 	Settings->setValueToGroup("RetroChess", "SavedContacts_HideLastSeen", ui->savedContacts->isColumnHidden(2));
 	Settings->setValueToGroup("RetroChess", "SavedContacts_HideHeader", ui->savedContacts->header()->isHidden());
@@ -2084,8 +2306,12 @@ void NEMainpage::setupPlayersTab()
 		showSavedContactsHeaderContextMenu(ui->savedContacts->header()->mapToGlobal(pos));
 	});
 
-	ui->savedContacts->sortItems(0, Qt::AscendingOrder);
-	ui->availablePlayers->sortItems(1, Qt::AscendingOrder);
+	ui->savedContacts->sortItems(
+	        ui->savedContacts->header()->sortIndicatorSection(),
+	        ui->savedContacts->header()->sortIndicatorOrder());
+	ui->availablePlayers->sortItems(
+	        ui->availablePlayers->header()->sortIndicatorSection(),
+	        ui->availablePlayers->header()->sortIndicatorOrder());
 	for (QTreeWidget *tree : {ui->savedContacts, ui->availablePlayers}) {
 		tree->setContextMenuPolicy(Qt::CustomContextMenu);
 		connect(tree, &QTreeWidget::customContextMenuRequested,
@@ -2098,6 +2324,13 @@ void NEMainpage::setupPlayersTab()
 				return;
 			}
 			const QString endpoint = item->data(0, Qt::UserRole).toString();
+			if (endpoint == QLatin1String("local-open-game")) {
+				QMenu menu(this);
+				QAction *cancel = menu.addAction(tr("Cancel game"));
+				if (menu.exec(tree->viewport()->mapToGlobal(position)) == cancel)
+					cancelLobbyGame();
+				return;
+			}
 			const RsGxsId id(endpoint.toStdString());
 			const bool saved = item->data(0, Qt::UserRole + 1).toBool();
 			const bool outgoing = rsRetroChess->hasInviteToGxs(id);
@@ -2172,6 +2405,7 @@ void NEMainpage::setupPlayersTab()
 		        this, [this](QTreeWidgetItem *item, int) {
 			if (!item) return;
 			const QString endpoint = item->data(0, Qt::UserRole).toString();
+			if (endpoint == QLatin1String("local-open-game")) return;
 			const RsGxsId id(endpoint.toStdString());
 			const bool incoming = rsRetroChess->hasInviteFromGxs(id);
 			if (incoming) {
@@ -2287,3 +2521,53 @@ bool NEMainpage::eventFilter(QObject *watched, QEvent *event)
 	}
 	return MainPage::eventFilter(watched, event);
 }
+
+void NEMainpage::onCreateLobbyGame()
+{
+    updateLobbyGameButton();
+    if (!ui->createLobbyGameButton->isEnabled()) return;
+
+    if (!rsRetroChess || rsRetroChess->preferredChessIdentity().isNull()) {
+        QMessageBox::information(this, tr("Create lobby game"),
+            tr("Please select your chess identity in Chess profile before creating a game."));
+        return;
+    }
+    ChessGameSetupDialog dlg(this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    updateLobbyGameButton();
+    if (!ui->createLobbyGameButton->isEnabled()) return;
+
+    const ChessTimeControl tc = dlg.selectedTimeControl();
+    m_pendingSeek = tc;
+    m_seekActive = true;
+    broadcastSeek(true, tc);
+    refreshAvailablePlayers();
+}
+
+void NEMainpage::cancelLobbyGame()
+{
+    if (!m_seekActive) return;
+    m_seekActive = false;
+    m_pendingSeek = ChessTimeControl{};
+    broadcastSeek(false, m_pendingSeek);
+    refreshAvailablePlayers();
+}
+
+void NEMainpage::updateLobbyGameButton()
+{
+    bool playing = false;
+    for (const RetroChessWindow *window : mGameSessions->games())
+        if (!window->m_isSpectator && window->m_flag_finished == 0) {
+            playing = true;
+            break;
+        }
+    ui->createLobbyGameButton->setText(tr("Create game"));
+    ui->createLobbyGameButton->setEnabled(!m_seekActive && !playing);
+}
+
+void NEMainpage::broadcastSeek(bool active, const ChessTimeControl &tc)
+{
+    if (!rsRetroChess) return;
+    rsRetroChess->setLobbySeek(active, tc);
+}
+

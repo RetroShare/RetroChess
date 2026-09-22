@@ -23,6 +23,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QShortcut>
 #include <QHeaderView>
 #include <QTableWidget>
 #include <QStatusBar>
@@ -46,6 +47,7 @@
 #include "RetroChessSettings.h"
 #include "ChessDebugWidget.h"
 #include "ChessBoard.h"
+#include "ChessClockWidget.h"
 
 #include <QPointer>
 #include <QIcon>
@@ -243,8 +245,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &hostId, const QString &gameKey
     m_gameStartedAt(QDateTime::currentDateTimeUtc()),
     m_gameArchived(false)
 {
-    Q_UNUSED(whiteId)
-    Q_UNUSED(blackId)
+    mSpectatorWhiteId = RsGxsId(whiteId.toStdString());
+    mSpectatorBlackId = RsGxsId(blackId.toStdString());
     m_ui->setupUi(this);
     setAttribute(Qt::WA_DeleteOnClose);
     mPeerId = hostId.toStdString();
@@ -422,6 +424,14 @@ public:
 
 void RetroChessWindow::initAccessories()
 {
+	QShortcut *closeShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+	closeShortcut->setContext(Qt::WindowShortcut);
+	closeShortcut->setAutoRepeat(false);
+	connect(closeShortcut, &QShortcut::activated, this, [this]() {
+		if (m_flag_finished)
+			close();
+	});
+
 	m_ui->frame_3->setFixedWidth(PLAYER_PANEL_WIDTH);
 	m_ui->moveHistoryFrame->setFixedWidth(MOVES_PANEL_WIDTH);
 	m_ui->gameAreaLayout->setAlignment(Qt::AlignCenter);
@@ -627,14 +637,17 @@ void RetroChessWindow::initAccessories()
 		applyGameAction("abort", false);
 	});
 	connect(resignButton, &QPushButton::clicked, this, [this]() {
-		if (m_flag_finished || QMessageBox::question(
-		        this, tr("Resign"), tr("Are you sure you want to resign?")) != QMessageBox::Yes)
+		if (m_flag_finished || (RetroChessSettings::confirmResignOrDraw() && QMessageBox::question(
+		        this, tr("Resign"), tr("Are you sure you want to resign?")) != QMessageBox::Yes))
 			return;
 		sendGameAction("resign");
 		applyGameAction("resign", false);
 	});
 	connect(drawButton, &QPushButton::clicked, this, [this]() {
 		if (m_flag_finished) return;
+		if (RetroChessSettings::confirmResignOrDraw() && QMessageBox::question(
+		        this, tr("Draw"), tr("Are you sure you want to offer a draw?")) != QMessageBox::Yes)
+			return;
 		if (turn == m_localplayer_turn && canClaimThreefoldRepetition()) {
 			sendGameAction("draw_repetition");
 			applyGameAction("draw_repetition", false);
@@ -645,6 +658,7 @@ void RetroChessWindow::initAccessories()
 			applyGameAction("draw_fifty_move", false);
 			return;
 		}
+		m_drawOfferPending = true;
 		sendGameAction("draw_offer");
 		m_ui->m_status_bar->setText(tr("Draw offer sent"));
 		m_ui->m_status_bar->show();
@@ -740,16 +754,14 @@ void RetroChessWindow::initAccessories()
 		setPeerAvatar(m_ui->m_player1_avatar, p1avatar);
 		setPeerAvatar(m_ui->m_player2_avatar, p2avatar);
 	} else {
-		// GXS mode: retrieve avatars via the GXS identity service.
-		// Determine which slot is "us" and which is the remote peer,
-		// mirroring the same player/role logic used in the constructor.
+		// Resolve the identities displayed in the Black and White slots.
 		QPixmap p1avatar, p2avatar;
-		// p1 is always the identity shown in the player-1 slot (set in constructor)
-		// p2 is the identity shown in the player-2 slot
-		// The remote peer is mGxsId; our own is myGxsId.
-		// Which slot each maps to depends on the player role (set by the constructor).
 		RsGxsId slot1Id, slot2Id;
-		if (m_localplayer_turn == 0) {
+		if (m_isSpectator) {
+			// The watch host and our tunnel identity are not the two players.
+			slot1Id = mSpectatorBlackId;
+			slot2Id = mSpectatorWhiteId;
+		} else if (m_localplayer_turn == 0) {
 			// We are black (player 1 slot = us, player 2 slot = remote)
 			slot1Id = mOwnGxsId;
 			slot2Id = mGxsId;
@@ -1931,6 +1943,8 @@ void RetroChessWindow::updateCastlingRights(
 
 char RetroChessWindow::promotionChoiceForPawn(int color)
 {
+	if (color == m_localplayer_turn && RetroChessSettings::alwaysPromoteToQueen())
+		return 'Q';
 	if (color != m_localplayer_turn) {
 		const char choice = m_pendingPromotionChoice;
 		m_pendingPromotionChoice = 0;
@@ -2297,6 +2311,9 @@ void RetroChessWindow::closeForRematch()
 
 void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QString &reason)
 {
+    if (m_whiteClock) m_whiteClock->stopClock();
+    if (m_blackClock) m_blackClock->stopClock();
+
     if (m_resultPopupShown)
         return;
     m_resultPopupShown = true;
@@ -2416,14 +2433,26 @@ void RetroChessWindow::showSpectatorResult(const QString &result, const QString 
 {
     m_flag_finished = 1;
     m_suppressLeave = true;
+    QString winnerName;
+    if (result == "1-0")
+        winnerName = QString::fromUtf8(p2name.c_str());
+    else if (result == "0-1")
+        winnerName = QString::fromUtf8(p1name.c_str());
+
+    // Store the result as a completed game so the board badges and result bar
+    // are rendered in spectator mode too.
+    completeGameHistory(result, reason);
+
     QString message;
     bool isDraw = (result == "1/2-1/2");
     if (result == "1-0")
-        message = tr("White won %1").arg(!reason.isEmpty() ? ("(" + reason + ")") : QString());
+        message = tr("%1 won the game %2").arg(winnerName,
+                !reason.isEmpty() ? reason : QString());
     else if (result == "0-1")
-        message = tr("Black won %1").arg(!reason.isEmpty() ? ("(" + reason + ")") : QString());
+        message = tr("%1 won the game %2").arg(winnerName,
+                !reason.isEmpty() ? reason : QString());
     else if (isDraw)
-        message = tr("Draw %1").arg(!reason.isEmpty() ? ("(" + reason + ")") : QString());
+        message = !reason.isEmpty() ? tr("Draw: %1").arg(reason) : tr("Draw");
     else
         message = !reason.isEmpty() ? reason : tr("Game ended");
 
@@ -3126,8 +3155,14 @@ void RetroChessWindow::sendMoveAction(int fromTile, int toTile, char promotion)
 	        + (promotion == '-' ? QString() : QString(QChar(promotion)).toLower());
 	appendDebugEvent(QString("TX move %1 sequence=%2 hash=%3 FEN=%4")
 	        .arg(move).arg(sequence).arg(hash, currentFen()));
-	sendGameAction(QString("move:%1:%2:%3:%4:%5")
-	        .arg(sequence).arg(fromTile).arg(toTile).arg(QChar(promotion)).arg(hash));
+	if (m_whiteClock && m_blackClock && !m_timeControl.unlimited) {
+		sendGameAction(QString("move:%1:%2:%3:%4:%5:%6:%7")
+		        .arg(sequence).arg(fromTile).arg(toTile).arg(QChar(promotion)).arg(hash)
+		        .arg(m_whiteClock->remainingMs()).arg(m_blackClock->remainingMs()));
+	} else {
+		sendGameAction(QString("move:%1:%2:%3:%4:%5")
+		        .arg(sequence).arg(fromTile).arg(toTile).arg(QChar(promotion)).arg(hash));
+	}
 }
 
 bool RetroChessWindow::loadFen(const QString &fen, QString *error)
@@ -3273,16 +3308,59 @@ void RetroChessWindow::stopForDesynchronization(const QString &reason)
 	           "Open Debug to save the report.").arg(reason));
 }
 
-void RetroChessWindow::sendGameAction(const QString &action)
+bool RetroChessWindow::sendGameAction(const QString &action)
 {
 	if (mIsGxs) {
-		rsRetroChess->sendGameActionGxs(mGxsId, action.toStdString());
+		// Never overtake actions that are still waiting to be resent: the peer
+		// checks move sequence numbers and would report a desynchronization.
+		if (!m_unsentActions.isEmpty()) {
+			queueUnsentAction(action);
+			return false;
+		}
+		if (rsRetroChess->sendGameActionGxs(mGxsId, action.toStdString()))
+			return true;
+		queueUnsentAction(action);
+		return false;
 	} else {
 		QVariantMap map;
 		map.insert("type", "game_action");
 		map.insert("action", action);
 		rsRetroChess->qvm_msg_peer(RsPeerId(mPeerId), map);
 	}
+	return true;
+}
+
+void RetroChessWindow::queueUnsentAction(const QString &action)
+{
+	m_unsentActions.append(action);
+	appendDebugEvent(QString("TX queued, no tunnel to opponent: %1").arg(action));
+	showGameStatus(tr("Connection to your opponent was lost. Your move will be resent when it is back."));
+	if (!m_resendTimer) {
+		m_resendTimer = new QTimer(this);
+		m_resendTimer->setInterval(1500);
+		connect(m_resendTimer, &QTimer::timeout, this, &RetroChessWindow::flushUnsentActions);
+	}
+	if (!m_resendTimer->isActive()) {
+		m_resendAttempts = 0;
+		m_resendTimer->start();
+	}
+}
+
+void RetroChessWindow::flushUnsentActions()
+{
+	while (!m_unsentActions.isEmpty()) {
+		if (!rsRetroChess->sendGameActionGxs(mGxsId, m_unsentActions.first().toStdString())) {
+			if (++m_resendAttempts >= 40) { // about a minute: stop polling, keep the queue
+				m_resendTimer->stop();
+				showGameStatus(tr("Could not reach your opponent. The last move has not been delivered."));
+			}
+			return;
+		}
+		appendDebugEvent(QString("TX resent: %1").arg(m_unsentActions.first()));
+		m_unsentActions.removeFirst();
+	}
+	m_resendTimer->stop();
+	showGameStatus(tr("Connection to your opponent is back."));
 }
 
 void RetroChessWindow::showGameStatus(const QString &status)
@@ -3296,7 +3374,8 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 	if (action.startsWith("move:")) {
 		if (!remote || m_flag_finished || (!m_isSpectator && turn == m_localplayer_turn)) return;
 		const QStringList parts = action.split(':');
-		const bool verifiedPacket = parts.size() == 6;
+		const bool timedPacket = parts.size() == 8;
+		const bool verifiedPacket = parts.size() == 6 || timedPacket;
 		const bool legacyPacket = parts.size() == 4;
 		bool sequenceOk = legacyPacket;
 		bool fromOk = false, toOk = false;
@@ -3401,6 +3480,33 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		} else {
 			appendDebugEvent("Legacy move accepted without sequence/hash verification");
 		}
+		if (timedPacket && m_whiteClock && m_blackClock) {
+			bool okW = false, okB = false;
+			const qint64 wMs = parts.at(6).toLongLong(&okW);
+			const qint64 bMs = parts.at(7).toLongLong(&okB);
+			if (okW && okB) {
+				// The remote clock values are only a display hint. A player's
+				// own clock is never overwritten by the peer, otherwise
+				// "...:0:0" would make the local side flag itself and lose.
+				// The opponent's clock is accepted, but clamped so it can
+				// neither go below zero nor gain more than one increment
+				// (plus latency tolerance) over what we measured locally.
+				constexpr qint64 kLatencyToleranceMs = 10000;
+				auto clamped = [this](const ChessClockWidget *localView, qint64 reported) {
+					const qint64 upper = localView->remainingMs()
+					        + m_timeControl.incrementMs() + kLatencyToleranceMs;
+					return qBound<qint64>(0, reported, upper);
+				};
+				if (m_isSpectator) {
+					m_whiteClock->syncTo(clamped(m_whiteClock, wMs));
+					m_blackClock->syncTo(clamped(m_blackClock, bMs));
+				} else if (m_localplayer_turn == 1) {
+					m_blackClock->syncTo(clamped(m_blackClock, bMs));
+				} else {
+					m_whiteClock->syncTo(clamped(m_whiteClock, wMs));
+				}
+			}
+		}
 		return;
 	}
 	if (action.startsWith("promotion:")) {
@@ -3445,6 +3551,7 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		return;
 	}
 	if (action == "draw_decline") {
+		m_drawOfferPending = false;
 		const QString declinedText = tr("Draw offer declined");
 		m_ui->m_status_bar->setText(declinedText);
 		m_ui->m_status_bar->show();
@@ -3483,6 +3590,13 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 		showGameResultDialog(remote);
 		emit gameEnded(QString::fromStdString(mPeerId));
 	} else if (action == "draw_accept") {
+		// A remote draw_accept is only valid as the answer to an offer that this
+		// side actually sent. Spectators only relay what the players did.
+		if (remote && !m_isSpectator && !m_drawOfferPending) {
+			appendDebugEvent("Ignored draw_accept without a pending draw offer");
+			return;
+		}
+		m_drawOfferPending = false;
 		m_flag_finished = 1;
 		m_suppressLeave = true;
 		if (m_isSpectator) {
@@ -3490,6 +3604,17 @@ void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 			return;
 		}
 		showGameResultDialog(false, true);
+		emit gameEnded(QString::fromStdString(mPeerId));
+	} else if (action == "timeout") {
+		m_flag_finished = 1;
+		m_suppressLeave = true;
+		if (m_whiteClock) m_whiteClock->stopClock();
+		if (m_blackClock) m_blackClock->stopClock();
+		if (m_isSpectator) {
+			showSpectatorResult("*", tr("Time out"));
+			return;
+		}
+		showGameResultDialog(remote, false, tr("on time"));
 		emit gameEnded(QString::fromStdString(mPeerId));
 	}
 }
@@ -3707,4 +3832,62 @@ void RetroChessWindow::playerTurnNotice()
 	        : "QLabel { font-size: 13px; color: #777; }");
 	opponentStatus->setVisible(!localTurn);
 	localStatus->show();
+
+	if (m_whiteClock && m_blackClock && !m_timeControl.unlimited) {
+		if (m_flag_finished != 0) {
+			m_whiteClock->stopClock();
+			m_blackClock->stopClock();
+		} else if (turn == 1) {
+			m_blackClock->pauseClock();
+			m_whiteClock->startClock();
+		} else {
+			m_whiteClock->pauseClock();
+			m_blackClock->startClock();
+		}
+	}
+}
+
+void RetroChessWindow::setTimeControl(const ChessTimeControl &tc)
+{
+	m_timeControl = tc;
+	setupClocks();
+	playerTurnNotice();
+}
+
+void RetroChessWindow::setupClocks()
+{
+	if (m_timeControl.unlimited) {
+		if (m_whiteClock) m_whiteClock->hide();
+		if (m_blackClock) m_blackClock->hide();
+		return;
+	}
+	if (!m_whiteClock) {
+		m_whiteClock = new ChessClockWidget(m_ui->frame_2);
+		m_ui->gridLayout_3->addWidget(m_whiteClock, 5, 0, 1, 2);
+		connect(m_whiteClock, &ChessClockWidget::expired, this, [this]() {
+			onClockExpired(1);
+		});
+	}
+	if (!m_blackClock) {
+		m_blackClock = new ChessClockWidget(m_ui->frame);
+		m_ui->gridLayout_2->addWidget(m_blackClock, 4, 0, 1, 2);
+		connect(m_blackClock, &ChessClockWidget::expired, this, [this]() {
+			onClockExpired(0);
+		});
+	}
+	m_whiteClock->setTotalMs(m_timeControl.initialMs());
+	m_whiteClock->setIncrementMs(m_timeControl.incrementMs());
+	m_blackClock->setTotalMs(m_timeControl.initialMs());
+	m_blackClock->setIncrementMs(m_timeControl.incrementMs());
+	m_whiteClock->show();
+	m_blackClock->show();
+}
+
+void RetroChessWindow::onClockExpired(int color)
+{
+	if (m_flag_finished != 0 || m_isSpectator) return;
+	if (m_localplayer_turn == color) {
+		sendGameAction("timeout");
+		applyGameAction("timeout", false);
+	}
 }

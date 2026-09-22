@@ -36,14 +36,17 @@
 
 #include "ChessGameHistory.h"
 #include "ChessPosition.h"
+#include "ChessTimeControl.h"
 
 class QLabel;
 class QTableWidget;
 class QMediaPlayer;
 class QPushButton;
 class QStatusBar;
+class QTimer;
 class ChessDebugWidget;
 class ChessBoard;
+class ChessClockWidget;
 
 namespace Ui
 {
@@ -62,6 +65,8 @@ private:
 	void layoutChessBoard();
 	RsPeerId p1id;
 	RsPeerId p2id;
+	RsGxsId mSpectatorWhiteId;
+	RsGxsId mSpectatorBlackId;
 	std::string p1name;
 	std::string p2name;
 
@@ -210,7 +215,14 @@ public:
 	void recordMove(int fromTile, int toTile, char pieceName, bool capture, char promotion = 0);
 	void recordCapturedPiece(char pieceName, int pieceColor);
 	void playMoveSound(bool capture);
-	void sendGameAction(const QString &action);
+	// Returns false when the action could not be delivered right now; it is then
+	// queued and resent (in order) once the tunnel to the opponent is back.
+	bool sendGameAction(const QString &action);
+	void queueUnsentAction(const QString &action);
+	void flushUnsentActions();
+	QStringList m_unsentActions;
+	QTimer *m_resendTimer = nullptr;
+	int m_resendAttempts = 0;
 	void sendMoveAction(int fromTile, int toTile, char promotion);
 	void applyGameAction(const QString &action, bool remote);
 	QString currentFen() const;
@@ -240,10 +252,18 @@ public:
 	void showSpectatorResult(const QString &result, const QString &reason);
 	void completeGameHistory(const QString &result, const QString &reason);
 	void activateBoardSquare(int square);
+	void setupClocks();
+	void onClockExpired(int color);
+	void setTimeControl(const ChessTimeControl &tc);
+	ChessTimeControl timeControl() const { return m_timeControl; }
+	ChessTimeControl m_timeControl;
+	ChessClockWidget *m_whiteClock = nullptr;
+	ChessClockWidget *m_blackClock = nullptr;
 	QDateTime m_gameStartedAt;
 	QString m_gameResult;
 	QString m_gameEndReason;
 	bool m_gameArchived;
+	bool m_drawOfferPending = false; // local side sent draw_offer and awaits an answer
 
 signals:
 	void ratedResult(QString gameId, RsGxsId white, RsGxsId black, QString result);

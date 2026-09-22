@@ -1,5 +1,5 @@
 /*******************************************************************************
- * gui/RetroChessSettings.h                                                    *
+ * gui/ChessGameSetupDialog.h                                                  *
  *                                                                             *
  * Copyright (C) 2026 RetroShare Team <retroshare.project@gmail.com>           *
  *                                                                             *
@@ -18,54 +18,54 @@
  *                                                                             *
  *******************************************************************************/
 
-#ifndef RETROCHESSSETTINGS_H
-#define RETROCHESSSETTINGS_H
+#pragma once
 
-#include <QColor>
 #include <QDialog>
-#include <QString>
-#include <QStringList>
-#include <QVector>
-#include <QDateTime>
+#include "ChessTimeControl.h"
 
-struct RetroChessBoardTheme
-{
-	QString id;
-	QString name;
-	QColor light;
-	QColor dark;
-	QColor lastMove;
-};
+class QTabWidget;
+class QSlider;
+class QLabel;
+class QPushButton;
 
-class RetroChessSettings
+/**
+ * @brief Lichess-style "Game Setup" dialog shown before creating a lobby game.
+ *
+ * Presents two tabs:
+ *  - Unlimited  — "Take all the time you need"
+ *  - Real time  — minutes-per-side slider + increment slider + preset buttons
+ *
+ * After exec() == QDialog::Accepted, call selectedTimeControl() to obtain
+ * the chosen ChessTimeControl.
+ */
+class ChessGameSetupDialog : public QDialog
 {
+    Q_OBJECT
+
 public:
-	static QStringList pieceThemes();
-	static QString pieceThemeId();
-	static void setPieceThemeId(const QString &id);
-	static QString pieceResource(QChar color, QChar piece, const QString &theme = QString());
-	static QVector<RetroChessBoardTheme> boardThemes();
-	static RetroChessBoardTheme boardTheme();
-	static QString boardThemeId();
-	static void setBoardThemeId(const QString &id);
-	static bool moveSoundEnabled();
-	static bool captureSoundEnabled();
-	static bool gameResultSoundEnabled();
-	static bool invitationSoundEnabled();
-	static void setSoundOptions(bool move, bool capture, bool gameResult, bool invitation);
-	static int dateFormat();
-	static void setDateFormat(int format);
-	static QString formatDateTime(const QDateTime &dt);
-	static bool alwaysPromoteToQueen();
-	static bool confirmResignOrDraw();
-	static void setGameplayOptions(bool alwaysPromoteToQueen, bool confirmResignOrDraw);
-};
+    explicit ChessGameSetupDialog(QWidget *parent = nullptr);
 
-class RetroChessSettingsDialog : public QDialog
-{
-	Q_OBJECT
-public:
-	explicit RetroChessSettingsDialog(QWidget *parent = nullptr, bool identitiesPage = false);
-};
+    /// Returns the time control selected by the user.
+    ChessTimeControl selectedTimeControl() const;
 
-#endif
+private slots:
+    void onPresetClicked(int minutes, int increment);
+    void onSlidersChanged();
+
+private:
+    void buildUnlimitedTab(QWidget *tab);
+    void buildRealTimeTab(QWidget *tab);
+    void updatePresetHighlight();
+    void updateCategoryLabel();
+
+    QTabWidget  *m_tabs          = nullptr;
+    QSlider     *m_minutesSlider = nullptr;
+    QSlider     *m_incrSlider    = nullptr;
+    QLabel      *m_minutesBadge  = nullptr;
+    QLabel      *m_incrBadge     = nullptr;
+    QLabel      *m_categoryLabel = nullptr;
+
+    // Preset buttons — kept to update their checked state
+    struct Preset { int minutes; int increment; QPushButton *btn = nullptr; };
+    QList<Preset> m_presets;
+};
