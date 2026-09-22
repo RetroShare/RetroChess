@@ -375,15 +375,19 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	QCheckBox *confirmActions = new QCheckBox(tr("Confirm Resign or Draw"), generalPage);
 	confirmActions->setChecked(RetroChessSettings::confirmResignOrDraw());
 	generalRoot->addWidget(confirmActions);
-	QCheckBox *tunnelDebug = new QCheckBox(tr("Log tunnel activity (debug)"), generalPage);
+	QGroupBox *debugGroup = new QGroupBox(tr("Debug"), generalPage);
+	QVBoxLayout *debugLayout = new QVBoxLayout(debugGroup);
+	QCheckBox *tunnelDebug = new QCheckBox(tr("Log tunnel activity"), debugGroup);
 	tunnelDebug->setToolTip(tr("Writes every tunnel request, status change, close and packet "
 	                           "sent/received by RetroChess to retrochess_tunnels.log in your "
 	                           "RetroShare profile folder, plus a tunnel overview every minute."));
 	tunnelDebug->setChecked(RetroChessSettings::tunnelDebugLogging()
 	                        || (rsRetroChess && rsRetroChess->tunnelDebugEnabled()));
-	generalRoot->addWidget(tunnelDebug);
+	debugLayout->addWidget(tunnelDebug);
 	dateLayout->addWidget(cmboDateFormat);
+	generalRoot->addSpacing(9);
 	generalRoot->addWidget(dateGroup);
+	generalRoot->addWidget(debugGroup);
 	generalRoot->addStretch();
 	pages->addWidget(generalPage);
 
