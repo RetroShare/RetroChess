@@ -21,6 +21,7 @@
 #include <QApplication>
 #include <QDialog>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QShortcut>
@@ -48,6 +49,7 @@
 #include "ChessDebugWidget.h"
 #include "ChessBoard.h"
 #include "ChessClockWidget.h"
+#include "RetroChessLeaderboard.h"
 
 #include <QPointer>
 #include <QIcon>
@@ -59,9 +61,29 @@ namespace
 {
 void updatePlayerNameLabel(QLabel *label)
 {
+	const QString fullName = label->property("chessFullName").toString();
+	const QString ratingText = label->property("chessRatingText").toString();
 	const int availableWidth = qMax(0, label->contentsRect().width() - 2 * label->margin());
-	label->setText(label->fontMetrics().elidedText(
-	        label->toolTip(), Qt::ElideRight, availableWidth));
+
+	QFont boldFont = label->font();
+	boldFont.setBold(true);
+	const QFontMetrics boldFm(boldFont);
+
+	if (!ratingText.isEmpty()) {
+		const QString ratingSuffix = QStringLiteral(" (%1)").arg(ratingText);
+		const int suffixWidth = label->fontMetrics().horizontalAdvance(ratingSuffix);
+		if (suffixWidth <= availableWidth) {
+			const QString elidedName = boldFm.elidedText(
+			        fullName, Qt::ElideRight, availableWidth - suffixWidth);
+			label->setText(QStringLiteral("<b>%1</b>%2")
+			        .arg(elidedName.toHtmlEscaped(), ratingSuffix.toHtmlEscaped()));
+			return;
+		}
+		// Not even room for the bare rating suffix — drop it and just show the name.
+	}
+
+	const QString elidedName = boldFm.elidedText(fullName, Qt::ElideRight, availableWidth);
+	label->setText(QStringLiteral("<b>%1</b>").arg(elidedName.toHtmlEscaped()));
 }
 
 QTableWidgetItem *createMoveTableItem(const QString &notation, bool isWhite)
@@ -163,7 +185,9 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
         // Note: For GXS we track identities rather than PeerIds
         player_str = " (1)";
         m_localplayer_turn = 0;
-        
+        mPlayer1GxsId = mOwnGxsId;
+        mPlayer2GxsId = gxsId;
+
         // Use non-blocking lookup with fallback for unknown identities
         RsIdentityDetails d1, d2;
         if (rsIdentity && rsIdentity->getIdDetails(mOwnGxsId, d1)) {
@@ -179,6 +203,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     } else { // local player as white
         player_str = " (2)";
         m_localplayer_turn = 1;
+        mPlayer1GxsId = gxsId;
+        mPlayer2GxsId = mOwnGxsId;
 
         RsIdentityDetails d1, d2;
         if (rsIdentity && rsIdentity->getIdDetails(gxsId, d1)) {
@@ -276,6 +302,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &hostId, const QString &gameKey
     // Player 1 at top: Black. Player 2 at bottom: White.
     p1name = blackName.toUtf8().constData();
     p2name = whiteName.toUtf8().constData();
+    mPlayer1GxsId = mSpectatorBlackId;
+    mPlayer2GxsId = mSpectatorWhiteId;
 
     QString title = tr("Watching: %1 (White) vs %2 (Black) [Spectator Mode]")
             .arg(whiteName, blackName);
@@ -440,14 +468,16 @@ void RetroChessWindow::initAccessories()
 	m_ui->m_player1_name->setText( p1name.c_str() );
 	m_ui->m_player2_name->setText( p2name.c_str() );
 	for (QLabel *label : {m_ui->m_player1_name, m_ui->m_player2_name}) {
-		label->setTextFormat(Qt::PlainText);
-		label->setToolTip(label->text());
+		label->setTextFormat(Qt::RichText);
+		label->setProperty("chessFullName", label->text());
+		label->setToolTip(label->text()); // simple fallback; refreshPlayerRatings() may upgrade this
 		label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 		label->setMinimumWidth(0);
 		label->setIndent(0);
 		label->installEventFilter(this);
 		updatePlayerNameLabel(label);
 	}
+
 	m_ui->m_move_record->hide();
 	m_ui->moveHistoryLayout->removeWidget(m_ui->m_move_record);
 	m_ui->moveHistoryLayout->setContentsMargins(4, 4, 4, 4);
@@ -3852,6 +3882,52 @@ void RetroChessWindow::setTimeControl(const ChessTimeControl &tc)
 	m_timeControl = tc;
 	setupClocks();
 	playerTurnNotice();
+}
+
+void RetroChessWindow::setLeaderboard(RetroChessLeaderboard *leaderboard)
+{
+	if (mLeaderboard == leaderboard) return;
+	mLeaderboard = leaderboard;
+	refreshPlayerRatings();
+	// Keep the displayed rating current as games get recorded, same as the
+	// leaderboard table itself.
+	if (mLeaderboard)
+		connect(mLeaderboard, &RetroChessLeaderboard::changed,
+		        this, &RetroChessWindow::refreshPlayerRatings);
+}
+
+void RetroChessWindow::refreshPlayerRatings()
+{
+	if (!mLeaderboard || !m_ui) return;
+
+	auto ratingTextFor = [this](const RsGxsId &id) -> QString {
+		if (id.isNull()) return QString();
+		RetroChessLeaderboard::Player p;
+		if (!mLeaderboard->getPlayer(id, p)) return QString();
+		return QString::number(qRound(p.rating));
+	};
+
+	// Rich hover tooltip (avatar + Rating/RD/Games + id), same as the available-players
+	// list. Left at the plain-name tooltip initAccessories() already set for a legacy
+	// (non-GXS) identity, which has no leaderboard entry to show.
+	auto applyTooltip = [this](QLabel *label, const RsGxsId &id) {
+		if (id.isNull()) return;
+		RetroChessLeaderboard::Player p;
+		if (!mLeaderboard->getPlayer(id, p))
+			p = RetroChessLeaderboard::Player(); // not yet rated: show the 1500/350/0 defaults
+		QPixmap avatar;
+		AvatarDefs::getAvatarFromGxsId(id, avatar);
+		label->setToolTip(RetroChessLeaderboard::playerTooltipHtml(
+		        label->property("chessFullName").toString(),
+		        QString::fromStdString(id.toStdString()), avatar, p));
+	};
+
+	m_ui->m_player1_name->setProperty("chessRatingText", ratingTextFor(mPlayer1GxsId));
+	m_ui->m_player2_name->setProperty("chessRatingText", ratingTextFor(mPlayer2GxsId));
+	updatePlayerNameLabel(m_ui->m_player1_name);
+	updatePlayerNameLabel(m_ui->m_player2_name);
+	applyTooltip(m_ui->m_player1_name, mPlayer1GxsId);
+	applyTooltip(m_ui->m_player2_name, mPlayer2GxsId);
 }
 
 void RetroChessWindow::setupClocks()

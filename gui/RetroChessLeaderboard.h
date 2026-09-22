@@ -31,6 +31,7 @@
 
 class QTableWidget;
 class QTimer;
+class QPixmap;
 struct ChatMessage;
 
 class RetroChessLeaderboard : public QObject
@@ -58,6 +59,11 @@ public:
 	                   const QString &result, qint64 finishedAt);
 	void populate(QTableWidget *table) const;
 	bool getPlayer(const RsGxsId &id, Player &player) const;
+	// Rich HTML hover tooltip (avatar + Rating/RD/Games + identity id), shared between
+	// the available-players list and the in-game player name labels.
+	static QString playerTooltipHtml(
+	        const QString &name, const QString &endpointId, const QPixmap &avatar,
+	        const Player &player);
 
 public slots:
 	void handleTunnelData(const RsGxsId &sender, const QByteArray &data);

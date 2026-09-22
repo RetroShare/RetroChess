@@ -47,6 +47,7 @@ class QTimer;
 class ChessDebugWidget;
 class ChessBoard;
 class ChessClockWidget;
+class RetroChessLeaderboard;
 
 namespace Ui
 {
@@ -67,6 +68,12 @@ private:
 	RsPeerId p2id;
 	RsGxsId mSpectatorWhiteId;
 	RsGxsId mSpectatorBlackId;
+	// GXS identity backing m_player1_name / m_player2_name, when known (for rating lookup).
+	// Left null for legacy RsPeerId-based games, which have no leaderboard entry.
+	RsGxsId mPlayer1GxsId;
+	RsGxsId mPlayer2GxsId;
+	RetroChessLeaderboard *mLeaderboard = nullptr;
+	void refreshPlayerRatings();
 	std::string p1name;
 	std::string p2name;
 
@@ -256,6 +263,10 @@ public:
 	void onClockExpired(int color);
 	void setTimeControl(const ChessTimeControl &tc);
 	ChessTimeControl timeControl() const { return m_timeControl; }
+	// Lets the window look up and display live ratings next to player names
+	// (bold nickname followed by "(rating)"), and keep them updated as the
+	// leaderboard recomputes. Safe to call with nullptr.
+	void setLeaderboard(RetroChessLeaderboard *leaderboard);
 	ChessTimeControl m_timeControl;
 	ChessClockWidget *m_whiteClock = nullptr;
 	ChessClockWidget *m_blackClock = nullptr;

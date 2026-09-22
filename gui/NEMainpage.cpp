@@ -84,35 +84,6 @@
 
 
 namespace {
-QString chessPlayerToolTip(
-        const QString &name, const QString &endpointId, const QPixmap &avatar,
-        const RetroChessLeaderboard::Player &player)
-{
-    const auto tr = [](const char *text) { return NEMainpage::tr(text).toHtmlEscaped(); };
-    QByteArray imageBytes;
-    QBuffer buffer(&imageBytes);
-    buffer.open(QIODevice::WriteOnly);
-    const bool saved = avatar.scaled(70, 70, Qt::KeepAspectRatio,
-            Qt::SmoothTransformation).save(&buffer, "PNG");
-    const QString embeddedAvatar = saved
-            ? QStringLiteral("<img src=\"data:image/png;base64,%1\">")
-                    .arg(QString::fromLatin1(imageBytes.toBase64())) : QString();
-    return QStringLiteral(
-            "<table cellspacing='4'><tr><td rowspan='4' valign='top'>%1</td>"
-            "<td colspan='2'><span style='font-size:large; font-weight:600;'>%2</span></td></tr>"
-            "<tr><td>%3</td><td><b>%4</b> &nbsp; %5</td></tr>"
-            "<tr><td>%6</td><td>%7</td></tr>"
-            "<tr><td>%8</td><td>%9</td></tr>"
-            "<tr><td colspan='3'><hr/></td></tr>"
-            "<tr><td colspan='3'><small>%10 %11</small></td></tr></table>")
-            .arg(embeddedAvatar, name.toHtmlEscaped())
-            .arg(tr("Rating")).arg(qRound(player.rating))
-            .arg(player.provisional() ? tr("Provisional") : tr("Rated"))
-            .arg(tr("RD")).arg(qRound(player.rd))
-            .arg(tr("Games")).arg(player.games())
-            .arg(tr("ID:"), endpointId.toHtmlEscaped());
-}
-
 class ChessPlayerItem : public QTreeWidgetItem
 {
 public:
@@ -146,7 +117,7 @@ public:
     {
         if (column == 0 && role == Qt::ToolTipRole) {
             if (mToolTip.isEmpty())
-                mToolTip = chessPlayerToolTip(mName, mEndpoint, mAvatar, mProfile);
+                mToolTip = RetroChessLeaderboard::playerTooltipHtml(mName, mEndpoint, mAvatar, mProfile);
             return mToolTip;
         }
         return QTreeWidgetItem::data(column, role);
@@ -1423,6 +1394,7 @@ void NEMainpage::chessWatchState(const RsGxsId &hostId, const QString &gameKey,
 
 	RetroChessWindow *window = new RetroChessWindow(
 	        hostId, gameKey, whiteId, whiteName, blackId, blackName, nullptr);
+	window->setLeaderboard(mLeaderboard);
 	window->restoreSessionPosition(fen, sequence, moves);
 	if (!moves.isEmpty()) {
 		window->setMoveHistory(moves);
@@ -1586,6 +1558,7 @@ void NEMainpage::create_chess_window_gxs(const RsGxsId &gxs_id, int player_id)
 
     // Open the window with the GXS constructor
     RetroChessWindow *win = new RetroChessWindow(gxs_id, player_id);
+    win->setLeaderboard(mLeaderboard);
     ChessTimeControl tc = rsRetroChess->timeControlForPeer(gxs_id);
     if (!tc.unlimited) {
         win->setTimeControl(tc);
