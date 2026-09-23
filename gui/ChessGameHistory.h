@@ -47,6 +47,9 @@ class ChessGameHistory
 {
 public:
 	static QVector<ChessGameRecord> games();
+	// Changes whenever the in-memory copy of the history is reloaded or saved,
+	// so callers can rebuild data derived from games() only when needed.
+	static quint64 revision();
 	static bool addGame(const ChessGameRecord &game);
 	static bool removeGame(const QString &id);
 	static bool removeGames(const QStringList &ids);

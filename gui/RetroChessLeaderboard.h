@@ -97,6 +97,9 @@ private:
 	// Inserts into mReceipts and assigns the next sync sequence number.
 	void storeReceipt(const QString &key, Receipt receipt, const RsGxsId &from = RsGxsId());
 	void recompute();
+	// Receipts are saved, re-rated and shown in batches (see kCommitDelayMs).
+	void scheduleCommit(bool ratingsChanged);
+	void commitChanges();
 	void load();
 	void save() const;
 	void broadcastReceipt(const Receipt &receipt, const RsGxsId &excludePeer = RsGxsId());
@@ -114,6 +117,9 @@ private:
 	QMap<QString, Player> mPlayers;
 	QSet<QString> mGossipedReceipts;
 	QTimer *mSyncTimer;
+	QTimer *mCommitTimer;
+	bool mSaveDirty = false;
+	bool mRatingsDirty = false;
 	QElapsedTimer mSyncClock;
 	QMap<RsGxsId, qint64> mLastSyncRequest;
 	QMap<RsGxsId, qint64> mLastSyncResponse;      // any answer to a peer
