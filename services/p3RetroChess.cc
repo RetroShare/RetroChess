@@ -411,6 +411,16 @@ bool p3RetroChess::saveList(bool& cleanup, std::list<RsItem*>& lst)
 			value.key = "CHESS_CONTACT:" + entry.first.toStdString();
 			value.value = std::to_string(entry.second.lastSeen);
 			vitem->tlvkvs.pairs.push_back(value);
+			// Keep the presence backoff across restarts, so contacts that
+			// were offline do not get the whole retry burst again after
+			// every restart. Separate key: older versions ignore it.
+			if (entry.second.failures > 0) {
+				RsTlvKeyValue backoff;
+				backoff.key = "CHESS_CONTACT_BACKOFF:" + entry.first.toStdString();
+				backoff.value = std::to_string(entry.second.failures) + ","
+				        + std::to_string(entry.second.nextProbe);
+				vitem->tlvkvs.pairs.push_back(backoff);
+			}
 		}
 		if (mChessIdentitiesConfigured) {
 			RsTlvKeyValue value;
@@ -447,6 +457,7 @@ bool p3RetroChess::saveList(bool& cleanup, std::list<RsItem*>& lst)
 	}
 
 	lst.push_back(vitem) ;
+	CHESS_TLOG("CONFIG saved (" << vitem->tlvkvs.pairs.size() << " entries)");
 
 	return true ;
 }
@@ -455,6 +466,20 @@ bool p3RetroChess::loadList(std::list<RsItem*>& load)
 	for (RsItem *item : load) {
 		if (RsConfigKeyValueSet *values = dynamic_cast<RsConfigKeyValueSet *>(item)) {
 			for (const RsTlvKeyValue &value : values->tlvkvs.pairs) {
+				if (value.key.compare(0, 22, "CHESS_CONTACT_BACKOFF:") == 0) {
+					const RsGxsId id(value.key.substr(22));
+					const QStringList parts = QString::fromStdString(value.value).split(',');
+					if (!id.isNull() && parts.size() == 2) {
+						RsStackMutex stack(mRetroChessMtx);
+						ChessContact &contact = mChessContacts[id];
+						contact.failures = std::min<unsigned int>(parts[0].toUInt(), kPresenceMaxFailures);
+						// A past time simply means one probe right after start;
+						// if it fails the backoff continues from the saved count.
+						contact.nextProbe = static_cast<time_t>(parts[1].toLongLong());
+						CHESS_TLOG("CONFIG backoff loaded peer=" << id << " failures=" << contact.failures);
+					}
+					continue;
+				}
 				if (value.key.compare(0, 14, "CHESS_CONTACT:") == 0) {
 					const RsGxsId id(value.key.substr(14));
 					if (!id.isNull()) {
@@ -502,6 +527,26 @@ bool p3RetroChess::loadList(std::list<RsItem*>& load)
 		delete item;
 	}
 	load.clear();
+
+	// Fallback when no saved backoff exists (older config, or the client was
+	// closed before the config was written): contacts not seen for a day, or
+	// never seen, get one probe at start and go dormant if it fails, instead
+	// of the whole fast retry burst. They can still reach us at any time.
+	{
+		const time_t now = time(nullptr);
+		unsigned int restored = 0, assumedOffline = 0;
+		RsStackMutex stack(mRetroChessMtx);
+		for (auto &entry : mChessContacts) {
+			ChessContact &contact = entry.second;
+			if (contact.failures > 0) { ++restored; continue; }
+			if (contact.lastSeen == 0 || now - contact.lastSeen > 24 * 3600) {
+				contact.failures = kPresenceMaxFailures - 1;
+				++assumedOffline;
+			}
+		}
+		CHESS_TLOG("CONFIG loaded contacts=" << mChessContacts.size() << " backoff restored=" << restored
+		           << " assumed offline (not seen for 24h)=" << assumedOffline);
+	}
 	return true ;
 }
 
@@ -805,6 +850,7 @@ void p3RetroChess::tickChessPresence()
     std::vector<RsGxsTunnelId> close;
     std::vector<std::pair<RsGxsTunnelId, QByteArray>> sends;
     bool changed = false;
+    bool backoffChanged = false;
     {
         RsStackMutex stack(mRetroChessMtx);
         unsigned int inFlight = 0;
@@ -823,6 +869,7 @@ void p3RetroChess::tickChessPresence()
                 contact.seekTimeControl = ChessTimeControl{};
                 contact.failures = std::min(contact.failures + 1, kPresenceMaxFailures);
                 contact.nextProbe = now + chessPresenceRetryDelay(contact.failures);
+                backoffChanged = true;
                 CHESS_TLOG("PRESENCE timeout peer=" << id << " failures=" << contact.failures
                            << " next probe in " << (contact.nextProbe - now) << "s"
                            << (contact.failures >= kPresenceMaxFailures ? " (dormant: hourly checks only)" : ""));
@@ -906,6 +953,9 @@ void p3RetroChess::tickChessPresence()
     for (const auto &tunnel : close) closeGxsTunnel(tunnel, "presence probe timed out");
     for (const auto &id : open) requestGxsTunnel(id);
     for (const auto &send : sends) sendGxsData(send.first, reinterpret_cast<const uint8_t*>(send.second.constData()), send.second.size());
+    // Called outside mRetroChessMtx: the config thread holds its own lock
+    // while calling saveList(), which takes mRetroChessMtx.
+    if (backoffChanged) IndicateConfigChanged();
     if (changed) mNotify->notifyAvailablePeersChanged();
 }
 
@@ -1370,7 +1420,8 @@ void p3RetroChess::broadcastLeaderboardDataGxs(const QByteArray &data)
         RsStackMutex stack(mRetroChessMtx);
         if (!mGxsTunnels) return;
         for (const auto &entry : mActiveTunnels)
-            tunnels.push_back(entry.second);
+            if (chessPeerConfirmedLocked(entry.first))
+                tunnels.push_back(entry.second);
     }
     for (const auto &tunnelId : tunnels)
         sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(data.constData()), data.size());
@@ -1381,8 +1432,22 @@ std::vector<RsGxsId> p3RetroChess::activeGxsTunnels()
     RsStackMutex stack(mRetroChessMtx);
     std::vector<RsGxsId> peers;
     for (const auto &entry : mActiveTunnels)
-        peers.push_back(entry.first);
+        if (chessPeerConfirmedLocked(entry.first))
+            peers.push_back(entry.first);
     return peers;
+}
+
+bool p3RetroChess::chessPeerConfirmedLocked(const RsGxsId &id) const
+{
+    // A game, invitation or watch request always keeps its tunnel usable.
+    if (mGameSessions.count(id.toStdString()) || mInvitesToGxs.count(id)
+            || mInvitesFromGxs.count(id) || mPendingWatchRequests.count(id))
+        return true;
+    auto contact = mChessContacts.find(id);
+    // Not a presence contact: the tunnel exists for some other chess reason.
+    if (contact == mChessContacts.end()) return true;
+    const QString &status = contact->second.status;
+    return status == "available" || status == "playing" || status == "busy";
 }
 
 bool p3RetroChess::hasInviteFromGxs(const RsGxsId &gxsId)
@@ -2147,6 +2212,7 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
     RsGxsId pendingPeer;     // peer whose pending tunnel was remotely closed
     const char *action = "nothing to do";
     bool handled = false;
+    bool backoffChanged = false;
     {
         RsStackMutex stack(mRetroChessMtx);
         const time_t now = time(nullptr);
@@ -2216,6 +2282,7 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
                     // the normal backoff applies instead of redialing in 15s.
                     contact->second.failures = std::min(contact->second.failures + 1, kPresenceMaxFailures);
                     contact->second.nextProbe = now + chessPresenceRetryDelay(contact->second.failures);
+                    backoffChanged = true;
                 } else {
                     // Network hiccup: the tunnel is being re-dug already.
                     contact->second.nextProbe = now + chessPresenceRetryDelay(0);
@@ -2239,6 +2306,7 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
         std::cout << "Chess: Tunnel closed for GXS " << gxs_id << std::endl;
         mNotify->notifyGxsTunnelClosed(gxs_id);
     }
+    if (backoffChanged) IndicateConfigChanged();
     if (!gxs_id.isNull() || !pendingPeer.isNull())
         mNotify->notifyAvailablePeersChanged();
 }
@@ -2331,7 +2399,8 @@ void p3RetroChess::setLobbySeek(bool active, const ChessTimeControl &tc)
         RsStackMutex stack(mRetroChessMtx);
         mLobbySeekActive = active;
         mLobbySeek = active ? tc : ChessTimeControl{};
-        for (const auto &entry : mActiveTunnels) tunnels.push_back(entry.second);
+        for (const auto &entry : mActiveTunnels)
+            if (chessPeerConfirmedLocked(entry.first)) tunnels.push_back(entry.second);
     }
     QVariantMap message;
     message["type"] = "chess_seek";

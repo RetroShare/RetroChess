@@ -223,6 +223,11 @@ private:
 	ChessTimeControl mLobbySeek;
 	// Helper to find which friend sent the data based on the tunnel ID
 	RsGxsId findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id);
+	// Lobby seeks and leaderboard data only go to tunnels whose peer has
+	// answered a chess presence probe (or that carry a game, invite or watch
+	// request). Probe tunnels to contacts that never answer get nothing.
+	// Caller must hold mRetroChessMtx.
+	bool chessPeerConfirmedLocked(const RsGxsId &id) const;
 
 	std::set<RsPeerId> invitesTo;
 	std::set<RsPeerId> invitesFrom;

@@ -30,8 +30,8 @@ class QTimer;
  * @brief A compact countdown clock for one player.
  *
  * Displays remaining time as MM:SS (or H:MM:SS when >= 1 hour).
- * Background turns red when less than 30 seconds remain.
- * The font becomes bold when the clock is actively ticking.
+ * Background turns dark red when the clock reaches zero.
+ * Text styling comes from the active skin.
  *
  * Typical usage:
  * @code
@@ -80,19 +80,24 @@ signals:
     /// Emitted exactly once when the clock reaches zero.
     void expired();
 
+protected:
+    /// Re-derive the border colour once the skin stylesheet is applied.
+    void showEvent(QShowEvent *event) override;
+
 private slots:
     void onTick();
 
 private:
     void updateDisplay();
     QString formatTime(qint64 ms) const;
-    void applyStyle();
+    void applyStyle(bool expired = false);
     void accountElapsed();   ///< Subtract real elapsed wall time since last accounting.
 
     QLabel  *m_label        = nullptr;
     QTimer  *m_timer        = nullptr;
     QElapsedTimer m_elapsed;            ///< Wall time since the last tick/start.
-    bool     m_styleApplied = false;    ///< The stylesheet is constant; set it once.
+    bool     m_styleApplied = false;    ///< Avoid reapplying unchanged styles on ticks.
+    bool     m_expiredStyle = false;
     qint64   m_remainingMs  = 0;
     qint64   m_incrementMs  = 0;
     bool     m_active       = false;

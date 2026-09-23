@@ -21,6 +21,7 @@
 #include "ChessClockWidget.h"
 
 #include <QLabel>
+#include <QShowEvent>
 #include <QTimer>
 #include <QHBoxLayout>
 
@@ -54,7 +55,6 @@ void ChessClockWidget::setTotalMs(qint64 ms)
     m_expiredEmitted = false;
     if (m_active) m_elapsed.start();
     updateDisplay();
-    applyStyle();
 }
 
 void ChessClockWidget::setIncrementMs(qint64 ms)
@@ -151,6 +151,7 @@ void ChessClockWidget::onTick()
 void ChessClockWidget::updateDisplay()
 {
     m_label->setText(formatTime(m_remainingMs));
+    applyStyle(m_remainingMs <= 0);
 }
 
 QString ChessClockWidget::formatTime(qint64 ms) const
@@ -172,13 +173,35 @@ QString ChessClockWidget::formatTime(qint64 ms) const
         static_cast<long long>(seconds));
 }
 
-void ChessClockWidget::applyStyle()
+void ChessClockWidget::applyStyle(bool expired)
 {
-    if (m_styleApplied) return;
+    if (m_styleApplied && m_expiredStyle == expired) return;
     m_styleApplied = true;
-    // Keep the foreground/background supplied by the active RetroShare skin.
-    // Hard-coded white text is unreadable on the light skin.
-    setStyleSheet(QString());
+    m_expiredStyle = expired;
+    // Only override the background at zero; text styling comes from the skin.
+    // Explicit border so skins (which drop the native StyledPanel frame)
+    // still show a rounded box. The colour is a faint version of the skin's
+    // text colour, so it is light on dark skins and grey on light skins.
+    // (palette(mid) does not work here: stylesheet skins don't change the
+    // palette, so it stays the light system grey even in dark mode.)
+    m_label->ensurePolished();
+    const QColor text = m_label->palette().color(QPalette::WindowText);
+    const QString border = QStringLiteral("rgba(%1, %2, %3, 70)")
+        .arg(text.red()).arg(text.green()).arg(text.blue());
+
+    setStyleSheet(expired
+        ? QStringLiteral("ChessClockWidget { background-color: #8b0000;"
+                         " border: 1px solid #8b0000; border-radius: 4px; }")
+        : QStringLiteral("ChessClockWidget { border: 1px solid %1;"
+                         " border-radius: 4px; }").arg(border));
     m_label->setStyleSheet(QStringLiteral(
         "font-size: 18pt; font-weight: bold;"));
+}
+
+void ChessClockWidget::showEvent(QShowEvent *event)
+{
+    QFrame::showEvent(event);
+    // The skin is only guaranteed to be applied once we are shown.
+    m_styleApplied = false;
+    applyStyle(isExpired());
 }
