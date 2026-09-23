@@ -22,6 +22,7 @@
 #pragma once
 
 #include <list>
+#include <set>
 #include <string>
 #include <QVariantMap>
 
@@ -160,6 +161,9 @@ public:
 	// Async tunnel management
 	void handleGxsTick(); // Called periodically by the core
 	void closePendingGxsTunnels();
+	void closeQueuedGxsTunnels();   // closes tunnels queued by notifyTunnelStatus()
+	void sweepOrphanGxsTunnels();   // closes tunnels we opened but no longer track
+	void dumpTunnelState();         // periodic state dump when tunnel debug is on
 	void retryPendingDistantChatInvites(); // Retry invites queued before the tunnel was ready
 	void reconnectInterruptedSessions();
 	bool doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId, bool joinOpenGame = false); // Actually request tunnel + queue invite
@@ -176,7 +180,18 @@ public:
 	virtual void connectToGxsTunnelService(RsGxsTunnelService *tunnel_service) override;
 	virtual bool acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side) override;
 
+	// Tunnel debug logging (see services/RetroChessTunnelDebug.h)
+	void setTunnelDebugEnabled(bool enabled) override;
+	bool tunnelDebugEnabled() override;
+
 private:
+	// All tunnel traffic goes through these two helpers so that it can be traced.
+	// Neither takes mRetroChessMtx for sending; closeGxsTunnel() does, so it
+	// must be called with the mutex released.
+	bool sendGxsData(const RsGxsTunnelId &tunnel, const uint8_t *data, uint32_t size);
+	bool closeGxsTunnel(const RsGxsTunnelId &tunnel, const char *reason);
+	bool openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason);
+
 	void tickChessPresence();
 	bool handleChessPresence(const RsGxsId &sender, const RsGxsTunnelId &tunnel, const QVariantMap &message);
 	bool chessIdentityEnabled(const RsGxsId &id);
@@ -186,6 +201,9 @@ private:
 		time_t nextProbe = 0;
 		time_t deadline = 0;
 		unsigned int failures = 0;
+		// Tie-break (see tickChessPresence): the side with the higher identity
+		// waits until this time for the other side to open the tunnel first.
+		time_t yieldUntil = 0;
 		QString status = "unknown";
 		QString nonce;
 		RsGxsTunnelId probeTunnel;
@@ -232,6 +250,15 @@ private:
 	std::map<RsGxsId, QString> mRematchIdByPeer;
 	// Leave messages get a short delivery window before their tunnel is closed.
 	std::map<RsGxsId, time_t> mPendingGxsCloses;
+	// Tunnels that went down or were closed remotely. Closed from tick(), not
+	// from inside the GxsTunnel callback that reported them.
+	std::set<RsGxsTunnelId> mTunnelsToClose;
+	// Tunnels this plugin requested with requestSecuredTunnel() and has not
+	// closed yet. Anything here that is neither active nor pending is an
+	// orphan that GxsTunnel/turtle would otherwise keep alive forever.
+	std::set<RsGxsTunnelId> mOpenedTunnels;
+	time_t mLastOrphanSweep = 0;
+	time_t mLastTunnelDump = 0;
 	// DistantChatIds for which sendInvite_chat() was called but getDistantChatStatus()
 	// failed (tunnel not established yet). Retried every tick() until it succeeds
 	// or the give-up deadline passes.

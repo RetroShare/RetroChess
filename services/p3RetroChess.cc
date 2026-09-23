@@ -40,6 +40,35 @@
 #include <QUuid>
 #include <QJsonObject>
 #include <algorithm>
+#include <retroshare/rsinit.h>
+
+#include "services/RetroChessTunnelDebug.h"
+
+using RetroChessTunnelDebug::statusName;
+using RetroChessTunnelDebug::payloadType;
+
+// Presence retry schedule after consecutive failed probes of a chess contact.
+// Stay responsive for the first retries, then back off so that offline
+// contacts do not cause a new GXS tunnel discovery + DH handshake every few
+// minutes. After kPresenceMaxFailures failures the contact is considered
+// dormant and only re-checked hourly; an incoming probe from that contact
+// wakes it up immediately (see handleChessPresence).
+static const unsigned int kPresenceMaxFailures = 7;
+static const time_t kPresenceDormantRetrySec = 3600;
+// Tie-break: when both sides have each other as contact, only the side with
+// the lower GXS id dials. The other one waits this long for the incoming
+// tunnel before dialing itself (for contacts that do not list us).
+static const time_t kPresenceYieldSec = 75;
+// Orphan sweep and debug state dump interval.
+static const time_t kTunnelMaintenanceIntervalSec = 60;
+
+static time_t chessPresenceRetryDelay(unsigned int failures)
+{
+    static const time_t kDelays[6] = { 15, 30, 60, 120, 240, 300 };
+    if (failures == 0) return kDelays[0];
+    if (failures > 6) return kPresenceDormantRetrySec;
+    return kDelays[failures - 1];
+}
 
 
 //#define DEBUG_RetroChess		1
@@ -59,6 +88,8 @@ p3RetroChess::p3RetroChess(RsPluginHandler *handler,RetroChessNotify *notifier)
 	: RsPQIService(RS_SERVICE_TYPE_RetroChess_PLUGIN,0,handler), mRetroChessMtx("p3RetroChess"), mServiceControl(handler->getServiceControl()), mNotify(notifier), mGxsTunnels(NULL)
 {
 	addSerialType(new RsRetroChessSerialiser());
+	RetroChessTunnelDebug::setLogDirectory(RsAccounts::AccountDirectory());
+	CHESS_TLOG("service created (tunnel debug enabled from RETROCHESS_DEBUG)");
 
 
 	//plugin default configuration
@@ -87,9 +118,12 @@ int	p3RetroChess::tick()
 #endif
 	handleGxsTick();
 	closePendingGxsTunnels();
+	closeQueuedGxsTunnels();
 	retryPendingDistantChatInvites();
 	reconnectInterruptedSessions();
 	tickChessPresence();
+	sweepOrphanGxsTunnels();
+	dumpTunnelState();
 	return 0;
 }
 
@@ -555,8 +589,7 @@ void p3RetroChess::updateGameSession(
 
 		const QByteArray replyBytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
 		for (const auto &tId : spectatorTunnels) {
-			mGxsTunnels->sendData(tId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-			                      reinterpret_cast<const uint8_t*>(replyBytes.constData()), replyBytes.size());
+			sendGxsData(tId, reinterpret_cast<const uint8_t*>(replyBytes.constData()), replyBytes.size());
 		}
 	}
 	IndicateConfigChanged();
@@ -588,8 +621,7 @@ void p3RetroChess::unregisterGameSession(const QString &endpointId)
 		endMsg["reason"] = "Game ended";
 		const QByteArray bytes = QJsonDocument::fromVariant(endMsg).toJson(QJsonDocument::Compact);
 		for (const auto &tId : spectatorTunnels) {
-			mGxsTunnels->sendData(tId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-			                      reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+			sendGxsData(tId, reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
 		}
 	}
 	if (removed) IndicateConfigChanged();
@@ -664,7 +696,7 @@ void p3RetroChess::removeChessContact(const RsGxsId &id)
             mOwnGxsIdByPeer.erase(id);
         }
     }
-    if (mGxsTunnels && !close.isNull()) mGxsTunnels->closeExistingTunnel(close, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
+    if (mGxsTunnels && !close.isNull()) closeGxsTunnel(close, "contact removed");
     IndicateConfigChanged();
     mNotify->notifyAvailablePeersChanged();
 }
@@ -721,6 +753,8 @@ void p3RetroChess::setChessIdentities(const std::list<RsGxsId> &ids, const RsGxs
         for (auto &entry : mChessContacts) {
             entry.second.nextProbe = 0;
             entry.second.deadline = 0;
+            entry.second.failures = 0;
+            entry.second.yieldUntil = 0;
             entry.second.nonce.clear();
             entry.second.status = "unknown";
         }
@@ -739,7 +773,7 @@ void p3RetroChess::setChessIdentities(const std::list<RsGxsId> &ids, const RsGxs
         }
         for (const auto &tunnel : close) mTunnelToGxsIdMap.erase(tunnel);
     }
-    for (const auto &tunnel : close) if (mGxsTunnels) mGxsTunnels->closeExistingTunnel(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
+    for (const auto &tunnel : close) if (mGxsTunnels) closeGxsTunnel(tunnel, "chess identities changed");
     IndicateConfigChanged();
     mNotify->notifyAvailablePeersChanged();
 }
@@ -763,7 +797,8 @@ void p3RetroChess::tickChessPresence()
 {
     if (!mGxsTunnels || !rsIdentity) return;
     const time_t now = time(nullptr);
-    const bool enabled = !preferredChessIdentity().isNull();
+    const RsGxsId preferred = preferredChessIdentity();
+    const bool enabled = !preferred.isNull();
     std::list<RsGxsId> ownIds;
     rsIdentity->getOwnIds(ownIds);
     std::vector<RsGxsId> open;
@@ -786,11 +821,11 @@ void p3RetroChess::tickChessPresence()
                 contact.status = "offline";
                 contact.seeking = false;
                 contact.seekTimeControl = ChessTimeControl{};
-                contact.failures = std::min(contact.failures + 1, 6u);
-                // Stay responsive for the first retries, then back off so that long-offline contacts do not
-                // cause a new GXS tunnel discovery / DH handshake every minute (15s, 30s, 1min, 2min, 4min, 5min).
-                static const unsigned int kOfflineRetryDelaySec[6] = { 15, 30, 60, 120, 240, 300 };
-                contact.nextProbe = now + kOfflineRetryDelaySec[contact.failures - 1];
+                contact.failures = std::min(contact.failures + 1, kPresenceMaxFailures);
+                contact.nextProbe = now + chessPresenceRetryDelay(contact.failures);
+                CHESS_TLOG("PRESENCE timeout peer=" << id << " failures=" << contact.failures
+                           << " next probe in " << (contact.nextProbe - now) << "s"
+                           << (contact.failures >= kPresenceMaxFailures ? " (dormant: hourly checks only)" : ""));
                 if (!mActiveTunnels.count(id)) --inFlight;
                 changed = true;
                 // Presence failures must never tear down an invitation, game, or watch request.
@@ -818,8 +853,27 @@ void p3RetroChess::tickChessPresence()
                 contact.gameId.clear();
                 changed = true;
             }
-            if (enabled && !contact.deadline && now >= contact.nextProbe
+            const bool needsTunnel = !mActiveTunnels.count(id) && !mPendingTunnels.count(id);
+            bool yielding = false;
+            if (!needsTunnel) contact.yieldUntil = 0;
+            if (enabled && !contact.deadline && now >= contact.nextProbe && needsTunnel) {
+                // Both sides dialing each other produce the same (symmetric)
+                // GXS tunnel id, and the second handshake overwrites the first
+                // inside GxsTunnel, making the tunnel flap. Let the lower id dial.
+                auto own = mOwnGxsIdByPeer.find(id);
+                const RsGxsId ownId = own != mOwnGxsIdByPeer.end() ? own->second : preferred;
+                if (id < ownId) {
+                    if (!contact.yieldUntil) {
+                        contact.yieldUntil = now + kPresenceYieldSec;
+                        CHESS_TLOG("PRESENCE yield peer=" << id << ": waiting " << kPresenceYieldSec
+                                   << "s for the peer to open the tunnel");
+                    }
+                    yielding = now < contact.yieldUntil;
+                }
+            }
+            if (enabled && !yielding && !contact.deadline && now >= contact.nextProbe
                     && (mActiveTunnels.count(id) || inFlight < 4)) {
+                contact.yieldUntil = 0;
                 // GXS discovery and its key exchange need their own connection budget.
                 contact.deadline = now + 120;
                 contact.nonce.clear();
@@ -828,7 +882,10 @@ void p3RetroChess::tickChessPresence()
                     contact.status = "checking";
                     changed = true;
                 }
-                if (!mActiveTunnels.count(id) && !mPendingTunnels.count(id)) open.push_back(id);
+                if (needsTunnel) {
+                    open.push_back(id);
+                    CHESS_TLOG("PRESENCE open tunnel to peer=" << id << " (failures=" << contact.failures << ")");
+                }
             }
             auto active = mActiveTunnels.find(id);
             if (enabled && contact.deadline && contact.nonce.isEmpty() && active != mActiveTunnels.end()) {
@@ -841,14 +898,14 @@ void p3RetroChess::tickChessPresence()
                 message["type"] = "chess_presence_request";
                 message["version"] = 1;
                 message["nonce"] = contact.nonce;
+                CHESS_TLOG("PRESENCE probe peer=" << id << " tunnel=" << active->second);
                 sends.push_back({active->second, QJsonDocument::fromVariant(message).toJson(QJsonDocument::Compact)});
             }
         }
     }
-    for (const auto &tunnel : close) mGxsTunnels->closeExistingTunnel(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
+    for (const auto &tunnel : close) closeGxsTunnel(tunnel, "presence probe timed out");
     for (const auto &id : open) requestGxsTunnel(id);
-    for (const auto &send : sends) mGxsTunnels->sendData(send.first, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-            reinterpret_cast<const uint8_t*>(send.second.constData()), send.second.size());
+    for (const auto &send : sends) sendGxsData(send.first, reinterpret_cast<const uint8_t*>(send.second.constData()), send.second.size());
     if (changed) mNotify->notifyAvailablePeersChanged();
 }
 
@@ -914,6 +971,9 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
                     mActiveTunnels[sender] = tunnel;
                     mPendingTunnels.erase(sender);
                     mOwnGxsIdByPeer[sender] = info.source_gxs_id;
+                    contact.yieldUntil = 0;
+                    CHESS_TLOG("PRESENCE adopt incoming tunnel=" << tunnel << " from contact " << sender
+                               << " (was " << contact.status.toStdString() << ", failures=" << contact.failures << ")");
                     contact.deadline = now + 45;
                     contact.nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
                     contact.probeTunnel = tunnel;
@@ -938,11 +998,9 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
             if (!gameId.isEmpty()) reply["game_id"] = gameId;
         }
         const QByteArray bytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
-        mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+        sendGxsData(tunnel, reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
         if (!reciprocalProbe.isEmpty()) {
-            mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                    reinterpret_cast<const uint8_t*>(reciprocalProbe.constData()), reciprocalProbe.size());
+            sendGxsData(tunnel, reinterpret_cast<const uint8_t*>(reciprocalProbe.constData()), reciprocalProbe.size());
             mNotify->notifyAvailablePeersChanged();
         }
     } else {
@@ -1012,7 +1070,7 @@ void p3RetroChess::chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int 
     // The RsRetroChessDataItem previously allocated here was never freed,
     // leaking one item per move sent.
     const std::string msg = QString("%1,%2,%3").arg(col).arg(row).arg(count).toStdString();
-    mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, (const uint8_t*)msg.c_str(), msg.size());
+    sendGxsData(tunnel_id, (const uint8_t*)msg.c_str(), msg.size());
 }
 
 void p3RetroChess::requestGxsTunnel(const RsGxsId &gxsId)
@@ -1049,16 +1107,14 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
     if (from_gxs_id.isNull()) return;
 
     RsGxsTunnelId tunnel_id;
-    uint32_t error_code;
 
     // Open a tunnel using mGxsTunnel (Async Request)
-    if (mGxsTunnels->requestSecuredTunnel(
-            to_gxs_id, from_gxs_id, tunnel_id,
-            RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, error_code))
+    if (openGxsTunnel(to_gxs_id, from_gxs_id, tunnel_id, "sendGxsInvite/requestGxsTunnel"))
     {
         {
             RsStackMutex stack(mRetroChessMtx);
             mPendingTunnels[to_gxs_id] = tunnel_id;
+            mOpenedTunnels.insert(tunnel_id);
             mOwnGxsIdByPeer[to_gxs_id] = from_gxs_id;
         }
         mNotify->notifyAvailablePeersChanged();
@@ -1103,8 +1159,7 @@ bool p3RetroChess::cancelInviteToGxs(const RsGxsId &gxsId)
     }
     if (!tunnelId.isNull()) {
         const std::string message = "{\"type\":\"chess_cancel\"}";
-        if (!mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                reinterpret_cast<const uint8_t*>(message.data()), message.size()))
+        if (!sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(message.data()), message.size()))
             return false;
         RsStackMutex stack(mRetroChessMtx);
         if (mInvitesToGxs.erase(gxsId) == 0) return false;
@@ -1148,8 +1203,7 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
         }
         const std::string accept = QJsonDocument(acceptObj).toJson(QJsonDocument::Compact).toStdString();
         std::cout << "Chess: Sending chess_accept over tunnel " << activeTunnel << std::endl;
-        mGxsTunnels->sendData(activeTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                              (const uint8_t*)accept.c_str(), accept.size());
+        sendGxsData(activeTunnel, (const uint8_t*)accept.c_str(), accept.size());
     } else {
         requestGxsTunnel(gxsId);
     }
@@ -1167,8 +1221,7 @@ bool p3RetroChess::rejectedInviteGxs(const RsGxsId &gxsId)
     }
     const std::string reply = "{\"type\":\"chess_reject\"}";
     // Keep the invitation available for retry if the transport cannot queue it.
-    if (!mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-            reinterpret_cast<const uint8_t*>(reply.data()), reply.size()))
+    if (!sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(reply.data()), reply.size()))
         return false;
     clearInviteGxs(gxsId);
     mNotify->notifyChessInviteClearedGxs(gxsId);
@@ -1197,9 +1250,7 @@ bool p3RetroChess::sendRematchGxs(const RsGxsId &gxsId, int localColor)
     map.insert("color", localColor);
     map.insert("game_id", gameIdForPeer(gxsId));
     const std::string message = QJsonDocument::fromVariant(map).toJson(QJsonDocument::Compact).toStdString();
-    return mGxsTunnels->sendData(
-            tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-            reinterpret_cast<const uint8_t*>(message.data()), message.size());
+    return sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(message.data()), message.size());
 }
 
 bool p3RetroChess::sendGameActionGxs(const RsGxsId &gxsId, const std::string &action)
@@ -1226,9 +1277,7 @@ bool p3RetroChess::sendGameActionGxs(const RsGxsId &gxsId, const std::string &ac
     map.insert("type", "game_action");
     map.insert("action", QString::fromStdString(action));
     const QByteArray message = QJsonDocument::fromVariant(map).toJson(QJsonDocument::Compact);
-    bool sent = mGxsTunnels->sendData(
-            tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-            reinterpret_cast<const uint8_t*>(message.constData()), message.size());
+    bool sent = sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(message.constData()), message.size());
 
     if (!spectatorTunnels.empty() && mGxsTunnels) {
         QVariantMap specMap;
@@ -1238,8 +1287,7 @@ bool p3RetroChess::sendGameActionGxs(const RsGxsId &gxsId, const std::string &ac
         specMap.insert("action", QString::fromStdString(action));
         const QByteArray specMsg = QJsonDocument::fromVariant(specMap).toJson(QJsonDocument::Compact);
         for (const auto &sTunnel : spectatorTunnels) {
-            mGxsTunnels->sendData(sTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                                  reinterpret_cast<const uint8_t*>(specMsg.constData()), specMsg.size());
+            sendGxsData(sTunnel, reinterpret_cast<const uint8_t*>(specMsg.constData()), specMsg.size());
         }
     }
 
@@ -1269,8 +1317,7 @@ bool p3RetroChess::sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QStrin
         req["version"] = 1;
         req["game_id"] = gameKey;
         const QByteArray bytes = QJsonDocument::fromVariant(req).toJson(QJsonDocument::Compact);
-        return mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                                     reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+        return sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
     }
 
     std::cout << "Chess: Queueing watch request and requesting tunnel for host " << hostPlayerId
@@ -1299,8 +1346,7 @@ void p3RetroChess::sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString 
         msg["version"] = 1;
         msg["game_id"] = gameKey;
         const QByteArray bytes = QJsonDocument::fromVariant(msg).toJson(QJsonDocument::Compact);
-        mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                              reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+        sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
     }
 }
 
@@ -1314,9 +1360,7 @@ bool p3RetroChess::sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray
             return false;
         tunnelId = it->second;
     }
-    return mGxsTunnels->sendData(
-            tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-            reinterpret_cast<const uint8_t*>(data.constData()), data.size());
+    return sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(data.constData()), data.size());
 }
 
 void p3RetroChess::broadcastLeaderboardDataGxs(const QByteArray &data)
@@ -1329,9 +1373,7 @@ void p3RetroChess::broadcastLeaderboardDataGxs(const QByteArray &data)
             tunnels.push_back(entry.second);
     }
     for (const auto &tunnelId : tunnels)
-        mGxsTunnels->sendData(
-                tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                reinterpret_cast<const uint8_t*>(data.constData()), data.size());
+        sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(data.constData()), data.size());
 }
 
 std::vector<RsGxsId> p3RetroChess::activeGxsTunnels()
@@ -1449,9 +1491,7 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
     }
     const std::string invite = QJsonDocument(inviteJson).toJson(QJsonDocument::Compact).toStdString();
     if (!activeTunnel.isNull()) {
-        if (mGxsTunnels->sendData(
-                    activeTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                    reinterpret_cast<const uint8_t*>(invite.data()), invite.size()))
+        if (sendGxsData(activeTunnel, reinterpret_cast<const uint8_t*>(invite.data()), invite.size()))
         {
             RsStackMutex stack(mRetroChessMtx);
             mInvitesToGxs.insert(toId);
@@ -1481,13 +1521,12 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
     }
 
     RsGxsTunnelId tunnelId;
-    uint32_t error_code = 0;
-    if (mGxsTunnels->requestSecuredTunnel(toId, ownId, tunnelId,
-                                          RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, error_code))
+    if (openGxsTunnel(toId, ownId, tunnelId, "invite"))
     {
         {
             RsStackMutex stack(mRetroChessMtx);
             mPendingTunnels[toId] = tunnelId;
+            mOpenedTunnels.insert(tunnelId);
             mPendingGxsInvites[toId] = invite;
             mInvitesToGxs.insert(toId);
             std::cout << "Chess: Tunnel requested (id=" << tunnelId << "), invite queued for " << toId << std::endl;
@@ -1495,7 +1534,7 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         mNotify->notifyAvailablePeersChanged();
         return true;
     } else {
-        std::cerr << "Chess: doSendInviteOverGxs: requestSecuredTunnel failed, error=" << error_code << std::endl;
+        std::cerr << "Chess: doSendInviteOverGxs: requestSecuredTunnel failed" << std::endl;
         return false;
     }
 }
@@ -1607,6 +1646,8 @@ void p3RetroChess::handleGxsTick()
                 if (pit != mPendingTunnels.end() && pit->second == it->second) {
                     std::cerr << "Chess: tunnel to " << it->first << " did not come up in "
                               << kPendingTunnelTimeoutSec << "s, giving up" << std::endl;
+                    CHESS_TLOG("PENDING timeout peer=" << it->first << " tunnel=" << it->second
+                               << " status=" << (haveInfo ? statusName(tinfo.tunnel_status) : "unknown to GxsTunnel"));
                     mPendingGxsInvites.erase(it->first);
                     mPendingWatchRequests.erase(it->first);
                     mInvitesToGxs.erase(it->first);
@@ -1628,6 +1669,8 @@ void p3RetroChess::handleGxsTick()
             mActiveTunnels[it->first] = it->second;
             mPendingTunnels.erase(pit);
             pendingChanged = true;
+            CHESS_TLOG("READY peer=" << it->first << " tunnel=" << it->second << " is CAN_TALK after "
+                       << (nowTs - startedAt[it->first]) << "s");
 
             // Flush any queued invite for this peer
             auto inviteIt = mPendingGxsInvites.find(it->first);
@@ -1660,14 +1703,16 @@ void p3RetroChess::handleGxsTick()
                 mInvitesToGxs.erase(it->first);
                 mPendingTunnels.erase(pit);
                 pendingChanged = true;
+                // Release our use of it too, otherwise it lingers in GxsTunnel.
+                expired.push_back(it->second);
+                CHESS_TLOG("PENDING peer=" << it->first << " tunnel=" << it->second << " was remotely closed");
             }
         }
     }
 
     for (auto it = flushes.begin(); it != flushes.end(); ++it) {
         std::cout << "Chess: Tunnel ready, flushing queued invite" << std::endl;
-        mGxsTunnels->sendData(it->first, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                              (const uint8_t*)it->second.c_str(), it->second.size());
+        sendGxsData(it->first, (const uint8_t*)it->second.c_str(), it->second.size());
         // Cancellation can race with an invite already copied into flushes.
         // Send cancellation after that invite so it cannot remain pending remotely.
         if (QJsonDocument::fromJson(QByteArray::fromStdString(it->second)).object().value("type").toString() == "chess_invite") {
@@ -1680,13 +1725,12 @@ void p3RetroChess::handleGxsTick()
             }
             if (cancelled) {
                 const std::string cancel = "{\"type\":\"chess_cancel\"}";
-                mGxsTunnels->sendData(it->first, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                        reinterpret_cast<const uint8_t*>(cancel.data()), cancel.size());
+                sendGxsData(it->first, reinterpret_cast<const uint8_t*>(cancel.data()), cancel.size());
             }
         }
     }
     for (auto it = expired.begin(); it != expired.end(); ++it)
-        mGxsTunnels->closeExistingTunnel(*it, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
+        closeGxsTunnel(*it, "pending tunnel expired or remotely closed");
     for (auto it = ready.begin(); it != ready.end(); ++it)
         mNotify->notifyGxsTunnelReady(*it);
     if (!ready.empty() || pendingChanged)
@@ -1737,8 +1781,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
                 std::cerr << "Chess: ignoring distant invitation while busy" << std::endl;
                 QJsonObject busyJson{{"type", "chess_busy"}};
                 const QByteArray busy = QJsonDocument(busyJson).toJson(QJsonDocument::Compact);
-                mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                                      reinterpret_cast<const uint8_t*>(busy.constData()), busy.size());
+                sendGxsData(tunnel_id, reinterpret_cast<const uint8_t*>(busy.constData()), busy.size());
                 return;
             }
         }
@@ -1854,8 +1897,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             specMap.insert("action", action);
             const QByteArray specMsg = QJsonDocument::fromVariant(specMap).toJson(QJsonDocument::Compact);
             for (const auto &sTunnel : spectatorTunnels) {
-                mGxsTunnels->sendData(sTunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                                      reinterpret_cast<const uint8_t*>(specMsg.constData()), specMsg.size());
+                sendGxsData(sTunnel, reinterpret_cast<const uint8_t*>(specMsg.constData()), specMsg.size());
             }
         }
 
@@ -1950,8 +1992,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
                       << ", movesCount: " << activeSession.moveHistory.size() << ")" << std::endl;
 
             const QByteArray replyBytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
-            mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                                  reinterpret_cast<const uint8_t*>(replyBytes.constData()), replyBytes.size());
+            sendGxsData(tunnel_id, reinterpret_cast<const uint8_t*>(replyBytes.constData()), replyBytes.size());
         } else if (mGxsTunnels) {
             QVariantMap failReply;
             failReply["type"] = "chess_watch_end";
@@ -1959,8 +2000,7 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             failReply["game_id"] = reqGameId;
             failReply["reason"] = "Game not active";
             const QByteArray failBytes = QJsonDocument::fromVariant(failReply).toJson(QJsonDocument::Compact);
-            mGxsTunnels->sendData(tunnel_id, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                                  reinterpret_cast<const uint8_t*>(failBytes.constData()), failBytes.size());
+            sendGxsData(tunnel_id, reinterpret_cast<const uint8_t*>(failBytes.constData()), failBytes.size());
         }
 
     } else if (type == "chess_watch_state") {
@@ -2036,8 +2076,7 @@ void p3RetroChess::player_leave_gxs(const RsGxsId &gxs_id) {
     if (tunnelId.isNull() || !mGxsTunnels) return;
 
     const std::string leave = "{\"type\":\"player_leave\"}";
-    if (mGxsTunnels->sendData(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                              (const uint8_t*)leave.c_str(), leave.size())) {
+    if (sendGxsData(tunnelId, (const uint8_t*)leave.c_str(), leave.size())) {
         RsStackMutex stack(mRetroChessMtx);
         mPendingGxsCloses[gxs_id] = time(NULL) + 2;
     }
@@ -2050,8 +2089,7 @@ void p3RetroChess::player_leave_gxs(const RsGxsId &gxs_id) {
         endMsg["reason"] = "Player left";
         const QByteArray bytes = QJsonDocument::fromVariant(endMsg).toJson(QJsonDocument::Compact);
         for (const auto &tId : spectatorTunnels) {
-            mGxsTunnels->sendData(tId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                                  reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+            sendGxsData(tId, reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
         }
     }
 }
@@ -2073,7 +2111,7 @@ void p3RetroChess::closePendingGxsTunnels()
         }
     }
     for (const RsGxsTunnelId &tunnelId : tunnelsToClose)
-        mGxsTunnels->closeExistingTunnel(tunnelId, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
+        closeGxsTunnel(tunnelId, "delayed close after player_leave");
 }
 
 RsGxsId p3RetroChess::findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id)
@@ -2089,49 +2127,120 @@ RsGxsId p3RetroChess::findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id)
 
 void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t tunnel_status)
 {
+    CHESS_TLOG("STATUS tunnel=" << tunnel_id << " -> " << statusName(tunnel_status));
+
     // React to tunnel being closed or going down
-    if (tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED ||
-        tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN)
+    if (tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED &&
+        tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN)
+        return;
+
+    // Important: on the side that opened the tunnel, GxsTunnel turns a remote
+    // close into TUNNEL_DN and keeps re-digging turtle tunnels for it until
+    // the client service calls closeExistingTunnel(). Merely forgetting the
+    // tunnel here (as this function used to do) leaves it alive forever:
+    // turtle rebuilds it, it goes back to CAN_TALK and keep-alives flow.
+    // So every tunnel we stop using is either closed or kept under watch.
+    // The close itself happens from tick() (closeQueuedGxsTunnels), not from
+    // inside this GxsTunnel callback.
+    const bool remoteClose = tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED;
+    RsGxsId gxs_id;          // peer whose active tunnel went away
+    RsGxsId pendingPeer;     // peer whose pending tunnel was remotely closed
+    const char *action = "nothing to do";
+    bool handled = false;
     {
-        RsGxsId gxs_id;
-        {
-            RsStackMutex stack(mRetroChessMtx);
-            // Search active tunnels for the closed tunnel
-            for (auto it = mActiveTunnels.begin(); it != mActiveTunnels.end(); ++it) {
-                if (it->second == tunnel_id) {
-                    gxs_id = it->first;
-                    mActiveTunnels.erase(it);
-                    break;
-                }
-            }
-            // Also clean up mapping
-            mTunnelToGxsIdMap.erase(tunnel_id);
-            if (!gxs_id.isNull()) {
-                auto contact = mChessContacts.find(gxs_id);
-                if (contact != mChessContacts.end()) {
-                    contact->second.status = "offline";
-                    contact->second.seeking = false;
-                    contact->second.seekTimeControl = ChessTimeControl{};
-                    contact->second.deadline = 0;
-                    contact->second.nonce.clear();
-                    contact->second.nextProbe = time(nullptr) + 15;
-                }
-                mInvitesFromGxs.erase(gxs_id);
-                mJoinRequestsFromGxs.erase(gxs_id);
-                mInvitesToGxs.erase(gxs_id);
-                mPendingGxsInvites.erase(gxs_id);
-                mPendingGxsCloses.erase(gxs_id);
-                // Re-populated on the next invite; without this the map grew
-                // for the whole session.
-                mOwnGxsIdByPeer.erase(gxs_id);
+        RsStackMutex stack(mRetroChessMtx);
+        const time_t now = time(nullptr);
+        // Search active tunnels for the closed tunnel
+        for (auto it = mActiveTunnels.begin(); it != mActiveTunnels.end(); ++it) {
+            if (it->second == tunnel_id) {
+                gxs_id = it->first;
+                mActiveTunnels.erase(it);
+                break;
             }
         }
         if (!gxs_id.isNull()) {
-            std::cout << "Chess: Tunnel closed for GXS " << gxs_id << std::endl;
-            mNotify->notifyGxsTunnelClosed(gxs_id);
-            mNotify->notifyAvailablePeersChanged();
+            handled = true;
+            const bool leaving = mPendingGxsCloses.count(gxs_id) != 0;
+            if (remoteClose || leaving) {
+                mTunnelsToClose.insert(tunnel_id);
+                mTunnelToGxsIdMap.erase(tunnel_id);
+                action = remoteClose ? "active tunnel closed by peer -> closing our side"
+                                     : "active tunnel lost while leaving -> closing";
+            } else {
+                // Temporary loss: GxsTunnel/turtle is digging a new route.
+                // Watch it as pending so handleGxsTick() re-adopts it once it
+                // is CAN_TALK again, or closes it after its timeout, instead
+                // of leaving an unmanaged tunnel behind.
+                mPendingTunnels[gxs_id] = tunnel_id;
+                action = "active tunnel down -> watching as pending (re-adopt or time out)";
+            }
+        } else {
+            for (auto it = mPendingTunnels.begin(); it != mPendingTunnels.end(); ++it) {
+                if (it->second != tunnel_id) continue;
+                handled = true;
+                if (remoteClose) {
+                    pendingPeer = it->first;
+                    mPendingTunnels.erase(it);
+                    mPendingGxsInvites.erase(pendingPeer);
+                    mInvitesToGxs.erase(pendingPeer);
+                    mTunnelsToClose.insert(tunnel_id);
+                    mTunnelToGxsIdMap.erase(tunnel_id);
+                    action = "pending tunnel closed by peer -> closing our side";
+                } else {
+                    action = "pending tunnel still connecting";
+                }
+                break;
+            }
+            if (!handled) {
+                // Not (or no longer) tracked by us: an orphan we opened
+                // earlier, or an incoming probe tunnel. Release our service's
+                // use of it; GxsTunnel keeps it if another service uses it.
+                mTunnelsToClose.insert(tunnel_id);
+                mTunnelToGxsIdMap.erase(tunnel_id);
+                action = "untracked tunnel -> closing our side";
+            }
+        }
+        const RsGxsId peer = !gxs_id.isNull() ? gxs_id : pendingPeer;
+        if (!peer.isNull()) {
+            auto contact = mChessContacts.find(peer);
+            if (contact != mChessContacts.end()) {
+                contact->second.status = "offline";
+                contact->second.seeking = false;
+                contact->second.seekTimeControl = ChessTimeControl{};
+                contact->second.deadline = 0;
+                contact->second.nonce.clear();
+                contact->second.yieldUntil = 0;
+                if (remoteClose) {
+                    // The peer closed it on purpose (plugin disabled, contact
+                    // removed, identity changed...). Count it as a failure so
+                    // the normal backoff applies instead of redialing in 15s.
+                    contact->second.failures = std::min(contact->second.failures + 1, kPresenceMaxFailures);
+                    contact->second.nextProbe = now + chessPresenceRetryDelay(contact->second.failures);
+                } else {
+                    // Network hiccup: the tunnel is being re-dug already.
+                    contact->second.nextProbe = now + chessPresenceRetryDelay(0);
+                }
+            }
+        }
+        if (!gxs_id.isNull()) {
+            mInvitesFromGxs.erase(gxs_id);
+            mJoinRequestsFromGxs.erase(gxs_id);
+            mInvitesToGxs.erase(gxs_id);
+            mPendingGxsInvites.erase(gxs_id);
+            mPendingGxsCloses.erase(gxs_id);
+            // Re-populated on the next invite; without this the map grew
+            // for the whole session.
+            mOwnGxsIdByPeer.erase(gxs_id);
         }
     }
+    CHESS_TLOG("STATUS tunnel=" << tunnel_id << " peer="
+               << (!gxs_id.isNull() ? gxs_id : pendingPeer) << ": " << action);
+    if (!gxs_id.isNull()) {
+        std::cout << "Chess: Tunnel closed for GXS " << gxs_id << std::endl;
+        mNotify->notifyGxsTunnelClosed(gxs_id);
+    }
+    if (!gxs_id.isNull() || !pendingPeer.isNull())
+        mNotify->notifyAvailablePeersChanged();
 }
 
 void p3RetroChess::receiveData(const RsGxsTunnelId& id, unsigned char *data, uint32_t data_size)
@@ -2147,6 +2256,9 @@ void p3RetroChess::receiveData(const RsGxsTunnelId& id, unsigned char *data, uin
         allowed = game != mGameSessions.end()
                 && game->second.localIdentityId == QString::fromStdString(info.source_gxs_id.toStdString());
     }
+    CHESS_TLOG("RECV tunnel=" << id << " from=" << info.destination_gxs_id << " to=" << info.source_gxs_id
+               << " type=" << payloadType(data, data_size) << " bytes=" << data_size
+               << (allowed ? "" : " DROPPED (identity not enabled for chess / not our tunnel)"));
     if (!allowed) { free(data); return; }
 
     // Look up the GXS ID that was stored in acceptDataFromPeer() — don't pass empty one
@@ -2228,7 +2340,159 @@ void p3RetroChess::setLobbySeek(bool active, const ChessTimeControl &tc)
     const QByteArray bytes = QJsonDocument::fromVariant(message).toJson(QJsonDocument::Compact);
     // Lobby advertisements are top-level packets, not game_action payloads.
     for (const auto &tunnel : tunnels)
-        if (mGxsTunnels) mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID,
-                reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+        if (mGxsTunnels) sendGxsData(tunnel, reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
 }
 
+
+/*****************************************************************************
+ * Tunnel helpers: every request / send / close goes through these so that the
+ * whole tunnel lifecycle shows up in the debug log.
+ *****************************************************************************/
+
+bool p3RetroChess::openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason)
+{
+    if (!mGxsTunnels) return false;
+    uint32_t error_code = 0;
+    const bool ok = mGxsTunnels->requestSecuredTunnel(to, from, tunnel,
+            RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, error_code);
+    CHESS_TLOG("REQUEST tunnel=" << tunnel << " to=" << to << " from=" << from
+               << " ok=" << ok << " error=" << error_code << " reason: " << reason);
+    return ok;
+}
+
+bool p3RetroChess::sendGxsData(const RsGxsTunnelId &tunnel, const uint8_t *data, uint32_t size)
+{
+    if (!mGxsTunnels) return false;
+    const bool ok = mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, data, size);
+    if (RetroChessTunnelDebug::enabled()) {
+        RsGxsTunnelService::GxsTunnelInfo info;
+        if (mGxsTunnels->getTunnelInfo(tunnel, info)) {
+            CHESS_TLOG("SEND tunnel=" << tunnel << " to=" << info.destination_gxs_id
+                       << " type=" << payloadType(data, size) << " bytes=" << size << " ok=" << ok
+                       << " status=" << statusName(info.tunnel_status)
+                       << " unacked_packets=" << info.pending_data_packets);
+        } else {
+            CHESS_TLOG("SEND tunnel=" << tunnel << " type=" << payloadType(data, size) << " bytes=" << size
+                       << " ok=" << ok << " (tunnel unknown to GxsTunnel)");
+        }
+    }
+    return ok;
+}
+
+bool p3RetroChess::closeGxsTunnel(const RsGxsTunnelId &tunnel, const char *reason)
+{
+    if (!mGxsTunnels || tunnel.isNull()) return false;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        mOpenedTunnels.erase(tunnel);
+        mTunnelsToClose.erase(tunnel);
+    }
+    const bool ok = mGxsTunnels->closeExistingTunnel(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
+    CHESS_TLOG("CLOSE tunnel=" << tunnel << " ok=" << ok << " reason: " << reason);
+    return ok;
+}
+
+void p3RetroChess::closeQueuedGxsTunnels()
+{
+    std::vector<RsGxsTunnelId> close;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        if (mTunnelsToClose.empty()) return;
+        // Tunnel ids are deterministic per identity pair: if a new request for
+        // the same pair started meanwhile, it is in use again - keep it.
+        std::set<RsGxsTunnelId> inUse;
+        for (const auto &entry : mActiveTunnels) inUse.insert(entry.second);
+        for (const auto &entry : mPendingTunnels) inUse.insert(entry.second);
+        for (const auto &tunnel : mTunnelsToClose)
+            if (!inUse.count(tunnel)) close.push_back(tunnel);
+        mTunnelsToClose.clear();
+    }
+    for (const auto &tunnel : close) closeGxsTunnel(tunnel, "went down / remotely closed (queued)");
+}
+
+void p3RetroChess::sweepOrphanGxsTunnels()
+{
+    if (!mGxsTunnels) return;
+    const time_t now = time(nullptr);
+    std::vector<RsGxsTunnelId> orphans;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        if (now - mLastOrphanSweep < kTunnelMaintenanceIntervalSec) return;
+        mLastOrphanSweep = now;
+        std::set<RsGxsTunnelId> inUse;
+        for (const auto &entry : mActiveTunnels) inUse.insert(entry.second);
+        for (const auto &entry : mPendingTunnels) inUse.insert(entry.second);
+        for (const auto &tunnel : mOpenedTunnels)
+            if (!inUse.count(tunnel)) orphans.push_back(tunnel);
+    }
+    for (const auto &tunnel : orphans) {
+        std::cerr << "Chess: closing orphan GXS tunnel " << tunnel << std::endl;
+        closeGxsTunnel(tunnel, "orphan sweep: opened by RetroChess but no longer tracked");
+    }
+}
+
+void p3RetroChess::dumpTunnelState()
+{
+    if (!RetroChessTunnelDebug::enabled() || !mGxsTunnels) return;
+    RetroChessTunnelDebug::setLogDirectoryIfUnset(RsAccounts::AccountDirectory());
+    const time_t now = time(nullptr);
+    std::map<RsGxsId, RsGxsTunnelId> active, pending;
+    std::map<RsGxsId, ChessContact> contacts;
+    std::set<RsGxsTunnelId> opened;
+    size_t queuedCloses = 0;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        if (now - mLastTunnelDump < kTunnelMaintenanceIntervalSec) return;
+        mLastTunnelDump = now;
+        active = mActiveTunnels;
+        pending = mPendingTunnels;
+        contacts = mChessContacts;
+        opened = mOpenedTunnels;
+        queuedCloses = mTunnelsToClose.size();
+    }
+    std::map<RsGxsTunnelId, std::string> role;
+    for (const auto &entry : active) role[entry.second] = "active:" + entry.first.toStdString();
+    for (const auto &entry : pending) role[entry.second] = "pending:" + entry.first.toStdString();
+
+    CHESS_TLOG("STATE active=" << active.size() << " pending=" << pending.size()
+               << " opened_by_us=" << opened.size() << " queued_closes=" << queuedCloses
+               << " contacts=" << contacts.size());
+    for (const auto &entry : contacts) {
+        const ChessContact &c = entry.second;
+        CHESS_TLOG("  contact " << entry.first << " status=" << c.status.toStdString()
+                   << " failures=" << c.failures
+                   << " last_seen=" << (c.lastSeen ? now - c.lastSeen : -1) << "s_ago"
+                   << " next_probe_in=" << (c.nextProbe > now ? c.nextProbe - now : 0) << "s"
+                   << " deadline_in=" << (c.deadline > now ? c.deadline - now : 0) << "s"
+                   << (c.yieldUntil > now ? " yielding" : "")
+                   << (c.failures >= kPresenceMaxFailures ? " DORMANT" : ""));
+    }
+    std::vector<RsGxsTunnelService::GxsTunnelInfo> infos;
+    mGxsTunnels->getTunnelsInfo(infos);
+    for (const auto &info : infos) {
+        auto r = role.find(info.tunnel_id);
+        std::string what;
+        if (r != role.end()) what = r->second;
+        else if (opened.count(info.tunnel_id)) what = "ORPHAN (opened by RetroChess, untracked)";
+        else what = "not tracked by RetroChess (distant chat or incoming probe)";
+        CHESS_TLOG("  gxs-tunnel " << info.tunnel_id << " " << info.source_gxs_id << " -> "
+                   << info.destination_gxs_id << " status=" << statusName(info.tunnel_status)
+                   << " sent=" << info.total_size_sent << " recv=" << info.total_size_received
+                   << " unacked_packets=" << info.pending_data_packets << " [" << what << "]");
+    }
+}
+
+void p3RetroChess::setTunnelDebugEnabled(bool enabled)
+{
+    RetroChessTunnelDebug::setLogDirectory(RsAccounts::AccountDirectory());
+    RetroChessTunnelDebug::setEnabled(enabled);
+    if (enabled) {
+        RsStackMutex stack(mRetroChessMtx);
+        mLastTunnelDump = 0; // dump the current state on the next tick
+    }
+}
+
+bool p3RetroChess::tunnelDebugEnabled()
+{
+    return RetroChessTunnelDebug::enabled();
+}

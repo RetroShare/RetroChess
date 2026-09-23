@@ -29,6 +29,7 @@
 #include "interface/rsRetroChess.h"
 #include "gui/NEMainpage.h"
 #include "gui/RetroChessNotify.h"
+#include "gui/RetroChessSettings.h"
 #include "gui/RetroChessChatWidgetHolder.h"
 #include "gui/toaster/RetroChessToasterNotify.h"
 #include <retroshare-gui/RsAutoUpdatePage.h>
@@ -167,6 +168,9 @@ p3Service *RetroChessPlugin::p3_service() const
     std::call_once(mRetroChessInitOnce, [this]() {
         // Create the service
         rsRetroChess = mRetroChess = new p3RetroChess(mPlugInHandler, mRetroChessNotify);
+        // Restore the "Log tunnel activity" option (RETROCHESS_DEBUG=1 also enables it).
+        if (RetroChessSettings::tunnelDebugLogging())
+            mRetroChess->setTunnelDebugEnabled(true);
 
         // Register it for GXS Tunnels immediately if the interface is available
         if (mGxsTunnels) {
