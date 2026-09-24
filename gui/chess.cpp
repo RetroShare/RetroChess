@@ -57,6 +57,12 @@
 
 #include "gui/common/AvatarDefs.h"
 #include "../services/p3RetroChess.h"
+#include "services/RetroChessTunnelDebug.h"
+
+// Debug log for this window: GAME for players, SPECTATE for watch windows.
+#define CHESS_WINLOG(expr) \
+	CHESS_DLOG(m_isSpectator ? RetroChessTunnelDebug::Spectate : RetroChessTunnelDebug::Game, \
+	           (m_isSpectator ? "[watching host=" : "[vs ") << mGxsId << "] " << expr)
 
 namespace
 {
@@ -229,6 +235,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &gxsId, int player, QWidget *pa
     initAccessories();
     playerTurnNotice();
     initChessBoard();
+    CHESS_WINLOG("START game=" << mGameId.toStdString() << " own=" << mOwnGxsId
+                 << " we play " << (m_localplayer_turn == 1 ? "white" : "black"));
 }
 
 RetroChessWindow::RetroChessWindow(const RsGxsId &hostId, const QString &gameKey,
@@ -313,6 +321,8 @@ RetroChessWindow::RetroChessWindow(const RsGxsId &hostId, const QString &gameKey
     initAccessories();
     playerTurnNotice();
     initChessBoard();
+    CHESS_WINLOG("WATCH window opened game=" << mGameId.toStdString()
+                 << " white=" << whiteId.toStdString() << " black=" << blackId.toStdString());
 }
 
 RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *parent) :
@@ -415,6 +425,9 @@ RetroChessWindow::RetroChessWindow(std::string peerid, int player, QWidget *pare
 
 RetroChessWindow::~RetroChessWindow()
 {
+	if (mIsGxs)
+		CHESS_WINLOG((m_isSpectator ? "WATCH window closed" : "CLOSE game window")
+		             << " game=" << mGameId.toStdString() << " moves=" << m_move_history.size());
 	delete[] texp;
 	delete m_ui;
 }
@@ -3178,6 +3191,9 @@ QString RetroChessWindow::positionHash() const
 void RetroChessWindow::appendDebugEvent(const QString &event)
 {
 	if (m_debugWidget) m_debugWidget->appendEvent(event);
+	// Piece selections are only useful in the per-game Debug window.
+	if (mIsGxs && !event.startsWith("SELECT "))
+		CHESS_WINLOG(event.toStdString());
 }
 
 void RetroChessWindow::sendMoveAction(int fromTile, int toTile, char promotion)
@@ -3343,6 +3359,9 @@ void RetroChessWindow::stopForDesynchronization(const QString &reason)
 
 bool RetroChessWindow::sendGameAction(const QString &action)
 {
+	// Moves are already logged as "TX move" by sendMoveAction().
+	if (mIsGxs && !action.startsWith("move:"))
+		CHESS_WINLOG("TX action " << action.toStdString());
 	if (mIsGxs) {
 		// Never overtake actions that are still waiting to be resent: the peer
 		// checks move sequence numbers and would report a desynchronization.
@@ -3404,6 +3423,10 @@ void RetroChessWindow::showGameStatus(const QString &status)
 
 void RetroChessWindow::applyGameAction(const QString &action, bool remote)
 {
+	// Moves are logged as "RX move" / "SYNC OK" / "DESYNC" further down.
+	if (mIsGxs && !action.startsWith("move:"))
+		CHESS_WINLOG((remote ? "RX action " : "LOCAL action ") << action.toStdString()
+		             << (m_flag_finished ? " (game already finished)" : ""));
 	if (action.startsWith("move:")) {
 		if (!remote || m_flag_finished || (!m_isSpectator && turn == m_localplayer_turn)) return;
 		const QStringList parts = action.split(':');
@@ -3809,6 +3832,9 @@ void RetroChessWindow::completeGameHistory(const QString &result, const QString 
 	m_gameArchived = true;
 	m_gameResult = result;
 	m_gameEndReason = reason;
+	if (mIsGxs)
+		CHESS_WINLOG("END game=" << mGameId.toStdString() << " result=" << result.toStdString()
+		             << " reason=" << reason.toStdString() << " moves=" << m_move_history.size());
 	updateEndGameBadges(m_boardHistory.size() - 1);
 	emit gameReadyForHistory();
 }

@@ -155,6 +155,7 @@ class RsRetroChess
 
 	// Tunnel debug tracing: logs every tunnel request, status change, close
 	// and packet to stderr and <account dir>/retrochess_tunnels.log.
+	// Chess activity log (retrochess_activity.log): see services/RetroChessTunnelDebug.h.
 	virtual void setTunnelDebugEnabled(bool enabled) { (void)enabled; }
 	virtual bool tunnelDebugEnabled() { return false; }
 	// Core statistics for tunnels currently tracked by RetroChess. Shared tunnels

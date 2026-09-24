@@ -46,6 +46,11 @@
 #include "gui/common/AvatarDefs.h"
 #include "util/HandleRichText.h"
 #include <retroshare/rspeers.h>
+#include "services/RetroChessTunnelDebug.h"
+
+// Short description of a receipt for the debug log.
+#define LB_RECEIPT(r) "game=" << (r).gameId.toStdString() << " result=" << (r).result.toStdString() \
+	<< " signer=" << (r).signer.toStdString()
 
 namespace {
 constexpr double kScale = 173.7178;
@@ -65,7 +70,13 @@ constexpr double kTau = 0.5;
 // every 30 minutes for old versions (they never switch).
 constexpr qint64 kSyncRequestIntervalMs = 5 * 60 * 1000;
 constexpr qint64 kIncrementalSyncMinIntervalMs = 60 * 1000;
+// Full history, current versions: 5 minutes. They send epoch+since, get a
+// cursor from the first full answer and then only ask incrementally, so a
+// repeat is only needed after our restart (new epoch) or a lost answer.
 constexpr qint64 kFullSyncMinIntervalMs = 5 * 60 * 1000;
+// Full history, old versions: 30 minutes. They send no "since" and can never
+// sync incrementally, so every request would resend the whole history -
+// the 30 minute limit keeps that traffic down.
 constexpr qint64 kLegacyFullSyncMinIntervalMs = 30 * 60 * 1000;
 constexpr int kSyncBatchSize = 10;
 constexpr int kMinWitnesses = 2;
@@ -212,6 +223,8 @@ void RetroChessLeaderboard::submitResult(const QString &gameId, const RsGxsId &w
 	              (rsIdentity->isOwnId(white) ? white : black)).toStdString()),
 	          QDateTime::currentSecsSinceEpoch()};
 	if (r.signer.isEmpty()) return;
+	CHESS_LBLOG("OWN result " << LB_RECEIPT(r) << " white=" << white << " black=" << black
+	            << " -> storing and sending to peers");
 	// Our own receipt: the signer is a local identity, so it is first-hand.
 	consumeReceipt(r, RsGxsId(r.signer.toStdString()));
 	broadcastReceipt(r);
@@ -233,7 +246,11 @@ bool RetroChessLeaderboard::consumeReceipt(const Receipt &r, const RsGxsId &send
 	if (r.gameId.isEmpty() || r.gameId.size() > 128 || r.white == r.black
         || RsGxsId(r.white.toStdString()).isNull() || RsGxsId(r.black.toStdString()).isNull()
         || r.finishedAt <= 0 || !validResult(r.result)
-	    || (r.signer != r.white && r.signer != r.black)) return false;
+	    || (r.signer != r.white && r.signer != r.black)) {
+		CHESS_LBLOG("REJECT invalid receipt from=" << sender << " " << LB_RECEIPT(r)
+		            << " white=" << r.white.toStdString() << " black=" << r.black.toStdString());
+		return false;
+	}
 	const QString key = canonicalKey(r) + '|' + r.signer;
 	// Duplicate posts cannot count twice. Pick a stable timestamp regardless of
     // arrival order; retain conflicting claims so every node excludes them.
@@ -246,24 +263,43 @@ bool RetroChessLeaderboard::consumeReceipt(const Receipt &r, const RsGxsId &send
 	if (!firstHand) {
 		if (sender.isNull()) return false;
 		if (!mPending.contains(key)) {
-			if (mPending.size() >= kMaxPending) return false;
+			if (mPending.size() >= kMaxPending) {
+				CHESS_LBLOG("REJECT relayed receipt from=" << sender << " " << LB_RECEIPT(r)
+				            << ": pending list full (" << kMaxPending << ")");
+				return false;
+			}
 			mPending.insert(key, r);
 		}
 		QSet<QString> &witnesses = mWitnesses[key];
+		const int before = witnesses.size();
 		if (witnesses.size() < kMaxWitnesses)
 			witnesses.insert(QString::fromStdString(sender.toStdString()));
-		if (witnesses.size() < kMinWitnesses) return false;
+		if (witnesses.size() < kMinWitnesses) {
+			if (witnesses.size() != before)
+				CHESS_LBLOG("WAIT relayed receipt from=" << sender << " " << LB_RECEIPT(r)
+				            << ": witnesses " << witnesses.size() << "/" << kMinWitnesses);
+			return false;
+		}
 		// Corroborated by enough distinct peers: accept the first version seen.
 		const Receipt accepted = mPending.value(key);
 		mPending.remove(key);
 		mWitnesses.remove(key);
-		if (mReceipts.size() >= kMaxReceipts && !mReceipts.contains(key)) return false;
+		if (mReceipts.size() >= kMaxReceipts && !mReceipts.contains(key)) {
+			CHESS_LBLOG("REJECT receipt " << LB_RECEIPT(accepted) << ": leaderboard full (" << kMaxReceipts << ")");
+			return false;
+		}
 		storeReceipt(key, accepted, sender);
+		CHESS_LBLOG("ACCEPT relayed receipt " << LB_RECEIPT(accepted) << " confirmed by "
+		            << kMinWitnesses << " witnesses (last=" << sender << ") seq=" << mNextSeq);
 	} else {
 		mPending.remove(key);
 		mWitnesses.remove(key);
-		if (mReceipts.size() >= kMaxReceipts && !mReceipts.contains(key)) return false;
+		if (mReceipts.size() >= kMaxReceipts && !mReceipts.contains(key)) {
+			CHESS_LBLOG("REJECT receipt " << LB_RECEIPT(r) << ": leaderboard full (" << kMaxReceipts << ")");
+			return false;
+		}
 		storeReceipt(key, r, sender);
+		CHESS_LBLOG("ACCEPT first-hand receipt from=" << sender << " " << LB_RECEIPT(r) << " seq=" << mNextSeq);
 	}
 	save(); recompute(); emit changed();
 	return true;
@@ -487,8 +523,15 @@ void RetroChessLeaderboard::load()
 
 	if (!filePath.isEmpty() && QFile::exists(filePath)) {
 		QFile file(filePath);
-		if (file.open(QIODevice::ReadOnly)) {
-			const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+		if (!file.open(QIODevice::ReadOnly))
+			CHESS_STORELOG("LOAD leaderboard file " << filePath.toStdString() << " cannot be opened: "
+			               << file.errorString().toStdString());
+		if (file.isOpen()) {
+			QJsonParseError parseError;
+			const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+			if (!doc.isObject())
+				CHESS_STORELOG("LOAD leaderboard file " << filePath.toStdString() << " is not valid JSON: "
+				               << parseError.errorString().toStdString());
 			if (doc.isObject()) {
 				const QJsonObject root = doc.object();
 				const QJsonArray array = root.value("receipts").toArray();
@@ -509,8 +552,14 @@ void RetroChessLeaderboard::load()
 					}
 				}
 				loadedFromFile = true;
+				CHESS_STORELOG("LOAD leaderboard file " << filePath.toStdString() << ": " << mReceipts.size()
+				               << " of " << array.size() << " results valid, " << mGossipedReceipts.size()
+				               << " already sent");
 			}
 		}
+	} else {
+		CHESS_STORELOG("LOAD no leaderboard file " << (filePath.isEmpty() ? std::string("(no account directory)")
+		                                                                   : filePath.toStdString()));
 	}
 
 	// If no file existed or failed to load, check and migrate legacy data from Settings
@@ -530,6 +579,8 @@ void RetroChessLeaderboard::load()
 				    && validResult(r.result) && r.finishedAt > 0 && (r.signer == r.white || r.signer == r.black))
 					storeReceipt(canonicalKey(r) + '|' + r.signer, r);
 			}
+			CHESS_STORELOG("LOAD old leaderboard data from settings: " << mReceipts.size() << " results"
+			               << (mReceipts.isEmpty() ? "" : ", moving them to the leaderboard file"));
 			// Migrate legacy data immediately into the dedicated file
 			if (!mReceipts.isEmpty()) {
 				save();
@@ -554,6 +605,7 @@ void RetroChessLeaderboard::save() const
 		Settings->setValueToGroup("RetroChess", "LeaderboardGossipedReceipts",
 		        QStringList(mGossipedReceipts.values()));
 		Settings->sync();
+		CHESS_STORELOG("SAVE " << mReceipts.size() << " results to settings (no account directory)");
 		return;
 	}
 
@@ -583,8 +635,16 @@ void RetroChessLeaderboard::save() const
 	if (saveFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
 		saveFile.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
 		if (!saveFile.commit()) {
+			CHESS_STORELOG("SAVE leaderboard file " << filePath.toStdString() << " FAILED: "
+			               << saveFile.errorString().toStdString());
 			saveFile.cancelWriting();
+		} else {
+			CHESS_STORELOG("SAVE leaderboard file: " << mReceipts.size() << " results, "
+			               << mGossipedReceipts.size() << " already sent");
 		}
+	} else {
+		CHESS_STORELOG("SAVE leaderboard file " << filePath.toStdString() << " cannot be opened: "
+		               << saveFile.errorString().toStdString());
 	}
 }
 
@@ -606,14 +666,18 @@ void RetroChessLeaderboard::broadcastReceipt(const Receipt &r, const RsGxsId &ex
 	};
 	const QByteArray data = QJsonDocument(obj).toJson(QJsonDocument::Compact);
 	if (excludePeer.isNull()) {
+		CHESS_LBLOG("SEND receipt " << LB_RECEIPT(r) << " to confirmed peers");
 		rsRetroChess->broadcastLeaderboardDataGxs(data);
 	} else {
 		const auto active = rsRetroChess->activeGxsTunnels();
+		int relayed = 0;
 		for (const RsGxsId &peer : active) {
 			if (peer != excludePeer) {
-				rsRetroChess->sendLeaderboardDataGxs(peer, data);
+				if (rsRetroChess->sendLeaderboardDataGxs(peer, data)) ++relayed;
 			}
 		}
+		CHESS_LBLOG("RELAY receipt " << LB_RECEIPT(r) << " learned from=" << excludePeer
+		            << " to " << relayed << " peer(s)");
 	}
 }
 
@@ -630,11 +694,25 @@ void RetroChessLeaderboard::sendSyncToPeer(const RsGxsId &peerId, const QJsonObj
 	const bool incremental = hasCursor && request.value("epoch").toString() == mSyncEpoch
 	        && since <= mNextSeq;
 	const qint64 now = mSyncClock.elapsed();
+	const char *kind = incremental ? "incremental" : (!hasCursor ? "full (old version, no cursor)"
+	        : (request.value("epoch").toString().isEmpty() ? "full (no cursor yet)"
+	        : (request.value("epoch").toString() != mSyncEpoch ? "full (cursor from before our restart)"
+	        : "full (cursor ahead of our sequence)")));
 	if (mLastSyncResponse.contains(peerId)
-	        && now - mLastSyncResponse.value(peerId) < kIncrementalSyncMinIntervalMs) return;
+	        && now - mLastSyncResponse.value(peerId) < kIncrementalSyncMinIntervalMs) {
+		CHESS_LBLOG("SYNC answer to=" << peerId << " " << kind << " skipped: answered "
+		            << (now - mLastSyncResponse.value(peerId)) / 1000 << "s ago (limit "
+		            << kIncrementalSyncMinIntervalMs / 1000 << "s)");
+		return;
+	}
 	const qint64 fullInterval = hasCursor ? kFullSyncMinIntervalMs : kLegacyFullSyncMinIntervalMs;
 	if (!incremental && mLastFullSyncResponse.contains(peerId)
-	        && now - mLastFullSyncResponse.value(peerId) < fullInterval) return;
+	        && now - mLastFullSyncResponse.value(peerId) < fullInterval) {
+		CHESS_LBLOG("SYNC answer to=" << peerId << " " << kind << " skipped: full history sent "
+		            << (now - mLastFullSyncResponse.value(peerId)) / 1000 << "s ago (limit "
+		            << fullInterval / 1000 << "s)");
+		return;
+	}
 	mLastSyncResponse.insert(peerId, now);
 	if (!incremental) mLastFullSyncResponse.insert(peerId, now);
 
@@ -643,7 +721,14 @@ void RetroChessLeaderboard::sendSyncToPeer(const RsGxsId &peerId, const QJsonObj
 	for (const Receipt &r : mReceipts)
 		if ((!incremental || r.seq > since) && r.learnedFrom != peer) toSend.append(r);
 	// Nothing new: the peer is already up to date, send nothing at all.
-	if (toSend.isEmpty()) return;
+	if (toSend.isEmpty()) {
+		CHESS_LBLOG("SYNC answer to=" << peerId << " " << kind << " since=" << since
+		            << ": nothing new, peer is up to date");
+		return;
+	}
+	CHESS_LBLOG("SYNC answer to=" << peerId << " " << kind << " since=" << since << ": sending "
+	            << toSend.size() << " of " << mReceipts.size() << " results in "
+	            << (toSend.size() + kSyncBatchSize - 1) / kSyncBatchSize << " batch(es), our seq=" << mNextSeq);
 	std::sort(toSend.begin(), toSend.end(),
 	          [](const Receipt &a, const Receipt &b) { return a.seq < b.seq; });
 
@@ -701,7 +786,10 @@ void RetroChessLeaderboard::sendSyncRequest(const RsGxsId &peerId)
 	const SyncCursor cursor = mSyncCursors.value(peerId);
 	req["epoch"] = cursor.epoch;
 	req["since"] = static_cast<double>(cursor.seq);
-	if (rsRetroChess->sendLeaderboardDataGxs(peerId, QJsonDocument(req).toJson(QJsonDocument::Compact)))
+	const bool sent = rsRetroChess->sendLeaderboardDataGxs(peerId, QJsonDocument(req).toJson(QJsonDocument::Compact));
+	CHESS_LBLOG("SYNC request to=" << peerId << (cursor.epoch.isEmpty() ? " full history (no cursor yet)"
+	            : " incremental") << " since=" << cursor.seq << " ok=" << sent);
+	if (sent)
 		mLastSyncRequest.insert(peerId, now);
 }
 
@@ -716,6 +804,9 @@ void RetroChessLeaderboard::handleTunnelData(const RsGxsId &sender, const QByteA
 	const QJsonObject obj = QJsonDocument::fromJson(data).object();
 	const QString type = obj.value("type").toString();
 	if (type == "leaderboard_sync_req") {
+		CHESS_LBLOG("SYNC request from=" << sender
+		            << (obj.contains("since") ? " since=" + std::to_string(static_cast<quint64>(obj.value("since").toDouble()))
+		                                      : std::string(" (old version, no cursor)")));
 		sendSyncToPeer(sender, obj);
 	} else if (type == "leaderboard_receipt") {
 		Receipt r{
@@ -728,6 +819,8 @@ void RetroChessLeaderboard::handleTunnelData(const RsGxsId &sender, const QByteA
 		};
 		const QString key = canonicalKey(r) + '|' + r.signer;
 		const bool isNew = !mReceipts.contains(key) && !mPending.contains(key);
+		CHESS_LBLOG("RECV receipt from=" << sender << " " << LB_RECEIPT(r)
+		            << (isNew ? "" : " (already known)"));
 		consumeReceipt(r, sender);
 		// Relay newly seen receipts (also unconfirmed ones, so that peers
 		// further away can still collect enough witnesses).
@@ -743,6 +836,7 @@ void RetroChessLeaderboard::handleTunnelData(const RsGxsId &sender, const QByteA
 			cursor.seq = static_cast<quint64>(obj.value("seq").toDouble());
 		}
 		const QJsonArray array = obj.value("receipts").toArray();
+		int stored = 0, waiting = 0, known = 0;
 		for (const QJsonValue &val : array) {
 			const QJsonObject o = val.toObject();
 			Receipt r{
@@ -755,12 +849,19 @@ void RetroChessLeaderboard::handleTunnelData(const RsGxsId &sender, const QByteA
 			};
 			const QString key = canonicalKey(r) + '|' + r.signer;
 			const bool isNew = !mReceipts.contains(key) && !mPending.contains(key);
-			consumeReceipt(r, sender);
+			if (consumeReceipt(r, sender)) ++stored;
+			else if (mPending.contains(key)) ++waiting;
+			else ++known;
 			if (isNew && (mReceipts.contains(key) || mPending.contains(key))
 			        && !mGossipedReceipts.contains(key)) {
 				broadcastReceipt(r, sender);
 			}
 		}
+		CHESS_LBLOG("SYNC batch from=" << sender << ": " << array.size() << " results, "
+		            << stored << " stored, " << waiting << " waiting for witnesses, "
+		            << known << " already known or invalid"
+		            << (obj.value("final").toBool() ? ", last batch, cursor seq="
+		                + std::to_string(static_cast<quint64>(obj.value("seq").toDouble())) : std::string()));
 	}
 }
 
@@ -778,6 +879,8 @@ void RetroChessLeaderboard::synchronizeTunnels()
 			it = mLastSyncResponse.erase(it);
 		else ++it;
 	}
+	// Keep entries for the longest (old version, 30 min) limit; the 5 min limit
+	// for current versions is checked in sendSyncToPeer().
 	for (auto it = mLastFullSyncResponse.begin(); it != mLastFullSyncResponse.end();) {
 		if (mSyncClock.elapsed() - it.value() >= kLegacyFullSyncMinIntervalMs)
 			it = mLastFullSyncResponse.erase(it);

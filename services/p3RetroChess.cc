@@ -1201,6 +1201,7 @@ bool p3RetroChess::cancelInviteToGxs(const RsGxsId &gxsId)
                 && QJsonDocument::fromJson(QByteArray::fromStdString(pending->second)).object().value("type").toString() == "chess_invite") {
             mPendingGxsInvites.erase(pending);
             mInvitesToGxs.erase(gxsId);
+            CHESS_INVLOG("CANCEL invite to=" << gxsId << " (was still queued, nothing sent)");
         } else {
             auto active = mActiveTunnels.find(gxsId);
             if (active == mActiveTunnels.end() || !mGxsTunnels) return false;
@@ -1209,8 +1210,11 @@ bool p3RetroChess::cancelInviteToGxs(const RsGxsId &gxsId)
     }
     if (!tunnelId.isNull()) {
         const std::string message = "{\"type\":\"chess_cancel\"}";
-        if (!sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(message.data()), message.size()))
+        if (!sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(message.data()), message.size())) {
+            CHESS_INVLOG("CANCEL invite to=" << gxsId << " failed to send chess_cancel");
             return false;
+        }
+        CHESS_INVLOG("CANCEL invite to=" << gxsId << " sent chess_cancel over tunnel=" << tunnelId);
         RsStackMutex stack(mRetroChessMtx);
         if (mInvitesToGxs.erase(gxsId) == 0) return false;
     }
@@ -1239,6 +1243,8 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
             mPendingGxsInvites[gxsId] = QJsonDocument(acceptObj).toJson(QJsonDocument::Compact).toStdString();
         }
     }
+    if (activeTunnel.isNull())
+        CHESS_INVLOG("ACCEPT invite from=" << gxsId << " queued (no open tunnel, requesting one)");
 
     if (!activeTunnel.isNull()) {
         // Tunnel already active (server side — invite arrived over it).
@@ -1253,7 +1259,9 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
         }
         const std::string accept = QJsonDocument(acceptObj).toJson(QJsonDocument::Compact).toStdString();
         std::cout << "Chess: Sending chess_accept over tunnel " << activeTunnel << std::endl;
-        sendGxsData(activeTunnel, (const uint8_t*)accept.c_str(), accept.size());
+        const bool sent = sendGxsData(activeTunnel, (const uint8_t*)accept.c_str(), accept.size());
+        CHESS_INVLOG("ACCEPT invite from=" << gxsId << " sent chess_accept over tunnel=" << activeTunnel
+                     << " ok=" << sent);
     } else {
         requestGxsTunnel(gxsId);
     }
@@ -1271,8 +1279,11 @@ bool p3RetroChess::rejectedInviteGxs(const RsGxsId &gxsId)
     }
     const std::string reply = "{\"type\":\"chess_reject\"}";
     // Keep the invitation available for retry if the transport cannot queue it.
-    if (!sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(reply.data()), reply.size()))
+    if (!sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(reply.data()), reply.size())) {
+        CHESS_INVLOG("REJECT invite from=" << gxsId << " failed to send chess_reject");
         return false;
+    }
+    CHESS_INVLOG("REJECT invite from=" << gxsId << " sent chess_reject");
     clearInviteGxs(gxsId);
     mNotify->notifyChessInviteClearedGxs(gxsId);
     return true;
@@ -1330,6 +1341,8 @@ bool p3RetroChess::sendGameActionGxs(const RsGxsId &gxsId, const std::string &ac
     bool sent = sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(message.constData()), message.size());
 
     if (!spectatorTunnels.empty() && mGxsTunnels) {
+        CHESS_SPECLOG("RELAY own action " << QString::fromStdString(action).section(':', 0, 1).toStdString()
+                      << " game=" << gxsId << " to " << spectatorTunnels.size() << " spectator(s)");
         QVariantMap specMap;
         specMap.insert("type", "chess_watch_action");
         specMap.insert("version", 1);
@@ -1362,6 +1375,8 @@ bool p3RetroChess::sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QStrin
     if (!tunnelId.isNull()) {
         std::cout << "Chess: Sending watch request to " << hostPlayerId << " over active tunnel " << tunnelId
                   << " for game " << gameKey.toStdString() << std::endl;
+        CHESS_SPECLOG("SEND watch request to host=" << hostPlayerId << " game=" << gameKey.toStdString()
+                      << " over open tunnel=" << tunnelId);
         QVariantMap req;
         req["type"] = "chess_watch_req";
         req["version"] = 1;
@@ -1372,6 +1387,8 @@ bool p3RetroChess::sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QStrin
 
     std::cout << "Chess: Queueing watch request and requesting tunnel for host " << hostPlayerId
               << " for game " << gameKey.toStdString() << std::endl;
+    CHESS_SPECLOG("QUEUED watch request to host=" << hostPlayerId << " game=" << gameKey.toStdString()
+                  << " (no tunnel, requesting one)");
     // Tunnel not active yet: request it
     requestGxsTunnel(hostPlayerId);
     return true;
@@ -1397,6 +1414,7 @@ void p3RetroChess::sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString 
         msg["game_id"] = gameKey;
         const QByteArray bytes = QJsonDocument::fromVariant(msg).toJson(QJsonDocument::Compact);
         sendGxsData(tunnelId, reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+        CHESS_SPECLOG("SEND watch leave to host=" << hostPlayerId << " game=" << gameKey.toStdString());
     }
 }
 
@@ -1532,6 +1550,7 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         RsStackMutex stack(mRetroChessMtx);
         if (mChessBusy) {
             std::cerr << "Chess: refusing distant invitation while busy" << std::endl;
+            CHESS_INVLOG("SEND invite to=" << toId << " refused: we are busy");
             return false;
         }
     }
@@ -1571,10 +1590,16 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
     if (!activeTunnel.isNull()) {
         if (sendGxsData(activeTunnel, reinterpret_cast<const uint8_t*>(invite.data()), invite.size()))
         {
+            CHESS_INVLOG("SEND invite to=" << toId << " from=" << ownId
+                         << " game=" << inviteJson.value("game_id").toString().toStdString()
+                         << " tc=" << (inviteJson.contains("tc") ? inviteJson.value("tc").toString().toStdString() : "unlimited")
+                         << " join_open_game=" << joinOpenGame << " over open tunnel=" << activeTunnel);
             RsStackMutex stack(mRetroChessMtx);
             mInvitesToGxs.insert(toId);
             return true;
         }
+        CHESS_INVLOG("SEND invite to=" << toId << " failed on stale tunnel=" << activeTunnel
+                     << ", opening a new tunnel");
 
         // A game may have closed before the tunnel-status callback reaches us.
         // Never lose a new invitation by continuing to trust that stale entry.
@@ -1594,6 +1619,9 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
         if (mPendingTunnels.find(toId) != mPendingTunnels.end()) {
             mPendingGxsInvites[toId] = invite;
             mInvitesToGxs.insert(toId);
+            CHESS_INVLOG("QUEUED invite to=" << toId << " game="
+                         << inviteJson.value("game_id").toString().toStdString()
+                         << " (tunnel already opening, sent when it is ready)");
             return true;
         }
     }
@@ -1609,10 +1637,14 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
             mInvitesToGxs.insert(toId);
             std::cout << "Chess: Tunnel requested (id=" << tunnelId << "), invite queued for " << toId << std::endl;
         }
+        CHESS_INVLOG("QUEUED invite to=" << toId << " game="
+                     << inviteJson.value("game_id").toString().toStdString()
+                     << " (no tunnel, requested tunnel=" << tunnelId << ", sent when it is ready)");
         mNotify->notifyAvailablePeersChanged();
         return true;
     } else {
         std::cerr << "Chess: doSendInviteOverGxs: requestSecuredTunnel failed" << std::endl;
+        CHESS_INVLOG("SEND invite to=" << toId << " failed: tunnel request failed");
         return false;
     }
 }
@@ -1726,6 +1758,15 @@ void p3RetroChess::handleGxsTick()
                               << kPendingTunnelTimeoutSec << "s, giving up" << std::endl;
                     CHESS_TLOG("PENDING timeout peer=" << it->first << " tunnel=" << it->second
                                << " status=" << (haveInfo ? statusName(tinfo.tunnel_status) : "unknown to GxsTunnel"));
+                    if (mPendingGxsInvites.count(it->first))
+                        CHESS_INVLOG("DROPPED queued "
+                                     << payloadType(reinterpret_cast<const uint8_t*>(mPendingGxsInvites[it->first].data()),
+                                                    mPendingGxsInvites[it->first].size())
+                                     << " to=" << it->first << ": tunnel did not come up in "
+                                     << kPendingTunnelTimeoutSec << "s");
+                    if (mPendingWatchRequests.count(it->first))
+                        CHESS_SPECLOG("DROPPED queued watch request to host=" << it->first
+                                      << ": tunnel did not come up in " << kPendingTunnelTimeoutSec << "s");
                     mPendingGxsInvites.erase(it->first);
                     mPendingWatchRequests.erase(it->first);
                     mInvitesToGxs.erase(it->first);
@@ -1753,6 +1794,10 @@ void p3RetroChess::handleGxsTick()
             // Flush any queued invite for this peer
             auto inviteIt = mPendingGxsInvites.find(it->first);
             if (inviteIt != mPendingGxsInvites.end()) {
+                CHESS_INVLOG("FLUSH queued "
+                             << payloadType(reinterpret_cast<const uint8_t*>(inviteIt->second.data()), inviteIt->second.size())
+                             << " to=" << it->first << " tunnel=" << it->second << " ready after "
+                             << (nowTs - startedAt[it->first]) << "s");
                 flushes.push_back(std::make_pair(it->second, inviteIt->second));
                 mPendingGxsInvites.erase(inviteIt);
             }
@@ -1760,6 +1805,9 @@ void p3RetroChess::handleGxsTick()
             if (watchIt != mPendingWatchRequests.end()) {
                 std::cout << "Chess: Tunnel ready, flushing queued watch request to " << it->first
                           << " for game " << watchIt->second.toStdString() << std::endl;
+                CHESS_SPECLOG("FLUSH queued watch request to host=" << it->first << " game="
+                              << watchIt->second.toStdString() << " tunnel ready after "
+                              << (nowTs - startedAt[it->first]) << "s");
                 QVariantMap req;
                 req["type"] = "chess_watch_req";
                 req["version"] = 1;
@@ -1777,6 +1825,11 @@ void p3RetroChess::handleGxsTick()
             RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
             auto pit = mPendingTunnels.find(it->first);
             if (pit != mPendingTunnels.end() && pit->second == it->second) {
+                if (mPendingGxsInvites.count(it->first))
+                    CHESS_INVLOG("DROPPED queued "
+                                 << payloadType(reinterpret_cast<const uint8_t*>(mPendingGxsInvites[it->first].data()),
+                                                mPendingGxsInvites[it->first].size())
+                                 << " to=" << it->first << ": tunnel was remotely closed before it was ready");
                 mPendingGxsInvites.erase(it->first); // discard queued invite
                 mInvitesToGxs.erase(it->first);
                 mPendingTunnels.erase(pit);
@@ -1852,11 +1905,15 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
     if (type == "chess_invite") {
         RsGxsTunnelService::GxsTunnelInfo info;
         if (!mGxsTunnels || !mGxsTunnels->getTunnelInfo(tunnel_id, info)
-                || !chessIdentityEnabled(info.source_gxs_id)) return;
+                || !chessIdentityEnabled(info.source_gxs_id)) {
+            CHESS_INVLOG("RECV invite from=" << sender_id << " ignored: tunnel unknown or our identity is not enabled for chess");
+            return;
+        }
         {
             RsStackMutex stack(mRetroChessMtx);
             if (mChessBusy) {
                 std::cerr << "Chess: ignoring distant invitation while busy" << std::endl;
+                CHESS_INVLOG("RECV invite from=" << sender_id << " answered chess_busy (we are busy)");
                 QJsonObject busyJson{{"type", "chess_busy"}};
                 const QByteArray busy = QJsonDocument(busyJson).toJson(QJsonDocument::Compact);
                 sendGxsData(tunnel_id, reinterpret_cast<const uint8_t*>(busy.constData()), busy.size());
@@ -1868,7 +1925,10 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             RsStackMutex stack(mRetroChessMtx);
             auto game = mGameSessions.find(sender_id.toStdString());
             if (game != mGameSessions.end()
-                    && game->second.localIdentityId != QString::fromStdString(info.source_gxs_id.toStdString())) return;
+                    && game->second.localIdentityId != QString::fromStdString(info.source_gxs_id.toStdString())) {
+                CHESS_INVLOG("RECV invite from=" << sender_id << " ignored: a game with this peer runs on another identity");
+                return;
+            }
             // Remember the identity and tunnel chosen for this invitation.
             mOwnGxsIdByPeer[sender_id] = info.source_gxs_id;
             mActiveTunnels[sender_id] = tunnel_id;
@@ -1878,11 +1938,17 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             if (map.value("join_open_game").toBool()) mJoinRequestsFromGxs.insert(sender_id);
             mInvitesFromGxs.insert(sender_id);
         }
+        CHESS_INVLOG("RECV invite from=" << sender_id << " to=" << info.source_gxs_id
+                     << " game=" << map.value("game_id").toString().toStdString()
+                     << " tc=" << (map.contains("tc") ? map.value("tc").toString().toStdString() : "unlimited")
+                     << " join_open_game=" << map.value("join_open_game").toBool()
+                     << " tunnel=" << tunnel_id << " -> notifying UI");
         // A new invite packet is also a refresh of an existing pending invite.
         // Always notify the UI so the toaster and chat action reappear.
         mNotify->notifyChessInviteGxs(sender_id);
 
     } else if (type == "chess_busy") {
+        CHESS_INVLOG("RECV busy from=" << sender_id << " (peer is busy, invite not shown there)");
         mNotify->notifyChessBusyGxs(sender_id);
     } else if (type == "chess_accept") {
         // Only honour an accept for an invitation we actually sent, like
@@ -1903,16 +1969,24 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         if (!invited) {
             std::cerr << "Chess: Ignoring chess_accept from " << sender_id
                       << " (no pending invitation)" << std::endl;
+            CHESS_INVLOG("RECV accept from=" << sender_id << " ignored: no invitation sent to this peer");
             return;
         }
         std::cout << "Chess: Received accept from GXS " << sender_id << std::endl;
+        CHESS_INVLOG("RECV accept from=" << sender_id << " game=" << map.value("game_id").toString().toStdString()
+                     << " tc=" << (map.contains("tc") ? map.value("tc").toString().toStdString() : "unlimited")
+                     << " -> starting game");
         mNotify->notifyChessAcceptedGxs(sender_id);
 
     } else if (type == "chess_cancel") {
         {
             RsStackMutex stack(mRetroChessMtx);
-            if (mInvitesFromGxs.erase(sender_id) == 0) return;
+            if (mInvitesFromGxs.erase(sender_id) == 0) {
+                CHESS_INVLOG("RECV cancel from=" << sender_id << " ignored: no invitation from this peer");
+                return;
+            }
         }
+        CHESS_INVLOG("RECV cancel from=" << sender_id << " -> invitation removed");
         mNotify->notifyChessInviteClearedGxs(sender_id);
 
     } else if (type == "chess_reject") {
@@ -1920,17 +1994,22 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             RsStackMutex stack(mRetroChessMtx);
             // Ignore unsolicited or duplicate replies. A rejection only
             // resolves our outgoing invite, not a crossed incoming invite.
-            if (mInvitesToGxs.erase(sender_id) == 0) return;
+            if (mInvitesToGxs.erase(sender_id) == 0) {
+                CHESS_INVLOG("RECV reject from=" << sender_id << " ignored: no invitation sent to this peer");
+                return;
+            }
             auto pending = mPendingGxsInvites.find(sender_id);
             if (pending != mPendingGxsInvites.end()
                     && QJsonDocument::fromJson(QByteArray::fromStdString(pending->second)).object().value("type").toString() == "chess_invite")
                 mPendingGxsInvites.erase(pending);
         }
+        CHESS_INVLOG("RECV reject from=" << sender_id << " -> invitation declined");
         mNotify->notifyChessRejectedGxs(sender_id);
         mNotify->notifyAvailablePeersChanged();
 
     } else if (type == "player_leave") {
         std::cout << "Chess: Remote GXS player left " << sender_id << std::endl;
+        CHESS_GAMELOG("RECV player_leave from=" << sender_id << " (opponent closed the game)");
         {
             RsStackMutex stack(mRetroChessMtx);
             mInvitesFromGxs.erase(sender_id);
@@ -1949,6 +2028,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             mRematchIdByPeer.erase(sender_id);
         }
         std::cout << "Chess: Remote GXS player requested a rematch " << sender_id << std::endl;
+        CHESS_GAMELOG("RECV rematch from=" << sender_id << " remote_color=" << remoteColor
+                      << " game=" << map.value("game_id").toString().toStdString());
         mNotify->notifyChessRematchGxs(sender_id, remoteColor);
 
     } else if (type == "game_action") {
@@ -1968,6 +2049,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
             }
         }
         if (!spectatorTunnels.empty() && mGxsTunnels) {
+            CHESS_SPECLOG("RELAY opponent action " << action.section(':', 0, 1).toStdString()
+                          << " game=" << sender_id << " to " << spectatorTunnels.size() << " spectator(s)");
             QVariantMap specMap;
             specMap.insert("type", "chess_watch_action");
             specMap.insert("version", 1);
@@ -1993,6 +2076,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
                 it->second.seeking = map.value("seeking", !tc.unlimited).toBool();
             }
         }
+        CHESS_INVLOG("RECV seek from=" << sender_id << " seeking=" << map.value("seeking", !tc.unlimited).toBool()
+                     << " tc=" << (tcStr.isEmpty() ? "unlimited" : tcStr.toStdString()));
         mNotify->notifyAvailablePeersChanged();
     } else if (type == "chess_watch_req") {
         const QString reqGameId = map.value("game_id").toString();
@@ -2024,6 +2109,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         std::cout << "Chess: Received chess_watch_req from " << sender_id
                   << " for game " << reqGameId.toStdString()
                   << " (foundSession=" << (foundSession ? "true" : "false") << ")" << std::endl;
+        CHESS_SPECLOG("RECV watch request from=" << sender_id << " game=" << reqGameId.toStdString()
+                      << (foundSession ? " -> spectator added" : " -> no such game, answering watch_end"));
 
         if (foundSession && mGxsTunnels) {
             QString whiteId, whiteName, blackId, blackName;
@@ -2070,7 +2157,9 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
                       << ", movesCount: " << activeSession.moveHistory.size() << ")" << std::endl;
 
             const QByteArray replyBytes = QJsonDocument::fromVariant(reply).toJson(QJsonDocument::Compact);
-            sendGxsData(tunnel_id, reinterpret_cast<const uint8_t*>(replyBytes.constData()), replyBytes.size());
+            const bool stateSent = sendGxsData(tunnel_id, reinterpret_cast<const uint8_t*>(replyBytes.constData()), replyBytes.size());
+            CHESS_SPECLOG("SEND watch state to=" << sender_id << " moves=" << activeSession.moveHistory.size()
+                          << " sequence=" << activeSession.moveSequence << " ok=" << stateSent);
         } else if (mGxsTunnels) {
             QVariantMap failReply;
             failReply["type"] = "chess_watch_end";
@@ -2100,6 +2189,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
                   << " for game " << gameId.toStdString() << " (FEN=" << fen.toStdString()
                   << ", lastMove=" << lastFrom << "->" << lastTo
                   << ", movesCount=" << moves.size() << ")" << std::endl;
+        CHESS_SPECLOG("RECV watch state from host=" << sender_id << " game=" << gameId.toStdString()
+                      << " moves=" << moves.size() << " sequence=" << sequence);
         mNotify->notifyChessWatchState(sender_id, gameId, whiteId, whiteName, blackId, blackName, fen, sequence, lastFrom, lastTo, moves);
 
     } else if (type == "chess_watch_action") {
@@ -2110,10 +2201,14 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
     } else if (type == "chess_watch_end") {
         const QString gameId = map.value("game_id").toString();
         const QString reason = map.value("reason").toString();
+        CHESS_SPECLOG("RECV watch end from host=" << sender_id << " game=" << gameId.toStdString()
+                      << " reason=" << reason.toStdString());
         mNotify->notifyChessWatchEnd(sender_id, gameId, reason);
 
     } else if (type == "chess_watch_leave") {
         const QString gameId = map.value("game_id").toString();
+        CHESS_SPECLOG("RECV watch leave from=" << sender_id << " game=" << gameId.toStdString()
+                      << " -> spectator removed");
         RsStackMutex stack(mRetroChessMtx);
         for (auto &entry : mSpectatorsByGame) {
             const auto session = mGameSessions.find(entry.first);
@@ -2157,6 +2252,10 @@ void p3RetroChess::player_leave_gxs(const RsGxsId &gxs_id) {
     if (tunnelId.isNull() || !mGxsTunnels) return;
 
     const std::string leave = "{\"type\":\"player_leave\"}";
+    CHESS_GAMELOG("SEND player_leave to=" << gxs_id << " (we closed the game)");
+    if (!spectatorTunnels.empty())
+        CHESS_SPECLOG("SEND watch end to " << spectatorTunnels.size() << " spectator(s) of game=" << gxs_id
+                      << " reason=Player left");
     if (sendGxsData(tunnelId, (const uint8_t*)leave.c_str(), leave.size())) {
         RsStackMutex stack(mRetroChessMtx);
         mPendingGxsCloses[gxs_id] = time(NULL) + 2;

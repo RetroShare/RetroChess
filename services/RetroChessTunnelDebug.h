@@ -21,16 +21,35 @@
 #ifndef RETROCHESS_TUNNEL_DEBUG_H
 #define RETROCHESS_TUNNEL_DEBUG_H
 
-// Runtime tunnel tracing for RetroChess.
+// Runtime debug logging for RetroChess. Two checkboxes in RetroChess
+// settings -> General -> Debug, each with its own log file in the RetroShare
+// account directory:
 //
-// Enable it with the "Log tunnel activity" option in the RetroChess settings,
-// or by starting RetroShare with the environment variable RETROCHESS_DEBUG=1.
-// Every tunnel request, status change, close, sent and received packet is then
-// written with a timestamp to stderr and to
-//     <RetroShare account directory>/retrochess_tunnels.log
-// together with a periodic dump of all tunnels RetroChess knows about.
+//   Log tunnel activity   retrochess_tunnels.log   (CHESS_TLOG)
+//       tunnel requests, status changes, closes, packets, presence
+//       probes/backoff, CONFIG save/load, tunnel overview every minute
 //
-// When disabled, CHESS_TLOG() costs one atomic load and builds no strings.
+//   Log chess activity    retrochess_activity.log  - all categories below,
+//                         each line tagged with its category:
+//       [RetroChess/leaderboard] (CHESS_LBLOG)    results accepted/rejected/
+//           waiting for witnesses, relays, sync requests and answers
+//       [RetroChess/invite]      (CHESS_INVLOG)   invitations sent/queued/
+//           received, accept, reject, cancel, busy, seeks, toaster
+//       [RetroChess/game]        (CHESS_GAMELOG)  game start/end, moves,
+//           resend queue, resign/draw/abort/timeout, desynchronization
+//       [RetroChess/spectate]    (CHESS_SPECLOG)  watch requests, watch state,
+//           relayed moves, spectators joining/leaving
+//       [RetroChess/storage]     (CHESS_STORELOG) leaderboard file loaded/
+//           saved and file errors
+//
+// Environment variable RETROCHESS_DEBUG: "1" enables the tunnel log as
+// before, "activity" the chess activity log, "all" both. A comma separated
+// list of single categories also works, e.g. RETROCHESS_DEBUG=tunnel,game.
+// Every line is also written with a timestamp and a [RetroChess/<category>]
+// tag to stderr.
+//
+// When a category is disabled its log macro costs one atomic load and builds
+// no strings.
 
 #include <atomic>
 #include <cstdint>
@@ -50,11 +69,59 @@ namespace RetroChessTunnelDebug
 // Log file is rotated to "<name>.1" when it grows beyond this size.
 static const std::streamoff kMaxLogFileSize = 5 * 1024 * 1024;
 
-inline std::atomic<bool> &enabledFlag()
+enum Category {
+	Tunnel = 0,
+	Leaderboard,
+	Invite,
+	Game,
+	Spectate,
+	Storage,
+	CategoryCount
+};
+
+// Name used in log lines, settings keys and RETROCHESS_DEBUG.
+inline const char *categoryName(int category)
 {
-	static std::atomic<bool> flag(std::getenv("RETROCHESS_DEBUG") != nullptr
-	        && std::string(std::getenv("RETROCHESS_DEBUG")) != "0");
-	return flag;
+	switch (category) {
+	case Tunnel:      return "tunnel";
+	case Leaderboard: return "leaderboard";
+	case Invite:      return "invite";
+	case Game:        return "game";
+	case Spectate:    return "spectate";
+	case Storage:     return "storage";
+	default:          return "?";
+	}
+}
+
+inline bool enabledFromEnvironment(int category)
+{
+	const char *env = std::getenv("RETROCHESS_DEBUG");
+	if (!env) return false;
+	const std::string value(env);
+	if (value.empty() || value == "0") return false;
+	if (value == "all") return true;
+	if (value == "1") return category == Tunnel; // unchanged meaning of RETROCHESS_DEBUG=1
+	if (value == "activity") return category != Tunnel;
+	const std::string name = categoryName(category);
+	size_t start = 0;
+	while (start <= value.size()) {
+		size_t end = value.find(',', start);
+		if (end == std::string::npos) end = value.size();
+		if (value.compare(start, end - start, name) == 0) return true;
+		start = end + 1;
+	}
+	return false;
+}
+
+inline std::atomic<bool> &enabledFlag(int category = Tunnel)
+{
+	static std::atomic<bool> flags[CategoryCount] = {
+		{enabledFromEnvironment(Tunnel)},   {enabledFromEnvironment(Leaderboard)},
+		{enabledFromEnvironment(Invite)},   {enabledFromEnvironment(Game)},
+		{enabledFromEnvironment(Spectate)}, {enabledFromEnvironment(Storage)}
+	};
+	if (category < 0 || category >= CategoryCount) category = Tunnel;
+	return flags[category];
 }
 
 inline std::mutex &fileMutex()
@@ -63,24 +130,39 @@ inline std::mutex &fileMutex()
 	return mutex;
 }
 
-inline std::string &logFilePath()
+// Log file: tunnel has its own, all other categories share the activity log.
+inline const char *logFileName(int category)
 {
-	static std::string path;
-	return path;
+	return category == Tunnel ? "retrochess_tunnels.log" : "retrochess_activity.log";
 }
 
-inline bool enabled() { return enabledFlag().load(std::memory_order_relaxed); }
+// Account directory the log files are written to (empty: stderr only).
+inline std::string &logDirectory()
+{
+	static std::string dir;
+	return dir;
+}
+
+inline bool enabled(int category = Tunnel)
+{ return enabledFlag(category).load(std::memory_order_relaxed); }
+
+inline bool anyEnabled()
+{
+	for (int c = 0; c < CategoryCount; ++c)
+		if (enabled(c)) return true;
+	return false;
+}
 
 inline void setLogDirectory(const std::string &dir)
 {
 	std::lock_guard<std::mutex> lock(fileMutex());
-	logFilePath() = dir.empty() ? std::string() : dir + "/retrochess_tunnels.log";
+	logDirectory() = dir;
 }
 
 inline void setLogDirectoryIfUnset(const std::string &dir)
 {
 	std::lock_guard<std::mutex> lock(fileMutex());
-	if (logFilePath().empty() && !dir.empty()) logFilePath() = dir + "/retrochess_tunnels.log";
+	if (logDirectory().empty() && !dir.empty()) logDirectory() = dir;
 }
 
 inline std::string timestamp()
@@ -101,13 +183,13 @@ inline std::string timestamp()
 	return out;
 }
 
-inline void write(const std::string &message)
+inline void write(int category, const std::string &message)
 {
-	const std::string line = timestamp() + " [RetroChess/tunnel] " + message;
+	const std::string line = timestamp() + " [RetroChess/" + categoryName(category) + "] " + message;
 	std::lock_guard<std::mutex> lock(fileMutex());
 	std::cerr << line << std::endl;
-	const std::string &path = logFilePath();
-	if (path.empty()) return;
+	if (logDirectory().empty()) return;
+	const std::string path = logDirectory() + "/" + logFileName(category);
 	{
 		std::ifstream size(path, std::ios::binary | std::ios::ate);
 		if (size && size.tellg() > kMaxLogFileSize) {
@@ -121,11 +203,18 @@ inline void write(const std::string &message)
 	if (file) file << line << '\n';
 }
 
-inline void setEnabled(bool on)
+inline void write(const std::string &message) { write(Tunnel, message); }
+
+inline void setEnabled(int category, bool on)
 {
-	const bool was = enabledFlag().exchange(on);
-	if (on != was) write(on ? "tunnel debug logging ENABLED" : "tunnel debug logging DISABLED");
+	if (category < 0 || category >= CategoryCount) return;
+	const bool was = enabledFlag(category).exchange(on);
+	if (on != was)
+		write(category, std::string(categoryName(category))
+		      + (on ? " debug logging ENABLED" : " debug logging DISABLED"));
 }
+
+inline void setEnabled(bool on) { setEnabled(Tunnel, on); }
 
 inline const char *statusName(uint32_t status)
 {
@@ -152,13 +241,20 @@ inline std::string payloadType(const uint8_t *data, uint32_t size)
 }
 } // namespace RetroChessTunnelDebug
 
-#define CHESS_TLOG(expr) \
+#define CHESS_DLOG(category, expr) \
 	do { \
-		if (RetroChessTunnelDebug::enabled()) { \
+		if (RetroChessTunnelDebug::enabled(category)) { \
 			std::ostringstream chess_tlog_stream; \
 			chess_tlog_stream << expr; \
-			RetroChessTunnelDebug::write(chess_tlog_stream.str()); \
+			RetroChessTunnelDebug::write(category, chess_tlog_stream.str()); \
 		} \
 	} while (0)
+
+#define CHESS_TLOG(expr)      CHESS_DLOG(RetroChessTunnelDebug::Tunnel, expr)
+#define CHESS_LBLOG(expr)     CHESS_DLOG(RetroChessTunnelDebug::Leaderboard, expr)
+#define CHESS_INVLOG(expr)    CHESS_DLOG(RetroChessTunnelDebug::Invite, expr)
+#define CHESS_GAMELOG(expr)   CHESS_DLOG(RetroChessTunnelDebug::Game, expr)
+#define CHESS_SPECLOG(expr)   CHESS_DLOG(RetroChessTunnelDebug::Spectate, expr)
+#define CHESS_STORELOG(expr)  CHESS_DLOG(RetroChessTunnelDebug::Storage, expr)
 
 #endif // RETROCHESS_TUNNEL_DEBUG_H

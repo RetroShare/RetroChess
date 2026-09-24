@@ -31,6 +31,7 @@
 #include <QAudioOutput>
 #endif
 #include <QUrl>
+#include "services/RetroChessTunnelDebug.h"
 
 namespace
 {
@@ -45,7 +46,10 @@ RetroChessToasterNotify::RetroChessToasterNotify(
 	connect(mNotify, &RetroChessNotify::chessInviteClearedGxs, this,
 	        [this](const RsGxsId &gxsId) {
 		for (int i = mPending.size() - 1; i >= 0; --i)
-			if (mPending.at(i).gxsId == gxsId) mPending.removeAt(i);
+			if (mPending.at(i).gxsId == gxsId) {
+				mPending.removeAt(i);
+				CHESS_INVLOG("TOASTER removed from queue for=" << gxsId << " (invitation cleared before it was shown)");
+			}
 	});
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	mInviteSound->setAudioOutput(new QAudioOutput(mInviteSound));
@@ -90,6 +94,10 @@ ToasterItem *RetroChessToasterNotify::toasterItem()
 {
 	if (mPending.isEmpty()) return nullptr;
 	const Invitation invitation = mPending.takeFirst();
+	if (!invitation.peerId.isNull())
+		CHESS_INVLOG("TOASTER shown for friend=" << invitation.peerId << " (" << mPending.size() << " more queued)");
+	else
+		CHESS_INVLOG("TOASTER shown for=" << invitation.gxsId << " (" << mPending.size() << " more queued)");
 	ToasterItem *item = nullptr;
 	if (!invitation.peerId.isNull())
 		item = new ToasterItem(new ChessToaster(invitation.peerId, mNotify));
@@ -117,8 +125,12 @@ void RetroChessToasterNotify::chessInvited(const RsPeerId &peerId)
 
 void RetroChessToasterNotify::chessInvitedGxs(const RsGxsId &gxsId)
 {
-	if (!notifyEnabled() || gxsId.isNull()) return;
+	if (!notifyEnabled() || gxsId.isNull()) {
+		CHESS_INVLOG("TOASTER not queued for=" << gxsId << " (invitation toasters are switched off)");
+		return;
+	}
 	Invitation invitation; invitation.gxsId = gxsId; mPending.push_back(invitation);
+	CHESS_INVLOG("TOASTER queued for=" << gxsId << ", waiting for RetroShare to show it");
 	playInviteSound();
 	emit toasterAvailable();
 }

@@ -168,9 +168,10 @@ p3Service *RetroChessPlugin::p3_service() const
     std::call_once(mRetroChessInitOnce, [this]() {
         // Create the service
         rsRetroChess = mRetroChess = new p3RetroChess(mPlugInHandler, mRetroChessNotify);
-        // Restore the "Log tunnel activity" option (RETROCHESS_DEBUG=1 also enables it).
-        if (RetroChessSettings::tunnelDebugLogging())
-            mRetroChess->setTunnelDebugEnabled(true);
+        // Restore the debug log categories chosen in Settings -> Debug
+        // (RETROCHESS_DEBUG=1 enables the tunnel log, =activity the chess
+        // activity log, =all both).
+        RetroChessSettings::applyDebugLogging();
 
         // Register it for GXS Tunnels immediately if the interface is available
         if (mGxsTunnels) {

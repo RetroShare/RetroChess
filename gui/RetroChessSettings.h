@@ -59,7 +59,14 @@ public:
 	static bool alwaysPromoteToQueen();
 	static bool confirmResignOrDraw();
 	static void setGameplayOptions(bool alwaysPromoteToQueen, bool confirmResignOrDraw);
-	// Tunnel debug logging (stderr + retrochess_tunnels.log in the account directory)
+	// Debug logging (stderr + log file in the account directory, see
+	// services/RetroChessTunnelDebug.h). category is a
+	// RetroChessTunnelDebug::Category. Tunnel has its own option; all other
+	// categories share the "Log chess activity" option.
+	static bool debugLogging(int category);
+	static void setDebugLogging(int category, bool enabled);
+	// Restores all saved debug categories (called once at startup).
+	static void applyDebugLogging();
 	static bool tunnelDebugLogging();
 	static void setTunnelDebugLogging(bool enabled);
 };
