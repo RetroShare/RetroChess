@@ -25,6 +25,7 @@ set(RETROCHESS_SOURCES
     gui/RetroChessNotify.cpp
     gui/chess.cpp
     gui/ChessDebugWidget.cpp
+    gui/ChessTrafficDialog.cpp
     gui/ChessBoard.cpp
     gui/ChessPosition.cpp
     gui/RetroChessSessionService.cpp
@@ -52,6 +53,7 @@ set(RETROCHESS_HEADERS
     gui/RetroChessNotify.h
     gui/chess.h
     gui/ChessDebugWidget.h
+    gui/ChessTrafficDialog.h
     gui/ChessBoard.h
     gui/ChessPosition.h
     gui/RetroChessSessionService.h

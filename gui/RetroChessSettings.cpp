@@ -36,6 +36,8 @@
 #include <QApplication>
 #include "chess.h"
 #include "ChessGameReviewDialog.h"
+#include "ChessTrafficDialog.h"
+#include <QPointer>
 #include <QMediaPlayer>
 #include <QPainter>
 #include <QPushButton>
@@ -311,6 +313,8 @@ void RetroChessSettings::setGameplayOptions(bool alwaysQueen, bool confirmAction
 
 RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identitiesPage) : QDialog(parent)
 {
+	setModal(false);
+	setAttribute(Qt::WA_DeleteOnClose);
 	setWindowTitle(tr("RetroChess Settings"));
 	setMinimumSize(780, 480);
 
@@ -384,6 +388,16 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	tunnelDebug->setChecked(RetroChessSettings::tunnelDebugLogging()
 	                        || (rsRetroChess && rsRetroChess->tunnelDebugEnabled()));
 	debugLayout->addWidget(tunnelDebug);
+	QPushButton *viewTraffic = new QPushButton(tr("View traffic…"), debugGroup);
+	debugLayout->addWidget(viewTraffic);
+	connect(viewTraffic, &QPushButton::clicked, this, []() {
+		// Independent modeless window survives closing the settings dialog.
+		static QPointer<ChessTrafficDialog> traffic;
+		if (!traffic) traffic = new ChessTrafficDialog;
+		traffic->show();
+		traffic->raise();
+		traffic->activateWindow();
+	});
 	dateLayout->addWidget(cmboDateFormat);
 	generalRoot->addSpacing(9);
 	generalRoot->addWidget(dateGroup);

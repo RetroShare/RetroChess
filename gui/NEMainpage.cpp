@@ -663,9 +663,9 @@ void NEMainpage::refreshAvailablePlayers()
                                 if (rsRetroChess->preferredChessIdentity().isNull()) {
                                     QMessageBox::information(this, tr("Chess invitation"),
                                         tr("Please select your chess identity in Chess profile before inviting players."));
-                                    RetroChessSettingsDialog dialog(this, true);
-                                    dialog.exec();
-                                    refreshAvailablePlayers();
+                                    auto *dialog = new RetroChessSettingsDialog(this, true);
+                                    connect(dialog, &QDialog::finished, this, [this]() { refreshAvailablePlayers(); });
+                                    dialog->show();
                                     return;
                                 }
                                 rsRetroChess->setTimeControlForPeer(id,
@@ -1851,17 +1851,15 @@ void NEMainpage::setupMenuActions()
 	settingsButton->setFocusPolicy(Qt::NoFocus);
 	ui->horizontalLayout_2->insertWidget(ui->horizontalLayout_2->count() - 1, settingsButton);
 	connect(settingsButton, &QToolButton::clicked, this, [this]() {
-		RetroChessSettingsDialog dialog(this);
-		if (dialog.exec() != QDialog::Accepted)
-			return;
-
-		for (RetroChessWindow *window : mGameSessions->games())
-			if (window)
-				window->refreshBoardTheme();
-
-		refreshAvailablePlayers();
-		refreshLeaderboard();
-		refreshGameHistory();
+		auto *dialog = new RetroChessSettingsDialog(this);
+		connect(dialog, &QDialog::accepted, this, [this]() {
+			for (RetroChessWindow *window : mGameSessions->games())
+				if (window) window->refreshBoardTheme();
+			refreshAvailablePlayers();
+			refreshLeaderboard();
+			refreshGameHistory();
+		});
+		dialog->show();
 	});
 
 }
@@ -2401,12 +2399,13 @@ void NEMainpage::setupPlayersTab()
 	ui->busyCheckBox->setChecked(rsRetroChess->chessBusy());
 	connect(ui->busyCheckBox, &QCheckBox::toggled, this, [](bool value) { rsRetroChess->setChessBusy(value); });
 	connect(ui->identitiesButton, &QPushButton::clicked, this, [this]() {
-		RetroChessSettingsDialog dialog(this, true);
-		if (dialog.exec() == QDialog::Accepted) {
+		auto *dialog = new RetroChessSettingsDialog(this, true);
+		connect(dialog, &QDialog::accepted, this, [this]() {
 			refreshAvailablePlayers();
 			refreshLeaderboard();
 			refreshGameHistory();
-		}
+		});
+		dialog->show();
 	});
 	ui->showOnlineplayersButton->setIcon(QIcon(":/images/chess-knight.svg"));
 	ui->showOnlineplayersButton->setIconSize(QSize(24, 24));

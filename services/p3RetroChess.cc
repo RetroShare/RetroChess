@@ -2565,3 +2565,28 @@ bool p3RetroChess::tunnelDebugEnabled()
 {
     return RetroChessTunnelDebug::enabled();
 }
+
+bool p3RetroChess::tunnelTraffic(std::vector<RsGxsTunnelService::GxsTunnelInfo> &infos)
+{
+    infos.clear();
+    if (!mGxsTunnels) return false;
+    std::set<RsGxsTunnelId> tracked;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        tracked = mOpenedTunnels;
+        for (const auto &entry : mActiveTunnels) tracked.insert(entry.second);
+        for (const auto &entry : mPendingTunnels) tracked.insert(entry.second);
+        for (const auto &entry : mTunnelToGxsIdMap) tracked.insert(entry.first);
+        tracked.insert(mTunnelsToClose.begin(), mTunnelsToClose.end());
+    }
+    // Never call the tunnel service while holding the chess mutex: callbacks
+    // from that service take the chess mutex in the opposite direction.
+    for (const auto &id : tracked) {
+        RsGxsTunnelService::GxsTunnelInfo info{};
+        // The bulk query does not initialize is_client_side in this core.
+        if (!mGxsTunnels->getTunnelInfo(id, info)) continue;
+        info.tunnel_id = id; // The single-tunnel query does not populate this.
+        infos.push_back(info);
+    }
+    return true;
+}

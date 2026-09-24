@@ -183,6 +183,7 @@ public:
 	// Tunnel debug logging (see services/RetroChessTunnelDebug.h)
 	void setTunnelDebugEnabled(bool enabled) override;
 	bool tunnelDebugEnabled() override;
+	bool tunnelTraffic(std::vector<RsGxsTunnelService::GxsTunnelInfo> &infos) override;
 
 private:
 	// All tunnel traffic goes through these two helpers so that it can be traced.

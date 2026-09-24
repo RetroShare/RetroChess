@@ -29,6 +29,7 @@
 #include <vector>
 #include <retroshare/rstypes.h>
 #include <retroshare/rschats.h>  // for ChatId
+#include <retroshare/rsgxstunnel.h>
 
 #include <QVariantMap>
 #include <QString>
@@ -153,6 +154,10 @@ class RsRetroChess
 	// and packet to stderr and <account dir>/retrochess_tunnels.log.
 	virtual void setTunnelDebugEnabled(bool enabled) { (void)enabled; }
 	virtual bool tunnelDebugEnabled() { return false; }
+	// Core statistics for tunnels currently tracked by RetroChess. Shared tunnels
+	// include traffic from other clients; byte totals include tunnel management.
+	virtual bool tunnelTraffic(std::vector<RsGxsTunnelService::GxsTunnelInfo> &infos)
+	{ infos.clear(); return false; }
 };
 
 

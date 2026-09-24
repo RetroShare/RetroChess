@@ -612,9 +612,9 @@ void RetroChessWindow::initAccessories()
 	m_ui->moveHistoryLayout->insertLayout(0, opponentStatusLayout);
 	m_ui->moveHistoryLayout->addWidget(localStatus);
 	connect(settingsButton, &QToolButton::clicked, this, [this]() {
-		RetroChessSettingsDialog dialog(this);
-		if (dialog.exec() == QDialog::Accepted)
-			refreshBoardTheme();
+		auto *dialog = new RetroChessSettingsDialog(this);
+		connect(dialog, &QDialog::accepted, this, [this]() { refreshBoardTheme(); });
+		dialog->show();
 	});
 
 	QHBoxLayout *gameControls = new QHBoxLayout;
