@@ -47,6 +47,7 @@
 #include "ui_chess.h"
 #include "RetroChessSettings.h"
 #include "ChessDebugWidget.h"
+#include "ChessSpectatorsWidget.h"
 #include "ChessBoard.h"
 #include "ChessClockWidget.h"
 #include "RetroChessLeaderboard.h"
@@ -737,6 +738,8 @@ void RetroChessWindow::initAccessories()
 	m_gameStatusBar = new QStatusBar(this);
 	m_gameStatusBar->setSizeGripEnabled(false);
 	m_gameStatusBar->setFixedHeight(24);
+	if (mIsGxs && !m_isSpectator)
+		m_gameStatusBar->addWidget(new ChessSpectatorsWidget(mGxsId, m_gameStatusBar));
 	m_ui->m_status_bar->setAlignment(Qt::AlignCenter);
 	m_gameStatusBar->addWidget(m_ui->m_status_bar, 1);
 	m_ui->gridLayout->addWidget(m_gameStatusBar, 1, 0);

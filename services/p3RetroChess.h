@@ -153,6 +153,7 @@ public:
 	// Spectator / Live Watching
 	bool sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
 	void sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey) override;
+	std::vector<RsGxsId> gameSpectators(const RsGxsId &opponent) override;
 
 	ChessTimeControl timeControlForPeer(const RsGxsId &gxsId) override;
 	void setLobbySeek(bool active, const ChessTimeControl &tc) override;

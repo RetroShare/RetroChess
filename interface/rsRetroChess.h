@@ -145,6 +145,9 @@ class RsRetroChess
 	// Spectator / Live Chess Watching over GXS tunnels
 	virtual bool sendWatchRequestGxs(const RsGxsId &hostPlayerId, const QString &gameKey) = 0;
 	virtual void sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString &gameKey) = 0;
+	// Connected spectators hosted locally for the game against this opponent.
+	virtual std::vector<RsGxsId> gameSpectators(const RsGxsId &opponent)
+	{ (void)opponent; return {}; }
 
 	virtual ChessTimeControl timeControlForPeer(const RsGxsId &gxsId) { (void)gxsId; return ChessTimeControl{}; }
 	virtual void setLobbySeek(bool active, const ChessTimeControl &tc) = 0;

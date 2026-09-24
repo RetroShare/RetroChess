@@ -1400,6 +1400,19 @@ void p3RetroChess::sendWatchLeaveGxs(const RsGxsId &hostPlayerId, const QString 
     }
 }
 
+std::vector<RsGxsId> p3RetroChess::gameSpectators(const RsGxsId &opponent)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    std::vector<RsGxsId> spectators;
+    const std::string endpoint = opponent.toStdString();
+    if (mGameSessions.find(endpoint) == mGameSessions.end()) return spectators;
+    const auto found = mSpectatorsByGame.find(endpoint);
+    if (found != mSpectatorsByGame.end())
+        for (const auto &id : found->second)
+            if (mActiveTunnels.count(id)) spectators.push_back(id);
+    return spectators;
+}
+
 bool p3RetroChess::sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray &data)
 {
     RsGxsTunnelId tunnelId;
@@ -2103,7 +2116,10 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
         const QString gameId = map.value("game_id").toString();
         RsStackMutex stack(mRetroChessMtx);
         for (auto &entry : mSpectatorsByGame) {
-            if (gameId.isEmpty() || gameId.contains(QString::fromStdString(entry.first))) {
+            const auto session = mGameSessions.find(entry.first);
+            if (gameId.isEmpty() || gameId.contains(QString::fromStdString(entry.first))
+                    || (session != mGameSessions.end()
+                        && !session->second.gameId.isEmpty() && gameId == session->second.gameId)) {
                 entry.second.erase(sender_id);
             }
         }

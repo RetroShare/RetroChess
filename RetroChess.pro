@@ -54,6 +54,7 @@ SOURCES = RetroChessPlugin.cpp               \
           gui/chess.cpp \
           gui/ChessDebugWidget.cpp \
           gui/ChessTrafficDialog.cpp \
+          gui/ChessSpectatorsWidget.cpp \
           gui/ChessBoard.cpp \
           gui/ChessPosition.cpp \
           gui/RetroChessSessionService.cpp \
@@ -72,6 +73,7 @@ SOURCES = RetroChessPlugin.cpp               \
 HEADERS = RetroChessPlugin.h                 \
           gui/ChessDebugWidget.h \
           gui/ChessTrafficDialog.h \
+          gui/ChessSpectatorsWidget.h \
           gui/ChessBoard.h \
           gui/ChessPosition.h \
           gui/RetroChessSessionService.h \
