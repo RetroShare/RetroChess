@@ -60,10 +60,13 @@ constexpr double kTau = 0.5;
 // Leaderboard sync. Peers ask every 5 minutes for the receipts they have not
 // seen yet ("since" = last sequence number received from that peer). The full
 // history is only sent on first contact, after a restart, or to old versions
-// that do not send "since" - and at most every 30 minutes per peer.
+// that do not send "since". Full history at most every 5 minutes per peer for
+// current versions (they switch to incremental right after the first one) and
+// every 30 minutes for old versions (they never switch).
 constexpr qint64 kSyncRequestIntervalMs = 5 * 60 * 1000;
 constexpr qint64 kIncrementalSyncMinIntervalMs = 60 * 1000;
-constexpr qint64 kFullSyncMinIntervalMs = 30 * 60 * 1000;
+constexpr qint64 kFullSyncMinIntervalMs = 5 * 60 * 1000;
+constexpr qint64 kLegacyFullSyncMinIntervalMs = 30 * 60 * 1000;
 constexpr int kSyncBatchSize = 10;
 constexpr int kMinWitnesses = 2;
 constexpr int kMaxWitnesses = 8;
@@ -619,8 +622,9 @@ void RetroChessLeaderboard::sendSyncToPeer(const RsGxsId &peerId, const QJsonObj
 	if (!rsRetroChess || peerId.isNull() || mReceipts.isEmpty()) return;
 
 	// Incremental only when the peer quotes our current epoch and a sequence
-	// number we could have given it. Old versions send no "since": they get
-	// the full history, but not more often than kFullSyncMinIntervalMs.
+	// number we could have given it. Current versions without a valid cursor
+	// get the full history at most every kFullSyncMinIntervalMs; old versions
+	// (no "since") at most every kLegacyFullSyncMinIntervalMs.
 	const bool hasCursor = request.contains("since") && request.contains("epoch");
 	const quint64 since = static_cast<quint64>(request.value("since").toDouble());
 	const bool incremental = hasCursor && request.value("epoch").toString() == mSyncEpoch
@@ -628,8 +632,9 @@ void RetroChessLeaderboard::sendSyncToPeer(const RsGxsId &peerId, const QJsonObj
 	const qint64 now = mSyncClock.elapsed();
 	if (mLastSyncResponse.contains(peerId)
 	        && now - mLastSyncResponse.value(peerId) < kIncrementalSyncMinIntervalMs) return;
+	const qint64 fullInterval = hasCursor ? kFullSyncMinIntervalMs : kLegacyFullSyncMinIntervalMs;
 	if (!incremental && mLastFullSyncResponse.contains(peerId)
-	        && now - mLastFullSyncResponse.value(peerId) < kFullSyncMinIntervalMs) return;
+	        && now - mLastFullSyncResponse.value(peerId) < fullInterval) return;
 	mLastSyncResponse.insert(peerId, now);
 	if (!incremental) mLastFullSyncResponse.insert(peerId, now);
 
@@ -774,7 +779,7 @@ void RetroChessLeaderboard::synchronizeTunnels()
 		else ++it;
 	}
 	for (auto it = mLastFullSyncResponse.begin(); it != mLastFullSyncResponse.end();) {
-		if (mSyncClock.elapsed() - it.value() >= kFullSyncMinIntervalMs)
+		if (mSyncClock.elapsed() - it.value() >= kLegacyFullSyncMinIntervalMs)
 			it = mLastFullSyncResponse.erase(it);
 		else ++it;
 	}
