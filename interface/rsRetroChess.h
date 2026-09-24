@@ -134,6 +134,14 @@ class RsRetroChess
 	virtual bool chessBusy() = 0;
 	virtual void setChessBusy(bool busy) = 0;
 
+	// Flair: a small icon shown after a player's nickname (see gui/RetroChessFlair.h).
+	// Stored per local identity and sent to peers in presence, invite and accept
+	// messages. Empty string = no flair.
+	virtual QString ownFlair(const RsGxsId &ownId) { (void)ownId; return QString(); }
+	virtual void setOwnFlair(const RsGxsId &ownId, const QString &flair) { (void)ownId; (void)flair; }
+	/// Flair of any identity: one of our own, or the last one a peer sent us.
+	virtual QString playerFlair(const RsGxsId &id) { (void)id; return QString(); }
+
 	// Send invite via an *existing* distant chat tunnel (the right approach for distant chat)
 	virtual bool sendInvite_chat(const ChatId &chatId) = 0;
 

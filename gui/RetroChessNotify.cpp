@@ -119,6 +119,11 @@ void RetroChessNotify::notifyAvailablePeersChanged()
 	emit availablePeersChanged();
 }
 
+void RetroChessNotify::notifyPlayerFlairChanged(const RsGxsId &gxs_id)
+{
+	emit playerFlairChanged(gxs_id);
+}
+
 void RetroChessNotify::notifyLeaderboardDataGxs(const RsGxsId &gxs_id, const QByteArray &data)
 {
 	emit leaderboardDataGxs(gxs_id, data);

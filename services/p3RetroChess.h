@@ -24,6 +24,7 @@
 #include <list>
 #include <set>
 #include <string>
+#include <QJsonObject>
 #include <QVariantMap>
 
 #include "services/rsRetroChessItems.h"
@@ -139,6 +140,9 @@ public:
 	void setChessIdentities(const std::list<RsGxsId> &ids, const RsGxsId &preferred) override;
 	bool chessBusy() override;
 	void setChessBusy(bool busy) override;
+	QString ownFlair(const RsGxsId &ownId) override;
+	void setOwnFlair(const RsGxsId &ownId, const QString &flair) override;
+	QString playerFlair(const RsGxsId &id) override;
 	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) override;
 
@@ -221,6 +225,15 @@ private:
 	RsGxsId mPreferredChessIdentity;
 	bool mChessIdentitiesConfigured = false;
 	bool mChessBusy = false;
+	// Flair per local identity (ours) and per remote identity (last one received).
+	// Both only ever hold ids accepted by RetroChessFlair::normalize().
+	std::map<RsGxsId, QString> mOwnFlair;
+	std::map<RsGxsId, QString> mPeerFlair;
+	// Caller must hold mRetroChessMtx. Adds our "flair" field for ownId.
+	void addOwnFlairLocked(QVariantMap &message, const RsGxsId &ownId) const;
+	void addOwnFlairLocked(QJsonObject &message, const RsGxsId &ownId) const;
+	// Stores the "flair" field of a received message, if it has one. Takes the mutex.
+	void learnPeerFlair(const RsGxsId &sender, const QVariantMap &message);
 	bool mLobbySeekActive = false;
 	ChessTimeControl mLobbySeek;
 	// Helper to find which friend sent the data based on the tunnel ID

@@ -84,6 +84,8 @@ protected:
 
 public:
 	std::string mPeerId;
+	/// Re-reads both players' flair (rsRetroChess->playerFlair) into the name labels.
+	void refreshPlayerFlair();
 	explicit RetroChessWindow(std::string peerid, int player = 0, QWidget *parent = 0);
 	explicit RetroChessWindow(const RsGxsId &gxsId, int player = 0, QWidget *parent = 0);
 	explicit RetroChessWindow(const RsGxsId &hostId, const QString &gameKey,

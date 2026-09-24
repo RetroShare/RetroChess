@@ -51,6 +51,7 @@
 #include "ChessBoard.h"
 #include "ChessClockWidget.h"
 #include "RetroChessLeaderboard.h"
+#include "RetroChessFlair.h"
 
 #include <QPointer>
 #include <QIcon>
@@ -66,11 +67,43 @@
 
 namespace
 {
+// Flair icon after "name (rating)": a child QLabel moved next to the text, so
+// the pixmap stays sharp and the name is elided before the flair is hidden.
+void placePlayerFlair(QLabel *label, const QString &flair, int textWidth, int flairSize)
+{
+	QLabel *icon = label->findChild<QLabel *>(QStringLiteral("chessFlairIcon"), Qt::FindDirectChildrenOnly);
+	if (flair.isEmpty()) {
+		if (icon) icon->hide();
+		return;
+	}
+	if (!icon) {
+		icon = new QLabel(label);
+		icon->setObjectName(QStringLiteral("chessFlairIcon"));
+		icon->setAttribute(Qt::WA_TransparentForMouseEvents); // keep the name tooltip
+	}
+	icon->setPixmap(RetroChessFlair::pixmap(flair, flairSize, label->devicePixelRatioF()));
+	icon->setToolTip(RetroChessFlair::displayName(flair));
+	const QRect area = label->contentsRect().adjusted(label->margin(), 0, -label->margin(), 0);
+	const int gap = 4;
+	const int x = label->layoutDirection() == Qt::RightToLeft
+	        ? area.right() - textWidth - gap - flairSize + 1
+	        : area.left() + textWidth + gap;
+	icon->setGeometry(x, area.top() + (area.height() - flairSize) / 2, flairSize, flairSize);
+	icon->show();
+}
+
 void updatePlayerNameLabel(QLabel *label)
 {
 	const QString fullName = label->property("chessFullName").toString();
 	const QString ratingText = label->property("chessRatingText").toString();
-	const int availableWidth = qMax(0, label->contentsRect().width() - 2 * label->margin());
+	const QString flair = RetroChessFlair::normalize(label->property("chessFlair").toString());
+	// About 1.5x the text height: emoji detail is lost at plain text size.
+	const int flairSize = qMax(24, qRound(label->fontMetrics().height() * 1.5));
+	const int flairReserve = flair.isEmpty() ? 0 : flairSize + 4;
+	// The icon is a child of the label and would be clipped by a shorter label.
+	const int minHeight = flair.isEmpty() ? 0 : flairSize;
+	if (label->minimumHeight() != minHeight) label->setMinimumHeight(minHeight);
+	const int availableWidth = qMax(0, label->contentsRect().width() - 2 * label->margin() - flairReserve);
 
 	QFont boldFont = label->font();
 	boldFont.setBold(true);
@@ -84,6 +117,7 @@ void updatePlayerNameLabel(QLabel *label)
 			        fullName, Qt::ElideRight, availableWidth - suffixWidth);
 			label->setText(QStringLiteral("<b>%1</b>%2")
 			        .arg(elidedName.toHtmlEscaped(), ratingSuffix.toHtmlEscaped()));
+			placePlayerFlair(label, flair, boldFm.horizontalAdvance(elidedName) + suffixWidth, flairSize);
 			return;
 		}
 		// Not even room for the bare rating suffix — drop it and just show the name.
@@ -91,6 +125,7 @@ void updatePlayerNameLabel(QLabel *label)
 
 	const QString elidedName = boldFm.elidedText(fullName, Qt::ElideRight, availableWidth);
 	label->setText(QStringLiteral("<b>%1</b>").arg(elidedName.toHtmlEscaped()));
+	placePlayerFlair(label, flair, boldFm.horizontalAdvance(elidedName), flairSize);
 }
 
 QTableWidgetItem *createMoveTableItem(const QString &notation, bool isWhite)
@@ -491,6 +526,7 @@ void RetroChessWindow::initAccessories()
 		label->installEventFilter(this);
 		updatePlayerNameLabel(label);
 	}
+	refreshPlayerFlair();
 
 	m_ui->m_move_record->hide();
 	m_ui->moveHistoryLayout->removeWidget(m_ui->m_move_record);
@@ -3957,6 +3993,18 @@ void RetroChessWindow::refreshPlayerRatings()
 	updatePlayerNameLabel(m_ui->m_player2_name);
 	applyTooltip(m_ui->m_player1_name, mPlayer1GxsId);
 	applyTooltip(m_ui->m_player2_name, mPlayer2GxsId);
+}
+
+void RetroChessWindow::refreshPlayerFlair()
+{
+	if (!m_ui) return;
+	auto flairFor = [](const RsGxsId &id) -> QString {
+		return (id.isNull() || !rsRetroChess) ? QString() : rsRetroChess->playerFlair(id);
+	};
+	m_ui->m_player1_name->setProperty("chessFlair", flairFor(mPlayer1GxsId));
+	m_ui->m_player2_name->setProperty("chessFlair", flairFor(mPlayer2GxsId));
+	updatePlayerNameLabel(m_ui->m_player1_name);
+	updatePlayerNameLabel(m_ui->m_player2_name);
 }
 
 void RetroChessWindow::setupClocks()
