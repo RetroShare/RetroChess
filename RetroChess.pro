@@ -64,6 +64,7 @@ SOURCES = RetroChessPlugin.cpp               \
           gui/tile.cpp \
           gui/RetroChessChatWidgetHolder.cpp \
           gui/RetroChessSettings.cpp \
+          gui/RetroChessFlair.cpp \
           gui/RetroChessUserNotify.cpp \
           gui/toaster/ChessToaster.cpp \
           gui/toaster/RetroChessToasterNotify.cpp \
@@ -90,6 +91,7 @@ HEADERS = RetroChessPlugin.h                 \
           gui/chess.h \
           gui/RetroChessChatWidgetHolder.h \
           gui/RetroChessSettings.h \
+          gui/RetroChessFlair.h \
           gui/RetroChessUserNotify.h \
           gui/toaster/ChessToaster.h \
           gui/toaster/RetroChessToasterNotify.h \
@@ -104,3 +106,4 @@ FORMS += \
 
 RESOURCES = gui/RetroChess_images.qrc
 RESOURCES += gui/RetroChess_pieces.qrc
+RESOURCES += gui/RetroChess_flair.qrc

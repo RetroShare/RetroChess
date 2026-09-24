@@ -52,6 +52,9 @@
 #include "gui/settings/rsharesettings.h"
 #include "gui/common/AvatarDefs.h"
 #include <QGroupBox>
+#include <QLineEdit>
+#include <QScrollArea>
+#include "RetroChessFlair.h"
 #include <QLocale>
 
 namespace {
@@ -359,7 +362,8 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	QListWidget *navigation = new QListWidget(this);
 	navigation->setFixedWidth(145);
 	navigation->addItem(tr("General"));
-	navigation->addItem(tr("Chess profile"));
+	navigation->addItem(tr("Profile"));
+	navigation->addItem(tr("Flair"));
 	navigation->addItem(tr("Boards"));
 	navigation->addItem(tr("Pieces"));
 	navigation->addItem(tr("Sounds"));
@@ -455,7 +459,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	// --- Chess Profile Page ---
 	QWidget *identityPage = new QWidget(pages);
 	QVBoxLayout *identityRoot = new QVBoxLayout(identityPage);
-	QLabel *identityTitle = new QLabel(tr("Chess profile"), identityPage);
+	QLabel *identityTitle = new QLabel(tr("Chess Profile"), identityPage);
 	identityTitle->setFont(titleFont);
 	identityRoot->addWidget(identityTitle);
 
@@ -501,6 +505,186 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	updatePreferred();
 	connect(identityList, &QListWidget::itemChanged, this, [updatePreferred](QListWidgetItem *) { updatePreferred(); });
 	pages->addWidget(identityPage);
+
+	// --- Flair Page ---
+	// One icon shown after the nickname (games, player lists, leaderboard), per
+	// chess identity. Saved in the service config and sent to peers.
+	QWidget *flairPage = new QWidget(pages);
+	QVBoxLayout *flairRoot = new QVBoxLayout(flairPage);
+	QLabel *flairTitle = new QLabel(tr("Flair"), flairPage);
+	flairTitle->setFont(titleFont);
+	flairRoot->addWidget(flairTitle);
+	QLabel *flairHelp = new QLabel(tr("Choose an icon shown after your nickname in games, player lists "
+	                                  "and the leaderboard. Each chess identity has its own flair."), flairPage);
+	flairHelp->setWordWrap(true);
+	flairRoot->addWidget(flairHelp);
+
+	QHBoxLayout *flairIdentityRow = new QHBoxLayout;
+	flairIdentityRow->addWidget(new QLabel(tr("Identity:"), flairPage));
+	QComboBox *flairIdentity = new QComboBox(flairPage);
+	flairIdentity->setIconSize(QSize(avatarSize, avatarSize));
+	flairIdentityRow->addWidget(flairIdentity, 1);
+	flairRoot->addLayout(flairIdentityRow);
+
+	const int kFlairIdentityRole = Qt::UserRole;      // identity id
+	const int kFlairValueRole = Qt::UserRole + 1;     // chosen flair (edited here)
+	const int kFlairNicknameRole = Qt::UserRole + 2;  // nickname for the preview
+	for (const auto &id : ownIds) {
+		// Identities not enabled for chess never send a flair, so do not offer them
+		// (unless none is configured yet).
+		if (!enabled.empty() && std::find(enabled.begin(), enabled.end(), id) == enabled.end()) continue;
+		RsIdentityDetails details;
+		const QString key = QString::fromStdString(id.toStdString());
+		const QString name = rsIdentity->getIdDetails(id, details) && !details.mNickname.empty()
+		        ? QString::fromUtf8(details.mNickname.c_str()) : key;
+		QPixmap avatar;
+		AvatarDefs::getAvatarFromGxsId(id, avatar);
+		flairIdentity->addItem(QIcon(avatar), name + " (" + key + ")", key);
+		const int row = flairIdentity->count() - 1;
+		flairIdentity->setItemData(row, rsRetroChess->ownFlair(id), kFlairValueRole);
+		flairIdentity->setItemData(row, name, kFlairNicknameRole);
+	}
+	{
+		const int preferredRow = flairIdentity->findData(preferredId, kFlairIdentityRole);
+		if (preferredRow >= 0) flairIdentity->setCurrentIndex(preferredRow);
+	}
+
+	QHBoxLayout *flairSearchRow = new QHBoxLayout;
+	QLineEdit *flairSearch = new QLineEdit(flairPage);
+	flairSearch->setPlaceholderText(tr("Search by name"));
+	flairSearch->setClearButtonEnabled(true);
+	flairSearch->setMaximumWidth(260);
+	flairSearchRow->addWidget(flairSearch);
+	flairSearchRow->addSpacing(24);
+	QLabel *flairPreviewName = new QLabel(flairPage);
+	QFont flairPreviewFont = flairPreviewName->font();
+	flairPreviewFont.setBold(true);
+	flairPreviewName->setFont(flairPreviewFont);
+	QLabel *flairPreviewIcon = new QLabel(flairPage);
+	const int flairPreviewSize = qMax(24, qRound(flairPreviewName->fontMetrics().height() * 1.5));
+	flairPreviewIcon->setFixedSize(flairPreviewSize, flairPreviewSize);
+	flairSearchRow->addWidget(flairPreviewName);
+	flairSearchRow->addWidget(flairPreviewIcon);
+	flairSearchRow->addStretch();
+	flairRoot->addLayout(flairSearchRow);
+
+	QScrollArea *flairScroll = new QScrollArea(flairPage);
+	flairScroll->setWidgetResizable(true);
+	QWidget *flairGridHost = new QWidget(flairScroll);
+	QVBoxLayout *flairSections = new QVBoxLayout(flairGridHost);
+	flairSections->setAlignment(Qt::AlignTop);
+	flairScroll->setWidget(flairGridHost);
+	flairRoot->addWidget(flairScroll, 1);
+
+	const QString flairButtonStyle = QStringLiteral(
+	        "QToolButton { border: 2px solid transparent; border-radius: 4px; padding: 2px; }"
+	        "QToolButton:hover { background: rgba(0, 0, 0, 20); }"
+	        "QToolButton:checked { border-color: #81b64c; }");
+	QButtonGroup *flairGroup = new QButtonGroup(flairPage);
+	flairGroup->setExclusive(true);
+	auto makeFlairButton = [flairGridHost, flairGroup, flairButtonStyle](const QString &flair, const QString &name) {
+		QToolButton *button = new QToolButton(flairGridHost);
+		button->setCheckable(true);
+		button->setAutoRaise(true);
+		button->setFixedSize(40, 40);
+		button->setIconSize(QSize(28, 28));
+		button->setStyleSheet(flairButtonStyle);
+		button->setToolTip(name);
+		button->setProperty("flairId", flair);
+		if (!flair.isEmpty()) button->setIcon(QIcon(RetroChessFlair::pixmap(flair, 28, button->devicePixelRatioF())));
+		flairGroup->addButton(button);
+		return button;
+	};
+
+	QToolButton *noFlair = makeFlairButton(QString(), tr("No flair"));
+	noFlair->setText(tr("None"));
+	noFlair->setToolButtonStyle(Qt::ToolButtonTextOnly);
+	noFlair->setFixedSize(64, 40);
+	flairSections->addWidget(noFlair);
+
+	struct FlairSection {
+		QLabel *header;
+		QWidget *box;
+		QGridLayout *grid;
+		QVector<QToolButton *> buttons;
+	};
+	QVector<FlairSection> flairSectionList;
+	QFont flairHeaderFont = flairTitle->font();
+	flairHeaderFont.setPointSize(flairPreviewFont.pointSize() + 1);
+	for (const QString &category : RetroChessFlair::categories()) {
+		FlairSection section;
+		section.header = new QLabel(RetroChessFlair::categoryTitle(category), flairGridHost);
+		section.header->setFont(flairHeaderFont);
+		section.box = new QWidget(flairGridHost);
+		section.grid = new QGridLayout(section.box);
+		section.grid->setContentsMargins(0, 0, 0, 6);
+		section.grid->setSpacing(2);
+		section.grid->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+		for (const RetroChessFlairInfo &info : RetroChessFlair::all())
+			if (info.category == category) section.buttons.append(makeFlairButton(info.id, info.name));
+		flairSections->addWidget(section.header);
+		flairSections->addWidget(section.box);
+		flairSectionList.append(section);
+	}
+
+	// Lays out the buttons matching the search text, hiding empty categories.
+	auto filterFlairs = [flairSectionList](const QString &text) {
+		const QString needle = text.trimmed();
+		const int columns = 12;
+		for (const FlairSection &section : flairSectionList) {
+			int shown = 0;
+			for (QToolButton *button : section.buttons) {
+				section.grid->removeWidget(button);
+				const bool match = needle.isEmpty()
+				        || button->toolTip().contains(needle, Qt::CaseInsensitive)
+				        || button->property("flairId").toString().contains(needle, Qt::CaseInsensitive);
+				button->setVisible(match);
+				if (match) {
+					section.grid->addWidget(button, shown / columns, shown % columns);
+					++shown;
+				}
+			}
+			section.header->setVisible(shown > 0);
+			section.box->setVisible(shown > 0);
+		}
+	};
+	filterFlairs(QString());
+	connect(flairSearch, &QLineEdit::textChanged, this, filterFlairs);
+
+	auto updateFlairPreview = [flairIdentity, flairPreviewName, flairPreviewIcon, flairPreviewSize, kFlairValueRole, kFlairNicknameRole]() {
+		const int row = flairIdentity->currentIndex();
+		const QString flair = row < 0 ? QString() : flairIdentity->itemData(row, kFlairValueRole).toString();
+		flairPreviewName->setText(row < 0 ? QString() : flairIdentity->itemData(row, kFlairNicknameRole).toString());
+		flairPreviewIcon->setPixmap(RetroChessFlair::pixmap(flair, flairPreviewSize, flairPreviewIcon->devicePixelRatioF()));
+		flairPreviewIcon->setToolTip(RetroChessFlair::displayName(flair));
+		flairPreviewIcon->setVisible(!flair.isEmpty());
+	};
+	// Switching identity: check the button of that identity's flair.
+	auto showIdentityFlair = [flairIdentity, flairGroup, noFlair, updateFlairPreview, kFlairValueRole]() {
+		const int row = flairIdentity->currentIndex();
+		const QString flair = row < 0 ? QString() : flairIdentity->itemData(row, kFlairValueRole).toString();
+		QAbstractButton *target = noFlair;
+		for (QAbstractButton *button : flairGroup->buttons())
+			if (!flair.isEmpty() && button->property("flairId").toString() == flair) target = button;
+		target->setChecked(true);
+		updateFlairPreview();
+	};
+	showIdentityFlair();
+	connect(flairIdentity, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+	        [showIdentityFlair](int) { showIdentityFlair(); });
+	connect(flairGroup, QOverload<QAbstractButton *>::of(&QButtonGroup::buttonClicked), this,
+	        [flairIdentity, updateFlairPreview, kFlairValueRole](QAbstractButton *button) {
+		const int row = flairIdentity->currentIndex();
+		if (row < 0) return;
+		flairIdentity->setItemData(row, button->property("flairId").toString(), kFlairValueRole);
+		updateFlairPreview();
+	});
+	const bool haveFlairIdentity = flairIdentity->count() > 0;
+	flairSearch->setEnabled(haveFlairIdentity);
+	flairScroll->setEnabled(haveFlairIdentity);
+	if (!haveFlairIdentity)
+		flairHelp->setText(flairHelp->text() + "\n\n" + tr("Create or enable a chess identity first (Chess profile)."));
+	pages->addWidget(flairPage);
 
 	// --- Board Colours Page ---
 	QWidget *boardPage = new QWidget(pages);
@@ -746,6 +930,13 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	QDialogButtonBox *buttons = new QDialogButtonBox(
 	        QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
 	root->addWidget(buttons);
+
+	// Connected before the main Save handler below, which closes the dialog.
+	connect(buttons, &QDialogButtonBox::accepted, this, [flairIdentity, kFlairValueRole]() {
+		for (int row = 0; row < flairIdentity->count(); ++row)
+			rsRetroChess->setOwnFlair(RsGxsId(flairIdentity->itemData(row).toString().toStdString()),
+			                          flairIdentity->itemData(row, kFlairValueRole).toString());
+	});
 
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 	connect(buttons, &QDialogButtonBox::accepted, this,

@@ -67,6 +67,9 @@
 
 #include "gui/common/FriendSelectionWidget.h"
 #include "gui/RetroChessSettings.h"
+#include "gui/RetroChessFlair.h"
+#include "gui/chess.h"
+#include <QApplication>
 #include "gui/RetroChessSessionService.h"
 #include "gui/ChessGameHistory.h"
 #include "gui/ChessGameReviewDialog.h"
@@ -334,6 +337,11 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 
 	connect(mNotify, &RetroChessNotify::availablePeersChanged,
 	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	connect(mNotify, &RetroChessNotify::playerFlairChanged, this, [this](const RsGxsId &) {
+		refreshAvailablePlayers();
+		for (QWidget *widget : QApplication::allWidgets())
+			if (auto *game = qobject_cast<RetroChessWindow *>(widget)) game->refreshPlayerFlair();
+	}, Qt::QueuedConnection);
 	connect(mNotify, &RetroChessNotify::gxsTunnelReady,
 	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
 	connect(mNotify, &RetroChessNotify::gxsTunnelClosed,
@@ -377,6 +385,9 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
     const int iconHeight = QFontMetricsF(ui->availablePlayers->font()).height() * 1.5;
     ui->savedContacts->setIconSize(QSize(iconHeight, iconHeight));
     ui->availablePlayers->setIconSize(QSize(iconHeight, iconHeight));
+    // Player flair is painted after the nickname (column 0).
+    for (QTreeWidget *tree : {ui->savedContacts, ui->availablePlayers})
+        tree->setItemDelegateForColumn(0, new RetroChessFlairDelegate(tree));
 
     loadLayoutSettings();
 
@@ -547,6 +558,7 @@ void NEMainpage::refreshAvailablePlayers()
                                  details.mAvatar.mSize) : QByteArray();
             item->setText(0, name);
             item->setData(0, Qt::UserRole, peer.endpointId);
+            item->setData(0, RetroChessFlair::kFlairRole, rsRetroChess->playerFlair(id));
             item->setData(0, Qt::UserRole + 1, peer.savedContact);
             int rank = 5;
             QColor color("#808080");
@@ -802,6 +814,7 @@ void NEMainpage::refreshAvailablePlayers()
             item->setData(0, Qt::UserRole, ownKey);
             item->setText(0, tr("Your open game"));
             const RsGxsId ownId = rsRetroChess->preferredChessIdentity();
+            item->setData(0, RetroChessFlair::kFlairRole, rsRetroChess->ownFlair(ownId));
             RsIdentityDetails ownDetails;
             QPixmap avatar;
             if (!rsIdentity || !rsIdentity->getIdDetails(ownId, ownDetails)

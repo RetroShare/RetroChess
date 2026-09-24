@@ -43,6 +43,7 @@
 #include <retroshare/rsinit.h>
 
 #include "services/RetroChessTunnelDebug.h"
+#include "gui/RetroChessFlair.h"
 
 using RetroChessTunnelDebug::statusName;
 using RetroChessTunnelDebug::payloadType;
@@ -438,6 +439,21 @@ bool p3RetroChess::saveList(bool& cleanup, std::list<RsItem*>& lst)
 		busy.key = "CHESS_BUSY";
 		busy.value = mChessBusy ? "1" : "0";
 		vitem->tlvkvs.pairs.push_back(busy);
+		// Flair: ours per identity, and the last one each saved contact sent
+		// (so the player list shows it before the next presence reply).
+		for (const auto &entry : mOwnFlair) {
+			RsTlvKeyValue value;
+			value.key = "CHESS_FLAIR:" + entry.first.toStdString();
+			value.value = entry.second.toStdString();
+			vitem->tlvkvs.pairs.push_back(value);
+		}
+		for (const auto &entry : mPeerFlair) {
+			if (!mChessContacts.count(entry.first)) continue;
+			RsTlvKeyValue value;
+			value.key = "CHESS_PEER_FLAIR:" + entry.first.toStdString();
+			value.value = entry.second.toStdString();
+			vitem->tlvkvs.pairs.push_back(value);
+		}
 		for (const auto &entry : mGameSessions) {
 			const RsRetroChessGameSession &session = entry.second;
 			QVariantMap data;
@@ -495,6 +511,17 @@ bool p3RetroChess::loadList(std::list<RsItem*>& load)
 					for (const QString &text : QString::fromStdString(value.value).split(',')) {
 						RsGxsId id(text.toStdString());
 						if (!id.isNull()) mChessIdentities.insert(id);
+					}
+					continue;
+				}
+				if (value.key.compare(0, 12, "CHESS_FLAIR:") == 0
+				        || value.key.compare(0, 17, "CHESS_PEER_FLAIR:") == 0) {
+					const bool own = value.key.compare(0, 12, "CHESS_FLAIR:") == 0;
+					const RsGxsId id(value.key.substr(own ? 12 : 17));
+					const QString flair = RetroChessFlair::normalize(QString::fromStdString(value.value));
+					if (!id.isNull() && !flair.isEmpty()) {
+						RsStackMutex stack(mRetroChessMtx);
+						(own ? mOwnFlair : mPeerFlair)[id] = flair;
 					}
 					continue;
 				}
@@ -838,6 +865,94 @@ void p3RetroChess::setChessBusy(bool busy)
     IndicateConfigChanged();
 }
 
+QString p3RetroChess::ownFlair(const RsGxsId &ownId)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    auto it = mOwnFlair.find(ownId);
+    return it == mOwnFlair.end() ? QString() : it->second;
+}
+
+void p3RetroChess::setOwnFlair(const RsGxsId &ownId, const QString &flair)
+{
+    if (ownId.isNull() || !rsIdentity || !rsIdentity->isOwnId(ownId)) return;
+    const QString valid = RetroChessFlair::normalize(flair);
+    std::vector<RsGxsTunnelId> tunnels;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto it = mOwnFlair.find(ownId);
+        const QString previous = it == mOwnFlair.end() ? QString() : it->second;
+        if (previous == valid) return;
+        if (valid.isEmpty()) mOwnFlair.erase(ownId);
+        else mOwnFlair[ownId] = valid;
+        // Tell peers we are already connected to with this identity right away;
+        // everyone else gets it with the next presence reply, invite or accept.
+        for (const auto &entry : mActiveTunnels) {
+            auto own = mOwnGxsIdByPeer.find(entry.first);
+            if (own != mOwnGxsIdByPeer.end() && own->second == ownId
+                    && chessPeerConfirmedLocked(entry.first))
+                tunnels.push_back(entry.second);
+        }
+    }
+    CHESS_TLOG("FLAIR own identity=" << ownId << " set to '" << valid.toStdString()
+               << "', updating " << tunnels.size() << " connected peer(s)");
+    // An explicit empty "flair" clears it on the other side.
+    QJsonObject update{{"type", "chess_flair"}, {"flair", valid}};
+    const QByteArray bytes = QJsonDocument(update).toJson(QJsonDocument::Compact);
+    for (const auto &tunnel : tunnels)
+        sendGxsData(tunnel, reinterpret_cast<const uint8_t*>(bytes.constData()), bytes.size());
+    IndicateConfigChanged();
+    mNotify->notifyPlayerFlairChanged(ownId);
+}
+
+QString p3RetroChess::playerFlair(const RsGxsId &id)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    auto own = mOwnFlair.find(id);
+    if (own != mOwnFlair.end()) return own->second;
+    auto peer = mPeerFlair.find(id);
+    return peer == mPeerFlair.end() ? QString() : peer->second;
+}
+
+void p3RetroChess::addOwnFlairLocked(QVariantMap &message, const RsGxsId &ownId) const
+{
+    auto it = mOwnFlair.find(ownId);
+    message["flair"] = it == mOwnFlair.end() ? QString() : it->second;
+}
+
+void p3RetroChess::addOwnFlairLocked(QJsonObject &message, const RsGxsId &ownId) const
+{
+    auto it = mOwnFlair.find(ownId);
+    message["flair"] = it == mOwnFlair.end() ? QString() : it->second;
+}
+
+void p3RetroChess::learnPeerFlair(const RsGxsId &sender, const QVariantMap &message)
+{
+    // No "flair" key: an older RetroChess, or a message that does not carry
+    // it. Keep what we know. An empty or unknown value clears it.
+    if (sender.isNull() || !message.contains("flair")) return;
+    if (rsIdentity && rsIdentity->isOwnId(sender)) return;
+    const QString flair = RetroChessFlair::normalize(message.value("flair").toString());
+    bool saved = false;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto it = mPeerFlair.find(sender);
+        const QString previous = it == mPeerFlair.end() ? QString() : it->second;
+        if (previous == flair) return;
+        if (flair.isEmpty()) {
+            mPeerFlair.erase(sender);
+        } else {
+            // Bound memory: identities that are not contacts can be anyone.
+            if (it == mPeerFlair.end() && mPeerFlair.size() >= 4096
+                    && !mChessContacts.count(sender)) return;
+            mPeerFlair[sender] = flair;
+        }
+        saved = mChessContacts.count(sender) > 0;
+    }
+    CHESS_TLOG("FLAIR peer=" << sender << " is now '" << flair.toStdString() << "'");
+    if (saved) IndicateConfigChanged();
+    mNotify->notifyPlayerFlairChanged(sender);
+}
+
 void p3RetroChess::tickChessPresence()
 {
     if (!mGxsTunnels || !rsIdentity) return;
@@ -945,6 +1060,8 @@ void p3RetroChess::tickChessPresence()
                 message["type"] = "chess_presence_request";
                 message["version"] = 1;
                 message["nonce"] = contact.nonce;
+                auto ownForProbe = mOwnGxsIdByPeer.find(id);
+                addOwnFlairLocked(message, ownForProbe != mOwnGxsIdByPeer.end() ? ownForProbe->second : preferred);
                 CHESS_TLOG("PRESENCE probe peer=" << id << " tunnel=" << active->second);
                 sends.push_back({active->second, QJsonDocument::fromVariant(message).toJson(QJsonDocument::Compact)});
             }
@@ -981,6 +1098,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         {
             RsStackMutex stack(mRetroChessMtx);
             if (mChessBusy) state = "busy";
+            addOwnFlairLocked(reply, info.source_gxs_id);
             reply["seeking"] = mLobbySeekActive;
             if (mLobbySeekActive) reply["tc"] = mLobbySeek.toNetString();
             for (const auto &entry : mGameSessions) {
@@ -1033,6 +1151,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
                     probe["type"] = "chess_presence_request";
                     probe["version"] = 1;
                     probe["nonce"] = contact.nonce;
+                    addOwnFlairLocked(probe, info.source_gxs_id);
                     reciprocalProbe = QJsonDocument::fromVariant(probe).toJson(QJsonDocument::Compact);
                 }
             }
@@ -1237,6 +1356,8 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
             // Client side: we initiated the invite but the tunnel isn't in
             // mActiveTunnels yet. Queue accept for when it becomes CAN_TALK.
             QJsonObject acceptObj{{"type", "chess_accept"}, {"game_id", mGameIdByPeer[gxsId]}};
+            auto ownIt = mOwnGxsIdByPeer.find(gxsId);
+            if (ownIt != mOwnGxsIdByPeer.end()) addOwnFlairLocked(acceptObj, ownIt->second);
             auto tcIt = mInviteTimeControlByPeer.find(gxsId);
             if (tcIt != mInviteTimeControlByPeer.end() && !tcIt->second.unlimited)
                 acceptObj["tc"] = tcIt->second.toNetString();
@@ -1253,6 +1374,8 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
         QJsonObject acceptObj{{"type", "chess_accept"}, {"game_id", gameIdForPeer(gxsId)}};
         {
             RsStackMutex stack(mRetroChessMtx);
+            auto ownIt = mOwnGxsIdByPeer.find(gxsId);
+            if (ownIt != mOwnGxsIdByPeer.end()) addOwnFlairLocked(acceptObj, ownIt->second);
             auto tcIt = mInviteTimeControlByPeer.find(gxsId);
             if (tcIt != mInviteTimeControlByPeer.end() && !tcIt->second.unlimited)
                 acceptObj["tc"] = tcIt->second.toNetString();
@@ -1577,6 +1700,7 @@ bool p3RetroChess::doSendInviteOverGxs(const RsGxsId &toId, const RsGxsId &ownId
     inviteJson["join_open_game"] = joinOpenGame;
     {
         RsStackMutex stack(mRetroChessMtx);
+        addOwnFlairLocked(inviteJson, ownId);
         // Normal invitations always start an unlimited game, independently of
         // any advertised seek or previous invitation to this peer. Keep an
         // explicit entry so timeControlForPeer cannot fall back to their seek.
@@ -1900,6 +2024,8 @@ void p3RetroChess::handleRawData(const RsGxsId& gxs_id,
     QJsonDocument jsondoc = QJsonDocument::fromJson(QByteArray((const char*)data, data_size));
     QVariantMap map = jsondoc.toVariant().toMap();
     QString type = map.value("type").toString();
+    learnPeerFlair(sender_id, map);
+    if (type == "chess_flair") return; // flair-only update, already stored above
     if (handleChessPresence(sender_id, tunnel_id, map)) return;
 
     if (type == "chess_invite") {

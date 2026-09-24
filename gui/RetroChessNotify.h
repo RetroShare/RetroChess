@@ -64,6 +64,7 @@ public:
 
 	void notifyChessStartGxs(const RsGxsId &gxs_id); 
 	void notifyAvailablePeersChanged();
+	void notifyPlayerFlairChanged(const RsGxsId &gxs_id);
 	void notifyLeaderboardDataGxs(const RsGxsId &gxs_id, const QByteArray &data);
 	void notifyChessWatchState(const RsGxsId &hostId, const QString &gameKey,
 	                           const QString &whiteId, const QString &whiteName,
@@ -94,6 +95,7 @@ signals:
 	void chessInviteClearedGxs(const RsGxsId &gxs_id);
 	void chessStartGxs(const RsGxsId &gxs_id);
 	void availablePeersChanged();
+	void playerFlairChanged(const RsGxsId &gxs_id);
 	void leaderboardDataGxs(const RsGxsId &gxs_id, const QByteArray &data);
 
 	void chessWatchState(const RsGxsId &hostId, const QString &gameKey,

@@ -43,6 +43,7 @@
 #include "gui/gxs/GxsIdTreeWidgetItem.h"
 #include "gui/ChessGameHistory.h"
 #include "gui/RetroChessSettings.h"
+#include "gui/RetroChessFlair.h"
 #include "gui/common/AvatarDefs.h"
 #include "util/HandleRichText.h"
 #include <retroshare/rspeers.h>
@@ -394,6 +395,8 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 	table->setSortingEnabled(false); table->setRowCount(players.size()); table->setColumnCount(10);
 	table->setIconSize(QSize(32, 32));
 	table->verticalHeader()->setDefaultSectionSize(36);
+	if (!dynamic_cast<RetroChessFlairDelegate *>(table->itemDelegateForColumn(1)))
+		table->setItemDelegateForColumn(1, new RetroChessFlairDelegate(table));
 	table->setHorizontalHeaderLabels({tr("#"), tr("Player"), tr("Rating"), tr("RD"), tr("Games"),
 	                                  tr("W"), tr("D"), tr("L"), tr("Status"), tr("Last played")});
 	if (table->horizontalHeaderItem(0)) {
@@ -487,6 +490,7 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
             }
             if (col == 1) {
                 item->setIcon(QIcon(avatar));
+                if (rsRetroChess) item->setData(RetroChessFlair::kFlairRole, rsRetroChess->playerFlair(p.id));
                 item->setToolTip(playerTooltip);
             } else if (col == 2) {
                 item->setToolTip(tr("Rating: %1 (%2, %3 games)")
