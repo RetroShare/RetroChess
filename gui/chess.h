@@ -222,6 +222,8 @@ public:
 	void recordMove(int fromTile, int toTile, char pieceName, bool capture, char promotion = 0);
 	void recordCapturedPiece(char pieceName, int pieceColor);
 	void playMoveSound(bool capture);
+	// Creates the player on first use.
+	QMediaPlayer *soundPlayer(QMediaPlayer *&player, const char *source, int volumePercent);
 	// Returns false when the action could not be delivered right now; it is then
 	// queued and resent (in order) once the tunnel to the opponent is back.
 	bool sendGameAction(const QString &action);

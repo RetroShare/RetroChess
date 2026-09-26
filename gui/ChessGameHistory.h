@@ -46,7 +46,12 @@ struct ChessGameRecord
 class ChessGameHistory
 {
 public:
+	// Newest first. Served from an in-memory copy; the file is only parsed
+	// again when it changed on disk (size or modification time).
 	static QVector<ChessGameRecord> games();
+	// Increases whenever the content returned by games() may have changed.
+	// Lets callers rebuild data derived from the history only when needed.
+	static quint64 revision();
 	static bool addGame(const ChessGameRecord &game);
 	static bool removeGame(const QString &id);
 	static bool removeGames(const QStringList &ids);

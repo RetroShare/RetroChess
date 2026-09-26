@@ -53,6 +53,9 @@
 #include "gui/common/AvatarDefs.h"
 #include <QGroupBox>
 #include <QLocale>
+#include <QHash>
+#include <QIcon>
+#include <QPixmapCache>
 
 namespace {
 
@@ -160,16 +163,31 @@ QStringList RetroChessSettings::pieceThemes()
 	return available;
 }
 
+// The board and piece themes are read for every square on every redraw. They
+// only change through the setters below (GUI thread), so keep them in memory
+// instead of reading QSettings (and building the theme list) each time.
+namespace {
+QString sPieceThemeId;
+bool sPieceThemeIdValid = false;
+RetroChessBoardTheme sBoardTheme;
+bool sBoardThemeValid = false;
+}
+
 QString RetroChessSettings::pieceThemeId()
 {
-	const QString id = Settings->valueFromGroup("RetroChess", "PieceTheme", "classic").toString();
-	return pieceThemes().contains(id) ? id : QStringLiteral("classic");
+	if (!sPieceThemeIdValid) {
+		const QString id = Settings->valueFromGroup("RetroChess", "PieceTheme", "classic").toString();
+		sPieceThemeId = pieceThemes().contains(id) ? id : QStringLiteral("classic");
+		sPieceThemeIdValid = true;
+	}
+	return sPieceThemeId;
 }
 
 void RetroChessSettings::setPieceThemeId(const QString &id)
 {
 	Settings->setValueToGroup("RetroChess", "PieceTheme",
 	        pieceThemes().contains(id) ? id : QStringLiteral("classic"));
+	sPieceThemeIdValid = false;
 }
 
 QString RetroChessSettings::pieceResource(QChar color, QChar piece, const QString &theme)
@@ -178,7 +196,26 @@ QString RetroChessSettings::pieceResource(QChar color, QChar piece, const QStrin
 	const QString classic = QString(":/piece/%1%2.svg").arg(color).arg(piece);
 	if (id == "classic") return classic;
 	const QString path = QString(":/piece/%1/%2%3.svg").arg(id).arg(color).arg(piece);
-	return QFile::exists(path) ? path : classic;
+	// Resource files never change at run time: look each one up only once.
+	static QHash<QString, bool> exists;
+	auto it = exists.constFind(path);
+	if (it == exists.constEnd()) it = exists.insert(path, QFile::exists(path));
+	return it.value() ? path : classic;
+}
+
+QPixmap RetroChessSettings::piecePixmap(QChar color, QChar piece, const QSize &size)
+{
+	const QString resource = pieceResource(color, piece);
+	const QString key = QStringLiteral("retrochess-piece:%1:%2x%3")
+	        .arg(resource).arg(size.width()).arg(size.height());
+	QPixmap pixmap;
+	if (!QPixmapCache::find(key, &pixmap)) {
+		// QIcon renders the SVG directly at the requested size (sharper than
+		// scaling the SVG's intrinsic 45x45 image).
+		pixmap = QIcon(resource).pixmap(size);
+		QPixmapCache::insert(key, pixmap);
+	}
+	return pixmap;
 }
 
 QVector<RetroChessBoardTheme> RetroChessSettings::boardThemes()
@@ -203,16 +240,21 @@ QString RetroChessSettings::boardThemeId()
 
 RetroChessBoardTheme RetroChessSettings::boardTheme()
 {
+	if (sBoardThemeValid) return sBoardTheme;
 	const QString selected = boardThemeId();
-	for (const RetroChessBoardTheme &theme : boardThemes())
-		if (theme.id == selected) return theme;
-	return boardThemes().first();
+	const QVector<RetroChessBoardTheme> themes = boardThemes();
+	sBoardTheme = themes.first();
+	for (const RetroChessBoardTheme &theme : themes)
+		if (theme.id == selected) { sBoardTheme = theme; break; }
+	sBoardThemeValid = true;
+	return sBoardTheme;
 }
 
 void RetroChessSettings::setBoardThemeId(const QString &id)
 {
 	Settings->setValueToGroup("RetroChess", "BoardTheme", id);
 	Settings->sync();
+	sBoardThemeValid = false;
 }
 
 bool RetroChessSettings::moveSoundEnabled()

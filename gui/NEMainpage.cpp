@@ -39,6 +39,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QShortcut>
+#include <QHash>
 #include <QToolButton>
 #include <QTimer>
 #include <QBuffer>
@@ -333,21 +334,21 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	connect(mNotify, &RetroChessNotify::chessWatchEnd, this, &NEMainpage::chessWatchEnd, Qt::QueuedConnection);
 
 	connect(mNotify, &RetroChessNotify::availablePeersChanged,
-	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	        this, &NEMainpage::scheduleRefreshAvailablePlayers, Qt::QueuedConnection);
 	connect(mNotify, &RetroChessNotify::gxsTunnelReady,
-	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	        this, &NEMainpage::scheduleRefreshAvailablePlayers, Qt::QueuedConnection);
 	connect(mNotify, &RetroChessNotify::gxsTunnelClosed,
-	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	        this, &NEMainpage::scheduleRefreshAvailablePlayers, Qt::QueuedConnection);
 	connect(mNotify, &RetroChessNotify::chessInvitedGxs,
-	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	        this, &NEMainpage::scheduleRefreshAvailablePlayers, Qt::QueuedConnection);
 	connect(mNotify, &RetroChessNotify::chessInviteClearedGxs,
-	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	        this, &NEMainpage::scheduleRefreshAvailablePlayers, Qt::QueuedConnection);
 	connect(mNotify, &RetroChessNotify::chessInviteClearedGxs,
 	        this, &NEMainpage::chessTunnelClosed, Qt::QueuedConnection);
 	connect(mGameSessions, &RetroChessSessionService::gameAdded,
-	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	        this, &NEMainpage::scheduleRefreshAvailablePlayers, Qt::QueuedConnection);
 	connect(mGameSessions, &RetroChessSessionService::gameRemoved,
-	        this, &NEMainpage::refreshAvailablePlayers, Qt::QueuedConnection);
+	        this, &NEMainpage::scheduleRefreshAvailablePlayers, Qt::QueuedConnection);
 
 	if (rsEvents) {
 		mEventHandlerId_identity = 0;
@@ -511,8 +512,23 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	}
 }
 
+void NEMainpage::scheduleRefreshAvailablePlayers()
+{
+	// The service reports every presence reply, tunnel change and invitation
+	// (with many contacts: several per second). Coalesce them into one
+	// rebuild of both player lists; user actions still refresh immediately.
+	if (!mRefreshPlayersTimer) {
+		mRefreshPlayersTimer = new QTimer(this);
+		mRefreshPlayersTimer->setSingleShot(true);
+		mRefreshPlayersTimer->setInterval(300);
+		connect(mRefreshPlayersTimer, &QTimer::timeout, this, &NEMainpage::refreshAvailablePlayers);
+	}
+	if (!mRefreshPlayersTimer->isActive()) mRefreshPlayersTimer->start();
+}
+
 void NEMainpage::refreshAvailablePlayers()
 {
+	if (mRefreshPlayersTimer) mRefreshPlayersTimer->stop();
     if (!ui->savedContacts || !ui->availablePlayers) return;
     updateLobbyGameButton();
     const auto peers = rsRetroChess->availableChessPeers();
@@ -556,15 +572,21 @@ void NEMainpage::refreshAvailablePlayers()
             else if (status == "busy") { rank = 2; color = QColor("#b47b16"); label = tr("Busy"); }
             else if (status == "checking") { rank = 3; label = tr("Checking..."); }
             else if (status == "offline") { rank = 4; label = tr("Offline"); }
-            QPixmap dot(16, 16);
-            dot.fill(Qt::transparent);
-            QPainter painter(&dot);
-            painter.setRenderHint(QPainter::Antialiasing);
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(color);
-            painter.drawEllipse(3, 3, 10, 10);
-            painter.end();
-            item->setIcon(1, QIcon(dot));
+            // Only a handful of status colours: paint each dot once.
+            static QHash<QRgb, QIcon> statusDots;
+            auto dotIt = statusDots.constFind(color.rgba());
+            if (dotIt == statusDots.constEnd()) {
+                QPixmap dot(16, 16);
+                dot.fill(Qt::transparent);
+                QPainter painter(&dot);
+                painter.setRenderHint(QPainter::Antialiasing);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(color);
+                painter.drawEllipse(3, 3, 10, 10);
+                painter.end();
+                dotIt = statusDots.insert(color.rgba(), QIcon(dot));
+            }
+            item->setIcon(1, dotIt.value());
             item->setText(1, label);
             item->setData(1, Qt::UserRole, rank);
             item->setData(1, Qt::UserRole + 1, status);

@@ -54,9 +54,9 @@ public:
 	char pieceName;
 
 private:
+	void applyStyleSheet(const QString &styleSheet);
+	void setPiecePixmap(const QPixmap &pixmap);
     QWidget *m_chess_window_p;	//parent chess board
 };
-
-void validate_tile(int row, int col, int c);
 
 #endif // TILE_H

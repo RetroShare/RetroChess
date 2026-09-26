@@ -36,6 +36,8 @@
 #include <QSaveFile>
 #include <QFileInfo>
 #include <QUuid>
+#include <QHash>
+#include <functional>
 #include <retroshare/rsinit.h>
 #include <retroshare/rsidentity.h>
 #include "interface/rsRetroChess.h"
@@ -93,28 +95,63 @@ QString leaderboardFilePath()
 	return QString::fromUtf8(accDir.c_str()) + "/retrochess_leaderboard.json";
 }
 
+struct HistoryName { QString name; QString peerId; };
+
+// Table item whose tooltip is only built when it is first shown. The player
+// tooltip decodes the LARGE avatar, rescales it and embeds it as base64 PNG;
+// doing that for every row on every leaderboard refresh was most of the cost
+// of populate().
+class LazyTooltipItem : public QTableWidgetItem
+{
+public:
+	LazyTooltipItem(const QString &text, std::function<QString()> makeTooltip)
+	    : QTableWidgetItem(text), mMakeTooltip(std::move(makeTooltip)) {}
+	QVariant data(int role) const override
+	{
+		if (role == Qt::ToolTipRole && mMakeTooltip) {
+			mTooltip = mMakeTooltip();
+			mMakeTooltip = nullptr;
+		}
+		if (role == Qt::ToolTipRole && !mTooltip.isNull()) return mTooltip;
+		return QTableWidgetItem::data(role);
+	}
+private:
+	mutable std::function<QString()> mMakeTooltip;
+	mutable QString mTooltip;
+};
+
+// Identity -> name/peer seen in the game history (newest game first). Rebuilt
+// only when the history changes, instead of scanning every game for every
+// name lookup (twice per receipt in recompute(), once per table row).
+const QHash<QString, HistoryName> &historyNames()
+{
+	static QHash<QString, HistoryName> names;
+	static quint64 builtFor = ~quint64(0);
+	const QVector<ChessGameRecord> games = ChessGameHistory::games(); // refreshes revision()
+	if (builtFor == ChessGameHistory::revision()) return names;
+	names.clear();
+	auto add = [](const QString &id, const QString &name, const QString &peerId) {
+		if (id.isEmpty()) return;
+		HistoryName &entry = names[id.toLower()];
+		if (entry.name.isEmpty()) entry.name = name;
+		if (entry.peerId.isEmpty()) entry.peerId = peerId;
+	};
+	for (const ChessGameRecord &game : games) {
+		add(game.whiteGxsId, game.whitePlayer, game.whitePeerId);
+		add(game.blackGxsId, game.blackPlayer, game.blackPeerId);
+	}
+	builtFor = ChessGameHistory::revision();
+	return names;
+}
+
 QString lookupGameHistoryName(const QString &idStr, QString *outPeerId = nullptr)
 {
 	if (idStr.isEmpty()) return QString();
-	for (const ChessGameRecord &game : ChessGameHistory::games()) {
-		if (game.whiteGxsId.compare(idStr, Qt::CaseInsensitive) == 0) {
-			if (outPeerId && !game.whitePeerId.isEmpty()) {
-				*outPeerId = game.whitePeerId;
-			}
-			if (!game.whitePlayer.isEmpty()) {
-				return game.whitePlayer;
-			}
-		}
-		if (game.blackGxsId.compare(idStr, Qt::CaseInsensitive) == 0) {
-			if (outPeerId && !game.blackPeerId.isEmpty()) {
-				*outPeerId = game.blackPeerId;
-			}
-			if (!game.blackPlayer.isEmpty()) {
-				return game.blackPlayer;
-			}
-		}
-	}
-	return QString();
+	const auto &names = historyNames();
+	const auto it = names.constFind(idStr.toLower());
+	if (it == names.constEnd()) return QString();
+	if (outPeerId && !it->peerId.isEmpty()) *outPeerId = it->peerId;
+	return it->name;
 }
 
 QString displayName(const RsGxsId &id)
@@ -193,8 +230,12 @@ void updatePair(RetroChessLeaderboard::Player &a,
 }
 }
 
-RetroChessLeaderboard::RetroChessLeaderboard(QObject *parent) : QObject(parent), mSyncTimer(new QTimer(this))
+RetroChessLeaderboard::RetroChessLeaderboard(QObject *parent)
+    : QObject(parent), mSyncTimer(new QTimer(this)), mCommitTimer(new QTimer(this))
 {
+	mCommitTimer->setSingleShot(true);
+	mCommitTimer->setInterval(500);
+	connect(mCommitTimer, &QTimer::timeout, this, &RetroChessLeaderboard::commitChanges);
 	mSyncEpoch = QUuid::createUuid().toString(QUuid::WithoutBraces);
 	load();
 	connect(mSyncTimer, &QTimer::timeout, this, &RetroChessLeaderboard::synchronizeTunnels);
@@ -204,7 +245,31 @@ RetroChessLeaderboard::RetroChessLeaderboard(QObject *parent) : QObject(parent),
 	QTimer::singleShot(0, this, &RetroChessLeaderboard::synchronizeTunnels);
 }
 
-RetroChessLeaderboard::~RetroChessLeaderboard() = default;
+RetroChessLeaderboard::~RetroChessLeaderboard()
+{
+	// Do not lose receipts that arrived during the last commit delay.
+	if (mSaveNeeded) save();
+}
+
+void RetroChessLeaderboard::scheduleCommit(bool ratingsChanged)
+{
+	mSaveNeeded = true;
+	if (ratingsChanged) mRecomputeNeeded = true;
+	if (!mCommitTimer->isActive()) mCommitTimer->start();
+}
+
+void RetroChessLeaderboard::commitChanges()
+{
+	mCommitTimer->stop();
+	const bool saveNeeded = mSaveNeeded;
+	const bool recomputeNeeded = mRecomputeNeeded;
+	mSaveNeeded = mRecomputeNeeded = false;
+	if (saveNeeded) save();
+	if (recomputeNeeded) {
+		recompute();
+		emit changed();
+	}
+}
 
 bool RetroChessLeaderboard::validResult(const QString &r)
 { return r == "1-0" || r == "0-1" || r == "1/2-1/2"; }
@@ -228,6 +293,8 @@ void RetroChessLeaderboard::submitResult(const QString &gameId, const RsGxsId &w
 	// Our own receipt: the signer is a local identity, so it is first-hand.
 	consumeReceipt(r, RsGxsId(r.signer.toStdString()));
 	broadcastReceipt(r);
+	// Our own game: show the new rating right away.
+	commitChanges();
 }
 
 void RetroChessLeaderboard::receiveResult(const RsGxsId &signer, const QString &gameId,
@@ -301,7 +368,7 @@ bool RetroChessLeaderboard::consumeReceipt(const Receipt &r, const RsGxsId &send
 		storeReceipt(key, r, sender);
 		CHESS_LBLOG("ACCEPT first-hand receipt from=" << sender << " " << LB_RECEIPT(r) << " seq=" << mNextSeq);
 	}
-	save(); recompute(); emit changed();
+	scheduleCommit();
 	return true;
 }
 
@@ -334,7 +401,6 @@ void RetroChessLeaderboard::recompute()
 	for (const Receipt &r : confirmed) {
 		Player &w = mPlayers[r.white], &b = mPlayers[r.black];
 		w.id = RsGxsId(r.white.toStdString()); b.id = RsGxsId(r.black.toStdString());
-		w.name = displayName(w.id); b.name = displayName(b.id);
 		const double score = r.result == "1-0" ? 1.0 : (r.result == "0-1" ? 0.0 : 0.5);
 		updatePair(w, b, score);
 		if (score == 1.0) { ++w.wins; ++b.losses; }
@@ -342,6 +408,8 @@ void RetroChessLeaderboard::recompute()
 		else { ++w.draws; ++b.draws; }
 		w.lastPlayed = b.lastPlayed = QDateTime::fromSecsSinceEpoch(r.finishedAt);
 	}
+	// Resolve each name once per player, not twice per receipt.
+	for (Player &player : mPlayers) player.name = displayName(player.id);
 }
 
 bool RetroChessLeaderboard::getPlayer(const RsGxsId &id, Player &player) const
@@ -440,16 +508,11 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 			avatar = GxsIdDetails::makeDefaultIcon(p.id, GxsIdDetails::MEDIUM);
 		}
 
-		// Resolve tooltip avatar (LARGE)
-		QPixmap tooltipPixmap;
-		if (known && details.mAvatar.mSize > 0) {
-			GxsIdDetails::loadPixmapFromData(
-			        details.mAvatar.mData, details.mAvatar.mSize,
-			        tooltipPixmap, GxsIdDetails::LARGE);
-		}
-		if (tooltipPixmap.isNull()) {
-			tooltipPixmap = GxsIdDetails::makeDefaultIcon(p.id, GxsIdDetails::LARGE);
-		}
+		// The tooltip avatar (LARGE) is only decoded when the tooltip is shown.
+		const QByteArray avatarBytes = known && details.mAvatar.mSize > 0
+		        ? QByteArray(reinterpret_cast<const char *>(details.mAvatar.mData),
+		                     static_cast<int>(details.mAvatar.mSize))
+		        : QByteArray();
 
 		// Actively request unknown identity details from peers (throttled to once every 30 seconds per ID)
 		if (rsIdentity && !p.id.isNull() && !rsIdentity->isOwnId(p.id)) {
@@ -465,14 +528,24 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 		if (playerTooltip.isEmpty())
 			playerTooltip = tr("Identity name: %1<br/>Identity Id: %2")
 			        .arg(playerName.toHtmlEscaped(), idStr.toHtmlEscaped());
-		QString embeddedImage;
-		if (RsHtml::makeEmbeddedImage(
-		        tooltipPixmap.scaled(
-		                QSize(96, 96), Qt::KeepAspectRatio,
-		                Qt::SmoothTransformation).toImage(),
-		        embeddedImage, -1))
-			playerTooltip = QString("<table><tr><td>%1</td><td>%2</td></tr></table>")
-			        .arg(embeddedImage, playerTooltip);
+		const RsGxsId playerId = p.id;
+		auto makePlayerTooltip = [avatarBytes, playerId, playerTooltip]() {
+			QPixmap tooltipPixmap;
+			if (!avatarBytes.isEmpty())
+				GxsIdDetails::loadPixmapFromData(
+				        reinterpret_cast<const unsigned char *>(avatarBytes.constData()),
+				        avatarBytes.size(), tooltipPixmap, GxsIdDetails::LARGE);
+			if (tooltipPixmap.isNull())
+				tooltipPixmap = GxsIdDetails::makeDefaultIcon(playerId, GxsIdDetails::LARGE);
+			QString embeddedImage;
+			if (RsHtml::makeEmbeddedImage(
+			        tooltipPixmap.scaled(QSize(96, 96), Qt::KeepAspectRatio,
+			                             Qt::SmoothTransformation).toImage(),
+			        embeddedImage, -1))
+				return QString("<table><tr><td>%1</td><td>%2</td></tr></table>")
+				        .arg(embeddedImage, playerTooltip);
+			return playerTooltip;
+		};
 
 		const QStringList values{QString::number(row + 1), playerName, QString::number(qRound(p.rating)),
 		                         QString::number(qRound(p.rd)), QString::number(p.games()),
@@ -480,14 +553,14 @@ void RetroChessLeaderboard::populate(QTableWidget *table) const
 		                         p.provisional() ? tr("Provisional") : tr("Rated"),
 		                         RetroChessSettings::formatDateTime(p.lastPlayed.toLocalTime())};
 		for (int col = 0; col < values.size(); ++col) {
-            auto *item = new QTableWidgetItem(values.at(col));
+            auto *item = col == 1 ? new LazyTooltipItem(values.at(col), makePlayerTooltip)
+                                  : new QTableWidgetItem(values.at(col));
             if (col == 0 || (col >= 2 && col <= 7)) {
                 item->setData(Qt::DisplayRole, values.at(col).toInt());
                 item->setTextAlignment(Qt::AlignCenter);
             }
             if (col == 1) {
                 item->setIcon(QIcon(avatar));
-                item->setToolTip(playerTooltip);
             } else if (col == 2) {
                 item->setToolTip(tr("Rating: %1 (%2, %3 games)")
                         .arg(qRound(p.rating))
@@ -633,7 +706,7 @@ void RetroChessLeaderboard::save() const
 
 	QSaveFile saveFile(filePath);
 	if (saveFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-		saveFile.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+		saveFile.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
 		if (!saveFile.commit()) {
 			CHESS_STORELOG("SAVE leaderboard file " << filePath.toStdString() << " FAILED: "
 			               << saveFile.errorString().toStdString());
@@ -653,7 +726,7 @@ void RetroChessLeaderboard::broadcastReceipt(const Receipt &r, const RsGxsId &ex
 	if (!rsRetroChess) return;
 	const QString key = canonicalKey(r) + '|' + r.signer;
 	mGossipedReceipts.insert(key);
-	if (mReceipts.contains(key)) save();
+	if (mReceipts.contains(key)) scheduleCommit(false);
 	QJsonObject obj{
 		{"type", "leaderboard_receipt"},
 		{"version", 1},

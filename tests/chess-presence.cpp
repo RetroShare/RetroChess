@@ -33,9 +33,24 @@ static time_t clockNow = 1000;
 static time_t testTime(time_t *) { return clockNow; }
 static unsigned int freedPackets = 0;
 static void testFree(void *data) { ++freedPackets; std::free(data); }
+
+#define time testTime
+#include "services/RetroChessTunnelDebug.h"
+#undef time
+using RetroChessTunnelDebug::statusName;
+using RetroChessTunnelDebug::payloadType;
+
+struct ChessTimeControl {
+    bool unlimited = true;
+    QString toNetString() const { return QString(); }
+    static ChessTimeControl fromNetString(const QString &) { return ChessTimeControl(); }
+};
+struct RetroChessFlair { static QString normalize(const QString &flair) { return flair; } };
+struct RsIdentityDetails { std::string mNickname; };
 struct Identity {
     void getOwnIds(std::list<Id> &ids) { ids = {1}; }
     bool isOwnId(Id id) { return id == Id(1); }
+    bool getIdDetails(Id, RsIdentityDetails &) { return false; }
 };
 static Identity identity;
 static Identity *rsIdentity = &identity;
@@ -62,7 +77,7 @@ struct RsConfigKeyValueSet : RsItem {
 };
 struct RsRetroChessGameSession {
     bool gxs = true;
-    QString endpointId, localIdentityId = "1", fen;
+    QString endpointId, localIdentityId = "1", fen, gameId;
     int localColor = 0;
     unsigned int moveSequence = 0;
     bool interrupted = false;
@@ -76,8 +91,10 @@ struct p3RetroChess {
     Id mPreferredChessIdentity;
     bool mChessIdentitiesConfigured = false;
     std::set<Id> mInvitesToGxs, mInvitesFromGxs;
+    std::map<Id, QString> mGameIdByPeer, mPendingWatchRequests, mOwnFlair, mPeerFlair;
     int mRetroChessMtx = 0;
-    bool mChessBusy = false;
+    bool mChessBusy = false, mLobbySeekActive = false;
+    ChessTimeControl mLobbySeek;
     bool enabled = true;
     unsigned int saves = 0;
     unsigned int delivered = 0;
@@ -86,18 +103,31 @@ struct p3RetroChess {
     RsGxsTunnelService *mGxsTunnels = &transport;
     Notify *mNotify = &notify;
     void IndicateConfigChanged() { ++saves; }
+    void addOwnFlairLocked(QVariantMap &, const Id &) const {}
+    bool sendGxsData(const Id &tunnel, const uint8_t *data, uint32_t size) {
+        return transport.sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, data, size);
+    }
+    bool closeGxsTunnel(const Id &tunnel, const char *) { transport.closeExistingTunnel(tunnel, 0); return true; }
     Id preferredChessIdentity() { return enabled ? Id(1) : Id(); }
+    std::list<Id> chessIdentitiesFrom(std::list<Id> own) { return enabled ? own : std::list<Id>(); }
+    Id preferredChessIdentityFrom(const std::list<Id> &ids) { return ids.empty() ? Id() : ids.front(); }
     bool chessIdentityEnabled(Id id) { return enabled && id == Id(1); }
     void requestGxsTunnel(Id id) { mPendingTunnels[id] = Id(id.value + 100); }
     void tickChessPresence();
-    bool handleChessPresence(const Id &, const Id &, const QVariantMap &);
+    bool handleChessPresence(const Id &, const Id &, const RsGxsTunnelService::GxsTunnelInfo &, const QVariantMap &);
+    // Test helper: the production receiveData() passes the tunnel info along.
+    bool handleChessPresence(const Id &sender, const Id &tunnel, const QVariantMap &message) {
+        RsGxsTunnelService::GxsTunnelInfo info;
+        transport.getTunnelInfo(tunnel, info);
+        return handleChessPresence(sender, tunnel, info, message);
+    }
     bool saveList(bool &, std::list<RsItem *> &);
     bool loadList(std::list<RsItem *> &);
     bool addChessContact(const Id &);
     void removeChessContact(const Id &);
     bool acceptDataFromPeer(const Id &, const Id &, bool);
     void receiveData(const Id &, unsigned char *, uint32_t);
-    void handleRawData(const Id &, const Id &, bool, const uint8_t *, uint32_t) { ++delivered; }
+    void handleRawData(const Id &, const Id &, const RsGxsTunnelService::GxsTunnelInfo &, const uint8_t *, uint32_t) { ++delivered; }
 };
 
 #define time testTime
@@ -236,17 +266,20 @@ int main()
 
     p3RetroChess visitor;
     assert(visitor.acceptDataFromPeer(2, 102, false));
+    visitor.receiveData(102, static_cast<unsigned char *>(std::malloc(1)), 1);
+    assert(visitor.delivered == 1 && freedPackets == 1);
     assert(visitor.mTunnelToGxsIdMap.count(102));
     assert(visitor.mOwnGxsIdByPeer.empty()); // Presence-only visitors do not accumulate identity entries.
 
     p3RetroChess disabled;
     disabled.enabled = false;
-    assert(disabled.acceptDataFromPeer(2, 102, false));
+    assert(disabled.acceptDataFromPeer(2, 102, false)); // always true: GxsTunnel would leak the buffer
     disabled.receiveData(102, static_cast<unsigned char *>(std::malloc(1)), 1);
-    assert(disabled.delivered == 0 && freedPackets == 1);
+    assert(disabled.delivered == 0 && freedPackets == 2);
+    assert(!disabled.mTunnelToGxsIdMap.count(102));
     disabled.mGameSessions["2"] = {};
     assert(disabled.acceptDataFromPeer(2, 102, false));
     disabled.receiveData(102, static_cast<unsigned char *>(std::malloc(1)), 1);
-    assert(disabled.delivered == 1 && freedPackets == 2); // Existing game may finish.
+    assert(disabled.delivered == 1 && freedPackets == 3); // Existing game may finish.
     std::cout << "Chess presence regression checks passed\n";
 }

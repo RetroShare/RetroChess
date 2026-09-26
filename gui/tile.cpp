@@ -63,12 +63,22 @@ void Tile::display(char elem)
 	}
 
 	const QChar colorCode = this->pieceColor ? 'w' : 'b';
-	const QString resource = RetroChessSettings::pieceResource(colorCode, pieceCode);
 	this->setAlignment(Qt::AlignCenter);
-	// QPixmap loads an SVG at its intrinsic 45x45 size. QIcon asks the SVG
-	// engine to render directly at the 64x64 tile size, producing a larger,
-	// sharper piece without bitmap upscaling.
-	this->setPixmap(QIcon(resource).pixmap(this->size()));
+	// Rendered once per piece/size and cached (see piecePixmap()).
+	setPiecePixmap(RetroChessSettings::piecePixmap(colorCode, pieceCode, this->size()));
+}
+
+void Tile::setPiecePixmap(const QPixmap &pixmap)
+{
+	// Board layout passes redisplay every piece; skip squares that already
+	// show exactly this (cached) pixmap.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	const qint64 current = this->pixmap().cacheKey();
+#else
+	const qint64 current = this->pixmap() ? this->pixmap()->cacheKey() : 0;
+#endif
+	if (!pixmap.isNull() && current == pixmap.cacheKey()) return;
+	setPixmap(pixmap);
 }
 
 void Tile::displayPosition(bool occupied, char name, int color)
@@ -85,8 +95,7 @@ void Tile::displayPosition(bool occupied, char name, int color)
 	default: clear(); return;
 	}
 	const QChar colorCode = color ? 'w' : 'b';
-	setPixmap(QIcon(RetroChessSettings::pieceResource(colorCode, resourcePiece))
-	                  .pixmap(size()));
+	setPiecePixmap(RetroChessSettings::piecePixmap(colorCode, resourcePiece, size()));
 }
 
 // check click
@@ -268,9 +277,16 @@ void Tile::tileDisplay()
 	const RetroChessBoardTheme theme = RetroChessSettings::boardTheme();
 	const QColor color = this->tileColor ? theme.dark : theme.light;
 	const QColor hover = color.lighter(120);
-	this->setStyleSheet(QString(
+	applyStyleSheet(QString(
 	        "QLabel { background-color: %1; } QLabel:hover { background-color: %2; }")
 	        .arg(color.name(), hover.name()));
+}
+
+void Tile::applyStyleSheet(const QString &styleSheet)
+{
+	// QWidget::setStyleSheet() re-polishes the widget even when the sheet is
+	// unchanged, and whole-board redraws call this for all 64 squares.
+	if (this->styleSheet() != styleSheet) setStyleSheet(styleSheet);
 }
 
 void Tile::displayLastMove()
@@ -284,7 +300,7 @@ void Tile::displayLastMove()
 	        qRound(base.red() * (1.0 - opacity) + theme.lastMove.red() * opacity),
 	        qRound(base.green() * (1.0 - opacity) + theme.lastMove.green() * opacity),
 	        qRound(base.blue() * (1.0 - opacity) + theme.lastMove.blue() * opacity));
-	setStyleSheet(QString("QLabel { background-color: %1; }").arg(blended.name()));
+	applyStyleSheet(QString("QLabel { background-color: %1; }").arg(blended.name()));
 }
 
 void Tile::pawnLevelupCheck()

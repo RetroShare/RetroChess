@@ -711,39 +711,9 @@ void RetroChessWindow::initAccessories()
 	m_debugWidget = new ChessDebugWidget(
 	        windowTitle(), [this]() { return currentFen(); }, this);
 
-	m_moveSound = new QMediaPlayer(this);
-	m_captureSound = new QMediaPlayer(this);
-	m_victorySound = new QMediaPlayer(this);
-	m_drawSound = new QMediaPlayer(this);
-	m_defeatSound = new QMediaPlayer(this);
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-	m_moveSound->setAudioOutput(new QAudioOutput(m_moveSound));
-	m_captureSound->setAudioOutput(new QAudioOutput(m_captureSound));
-	m_victorySound->setAudioOutput(new QAudioOutput(m_victorySound));
-	m_drawSound->setAudioOutput(new QAudioOutput(m_drawSound));
-	m_defeatSound->setAudioOutput(new QAudioOutput(m_defeatSound));
-	m_moveSound->setSource(QUrl("qrc:/sound/Move.mp3"));
-	m_captureSound->setSource(QUrl("qrc:/sound/Capture.mp3"));
-	m_victorySound->setSource(QUrl("qrc:/sound/victory.mp3"));
-	m_drawSound->setSource(QUrl("qrc:/sound/Draw.mp3"));
-	m_defeatSound->setSource(QUrl("qrc:/sound/Defeat.mp3"));
-	m_moveSound->audioOutput()->setVolume(0.7f);
-	m_captureSound->audioOutput()->setVolume(0.7f);
-	m_victorySound->audioOutput()->setVolume(0.8f);
-	m_drawSound->audioOutput()->setVolume(0.8f);
-	m_defeatSound->audioOutput()->setVolume(0.8f);
-#else
-	m_moveSound->setMedia(QUrl("qrc:/sound/Move.mp3"));
-	m_captureSound->setMedia(QUrl("qrc:/sound/Capture.mp3"));
-	m_victorySound->setMedia(QUrl("qrc:/sound/victory.mp3"));
-	m_drawSound->setMedia(QUrl("qrc:/sound/Draw.mp3"));
-	m_defeatSound->setMedia(QUrl("qrc:/sound/Defeat.mp3"));
-	m_moveSound->setVolume(70);
-	m_captureSound->setVolume(70);
-	m_victorySound->setVolume(80);
-	m_drawSound->setVolume(80);
-	m_defeatSound->setVolume(80);
-#endif
+	// Sound players are created on first use (see soundPlayer()): five
+	// QMediaPlayer/QAudioOutput pairs per game window were a sizeable part of
+	// its memory, and most games only ever play two of the sounds.
 
 	// Use a real bottom status bar so messages reserve layout space and never
 	// overlap the resizable chess board.
@@ -2366,7 +2336,8 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
 
     if (m_isSpectator) {
         if (RetroChessSettings::gameResultSoundEnabled()) {
-            QMediaPlayer *resultSound = draw ? m_drawSound : m_victorySound;
+            QMediaPlayer *resultSound = draw ? soundPlayer(m_drawSound, "qrc:/sound/Draw.mp3", 80)
+                                             : soundPlayer(m_victorySound, "qrc:/sound/victory.mp3", 80);
             if (resultSound) {
                 resultSound->stop();
                 resultSound->setPosition(0);
@@ -2416,8 +2387,9 @@ void RetroChessWindow::showGameResultDialog(bool localWon, bool draw, const QStr
 	        draw ? "1/2-1/2" : (winningColor == 1 ? "1-0" : "0-1"),
 	        !reason.isEmpty() ? reason : (draw ? tr("Draw") : tr("Resignation")));
 	if (RetroChessSettings::gameResultSoundEnabled()) {
-		QMediaPlayer *resultSound = draw ? m_drawSound
-		        : (localWon ? m_victorySound : m_defeatSound);
+		QMediaPlayer *resultSound = draw ? soundPlayer(m_drawSound, "qrc:/sound/Draw.mp3", 80)
+		        : (localWon ? soundPlayer(m_victorySound, "qrc:/sound/victory.mp3", 80)
+		                    : soundPlayer(m_defeatSound, "qrc:/sound/Defeat.mp3", 80));
 		if (resultSound) {
 			resultSound->stop();
 			resultSound->setPosition(0);
@@ -2972,10 +2944,9 @@ QPixmap RetroChessWindow::renderCapturedStrip(
 
 	auto getStyledPiece = [&](char type, double size) -> QPixmap {
 		const QChar pieceCode = (type == 'H') ? 'N' : type;
-		const QString svgPath = RetroChessSettings::pieceResource(isWhitePieces ? 'w' : 'b', pieceCode);
-
 		const int pSize = qMax(1, qRound(size * dpr));
-		QPixmap basePix = QIcon(svgPath).pixmap(QSize(pSize, pSize));
+		// Cached render (the strip is redrawn on every move and resize).
+		QPixmap basePix = RetroChessSettings::piecePixmap(isWhitePieces ? 'w' : 'b', pieceCode, QSize(pSize, pSize));
 		basePix.setDevicePixelRatio(dpr);
 		return basePix;
 	};
@@ -3115,11 +3086,27 @@ void RetroChessWindow::updateEndGameBadges(int ply)
 	}
 }
 
+QMediaPlayer *RetroChessWindow::soundPlayer(QMediaPlayer *&player, const char *source, int volumePercent)
+{
+	if (player) return player;
+	player = new QMediaPlayer(this);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	player->setAudioOutput(new QAudioOutput(player));
+	player->audioOutput()->setVolume(volumePercent / 100.0f);
+	player->setSource(QUrl(QString::fromLatin1(source)));
+#else
+	player->setMedia(QUrl(QString::fromLatin1(source)));
+	player->setVolume(volumePercent);
+#endif
+	return player;
+}
+
 void RetroChessWindow::playMoveSound(bool capture)
 {
 	if (capture ? !RetroChessSettings::captureSoundEnabled()
 	            : !RetroChessSettings::moveSoundEnabled()) return;
-	QMediaPlayer *player = capture ? m_captureSound : m_moveSound;
+	QMediaPlayer *player = capture ? soundPlayer(m_captureSound, "qrc:/sound/Capture.mp3", 70)
+	                               : soundPlayer(m_moveSound, "qrc:/sound/Move.mp3", 70);
 	if (!player)
 		return;
 	player->stop();

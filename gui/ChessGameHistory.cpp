@@ -127,6 +127,45 @@ QVector<ChessGameRecord> parseGamesJson(const QJsonDocument &document)
 	return result;
 }
 
+// In-memory copy of the history. games() used to read and parse the whole
+// file (up to 500 games with every position) on each call, and it is called
+// from the leaderboard for every player name lookup. GUI thread only.
+struct HistoryCache {
+	bool valid = false;
+	QString path;
+	qint64 size = -1;
+	QDateTime modified;
+	QVector<ChessGameRecord> games;
+	quint64 revision = 0;
+};
+
+HistoryCache &cache()
+{
+	static HistoryCache instance;
+	return instance;
+}
+
+void setCache(const QString &path, const QVector<ChessGameRecord> &games)
+{
+	HistoryCache &c = cache();
+	c.path = path;
+	c.games = games;
+	c.valid = true;
+	const QFileInfo info(path);
+	c.size = info.exists() ? info.size() : -1;
+	c.modified = info.exists() ? info.lastModified() : QDateTime();
+	++c.revision;
+}
+
+bool cacheIsCurrent(const QString &path)
+{
+	const HistoryCache &c = cache();
+	if (!c.valid || c.path != path) return false;
+	const QFileInfo info(path);
+	if (!info.exists()) return c.size < 0;
+	return info.size() == c.size && info.lastModified() == c.modified;
+}
+
 bool saveGames(const QVector<ChessGameRecord> &games)
 {
 	QJsonArray array;
@@ -140,8 +179,11 @@ bool saveGames(const QVector<ChessGameRecord> &games)
 
 		QSaveFile saveFile(filePath);
 		if (saveFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-			saveFile.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+			// Compact: the file is only read by this plugin, and indentation
+			// made it (and every save) considerably larger.
+			saveFile.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
 			if (saveFile.commit()) {
+				setCache(filePath, games);
 				return true;
 			}
 			saveFile.cancelWriting();
@@ -153,18 +195,29 @@ bool saveGames(const QVector<ChessGameRecord> &games)
 	        "RetroChess", HISTORY_KEY,
 	        QJsonDocument(array).toJson(QJsonDocument::Compact));
 	Settings->sync();
+	cache().valid = false;   // served from Settings: re-read next time
+	++cache().revision;
 	return true;
 }
+}
+
+quint64 ChessGameHistory::revision()
+{
+	return cache().revision;
 }
 
 QVector<ChessGameRecord> ChessGameHistory::games()
 {
 	const QString filePath = historyFilePath();
+	if (!filePath.isEmpty() && cacheIsCurrent(filePath)) return cache().games;
 	if (!filePath.isEmpty() && QFile::exists(filePath)) {
 		QFile file(filePath);
 		if (file.open(QIODevice::ReadOnly)) {
 			const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
-			return parseGamesJson(document);
+			const QVector<ChessGameRecord> parsed = parseGamesJson(document);
+			file.close();
+			setCache(filePath, parsed);
+			return parsed;
 		}
 	}
 
@@ -184,6 +237,8 @@ QVector<ChessGameRecord> ChessGameHistory::games()
 		}
 	}
 
+	// No history yet: remember that too, so later calls do not re-read Settings.
+	if (!filePath.isEmpty() && !QFile::exists(filePath)) setCache(filePath, {});
 	return {};
 }
 

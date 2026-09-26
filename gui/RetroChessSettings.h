@@ -22,6 +22,8 @@
 #define RETROCHESSSETTINGS_H
 
 #include <QColor>
+#include <QPixmap>
+#include <QSize>
 #include <QDialog>
 #include <QString>
 #include <QStringList>
@@ -44,6 +46,10 @@ public:
 	static QString pieceThemeId();
 	static void setPieceThemeId(const QString &id);
 	static QString pieceResource(QChar color, QChar piece, const QString &theme = QString());
+	// Piece of the current theme rendered at the given size. Cached, so the
+	// SVG is rendered once per (theme, piece, size) instead of on every board
+	// redraw, click and resize step.
+	static QPixmap piecePixmap(QChar color, QChar piece, const QSize &size);
 	static QVector<RetroChessBoardTheme> boardThemes();
 	static RetroChessBoardTheme boardTheme();
 	static QString boardThemeId();
