@@ -52,6 +52,7 @@ class QLabel;
 class QTreeWidgetItem;
 class QTreeWidget;
 class QMenu;
+class QTimer;
 class RetroChessSessionService;
 struct RsRetroChessAvailablePeer;
 
@@ -102,6 +103,7 @@ private slots:
 	void officialLobbyNewMessage(ChatWidget *chatWidget);
 	void archiveFinishedGame();
 	void refreshAvailablePlayers();
+	void scheduleRefreshAvailablePlayers();
 	void watchSelectedActiveGame();
 	void chessWatchState(const RsGxsId &hostId, const QString &gameKey,
 	                     const QString &whiteId, const QString &whiteName,
@@ -122,6 +124,7 @@ private:
 	QMap<QString, QPointer<RetroChessWindow>> mSpectatorWindows;
 	ChatDialog *mOfficialLobbyDialog;
 	unsigned int mLobbyUnreadCount;
+	QTimer *mRefreshPlayersTimer = nullptr;
 	RsEventsHandlerId_t mEventHandlerId_identity = 0;
 	RsEventsHandlerId_t mEventHandlerId_chat = 0;
 

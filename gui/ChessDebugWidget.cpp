@@ -33,6 +33,7 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QTextEdit>
+#include <QTextDocument>
 #include <QTextStream>
 #include <QVBoxLayout>
 #include <utility>
@@ -63,6 +64,8 @@ ChessDebugWidget::ChessDebugWidget(
 	layout->addLayout(buttons);
 
 	m_logEdit->setReadOnly(true);
+	// Same bound as m_events: the log view kept every event of the game.
+	m_logEdit->document()->setMaximumBlockCount(1000);
 	m_logEdit->setLineWrapMode(QTextEdit::NoWrap);
 	layout->addWidget(m_logEdit, 1);
 
@@ -100,7 +103,10 @@ void ChessDebugWidget::appendEvent(const QString &event)
 	if (m_events.size() > 1000) m_events.removeFirst();
 	m_logEdit->append(entry.toHtmlEscaped());
 	m_logEdit->verticalScrollBar()->setValue(m_logEdit->verticalScrollBar()->maximum());
-	refresh();
+	// The window exists for every game but is rarely open: do not compute the
+	// FEN and its SHA-256 for every event while nobody looks at it.
+	// showChessDebugWindow() refreshes it when it is opened.
+	if (isVisible()) refresh();
 }
 
 void ChessDebugWidget::refresh()

@@ -90,15 +90,9 @@ public:
 
 	virtual RsServiceInfo getServiceInfo() ;
 
-	void 	ping_all();
-
-	void broadcast_paint(int x, int y);
-	void 	msg_all(std::string msg);
 	void str_msg_peer(RsPeerId peerID, QString strdata);
 	void raw_msg_peer(RsPeerId peerID, std::string msg);
 	void 	qvm_msg_peer(RsPeerId peerID, QVariantMap data);
-
-    void chess_click(std::string peer_id, int col, int row, int count);
 
     void player_leave(std::string peer_id);
 
@@ -139,7 +133,6 @@ public:
 	void setChessIdentities(const std::list<RsGxsId> &ids, const RsGxsId &preferred) override;
 	bool chessBusy() override;
 	void setChessBusy(bool busy) override;
-	void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count);
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) override;
 
 	// Send invite via existing distant chat tunnel (correct approach)
@@ -173,8 +166,12 @@ public:
 			return RETRO_CHESS_GXS_TUNNEL_SERVICE_ID; 
 	}
 
-	// Fix handleRawData signature
-	void handleRawData(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side, const uint8_t *data, uint32_t data_size);
+	// Dispatches one message received on a tunnel. info is the GxsTunnel
+	// state already fetched by receiveData() (destination = sending peer,
+	// source = our identity), so handlers do not query GxsTunnel again.
+	void handleRawData(const RsGxsId& sender_id, const RsGxsTunnelId& tunnel_id,
+	                   const RsGxsTunnelService::GxsTunnelInfo &info,
+	                   const uint8_t *data, uint32_t data_size);
 
 	virtual void notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t tunnel_status) override;
 	virtual void receiveData(const RsGxsTunnelId& id, unsigned char *data, uint32_t data_size) override;
@@ -191,12 +188,23 @@ private:
 	// Neither takes mRetroChessMtx for sending; closeGxsTunnel() does, so it
 	// must be called with the mutex released.
 	bool sendGxsData(const RsGxsTunnelId &tunnel, const uint8_t *data, uint32_t size);
+	// Releases our use of a tunnel. While GxsTunnel still holds unacknowledged
+	// packets for it the close is deferred (see processDeferredCloses()):
+	// GxsTunnel never drops unacknowledged packets of a closed tunnel, it
+	// keeps them (and retries them on every tick) for the rest of the session.
 	bool closeGxsTunnel(const RsGxsTunnelId &tunnel, const char *reason);
+	bool closeGxsTunnelNow(const RsGxsTunnelId &tunnel, const char *reason);
+	void processDeferredCloses();
 	bool openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason);
 
 	void tickChessPresence();
-	bool handleChessPresence(const RsGxsId &sender, const RsGxsTunnelId &tunnel, const QVariantMap &message);
+	bool handleChessPresence(const RsGxsId &sender, const RsGxsTunnelId &tunnel,
+	                         const RsGxsTunnelService::GxsTunnelInfo &info, const QVariantMap &message);
 	bool chessIdentityEnabled(const RsGxsId &id);
+	// chessIdentities()/preferredChessIdentity() for an already fetched list
+	// of own ids, so one tick needs a single getOwnIds() call.
+	std::list<RsGxsId> chessIdentitiesFrom(std::list<RsGxsId> own);
+	RsGxsId preferredChessIdentityFrom(const std::list<RsGxsId> &chessIds);
 	RsGxsId selectChessIdentity(const RsGxsId &peer);
 	struct ChessContact {
 		time_t lastSeen = 0;
@@ -223,8 +231,6 @@ private:
 	bool mChessBusy = false;
 	bool mLobbySeekActive = false;
 	ChessTimeControl mLobbySeek;
-	// Helper to find which friend sent the data based on the tunnel ID
-	RsGxsId findGxsIdByTunnel(const RsGxsTunnelId& tunnel_id);
 	// Lobby seeks and leaderboard data only go to tunnels whose peer has
 	// answered a chess presence probe (or that carry a game, invite or watch
 	// request). Probe tunnels to contacts that never answer get nothing.
@@ -264,6 +270,12 @@ private:
 	// closed yet. Anything here that is neither active nor pending is an
 	// orphan that GxsTunnel/turtle would otherwise keep alive forever.
 	std::set<RsGxsTunnelId> mOpenedTunnels;
+	// Closes waiting for GxsTunnel to get the last packets acknowledged.
+	struct DeferredClose { time_t deadline; std::string reason; };
+	std::map<RsGxsTunnelId, DeferredClose> mDeferredCloses;
+	// tick() does its maintenance at most once per second (all timers here
+	// have one-second resolution); RetroShare ticks services far more often.
+	time_t mLastMaintenanceTick = 0;
 	time_t mLastOrphanSweep = 0;
 	time_t mLastTunnelDump = 0;
 	// DistantChatIds for which sendInvite_chat() was called but getDistantChatStatus()
@@ -284,10 +296,6 @@ private:
 	RsGxsTunnelService *mGxsTunnels;
 
 	//RsPeerId mPeerID;
-
-
-	static RsTlvKeyValue push_int_value(const std::string& key,int value) ;
-	static int pop_int_value(const std::string& s) ;
 
 
 };

@@ -84,10 +84,6 @@ class RsRetroChess
 {
 	public:
 
-	virtual void ping_all() = 0;
-	virtual void broadcast_paint(int x, int y) = 0;
-	virtual void msg_all(std::string msg) = 0;
-	virtual void chess_click(std::string peer_id, int col, int row, int count) = 0;
     virtual void player_leave(std::string peer_id) = 0;
     virtual void qvm_msg_peer(RsPeerId peerID, QVariantMap data) = 0;
 	virtual void str_msg_peer(RsPeerId peerID, QString strdata) = 0;
@@ -100,7 +96,6 @@ class RsRetroChess
 	virtual void sendInvite(RsPeerId peerID) = 0;
 
 	// New GXSID & Tunneling methods
-	virtual void chess_click_gxs(const RsGxsId &gxs_id, int col, int row, int count) = 0;
 	virtual void player_leave_gxs(const RsGxsId &gxs_id) = 0;
 	virtual void requestGxsTunnel(const RsGxsId &gxsId) = 0;
 	virtual void sendGxsInvite(const RsGxsId &gxsId) = 0;

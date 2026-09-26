@@ -97,6 +97,13 @@ private:
 	// Inserts into mReceipts and assigns the next sync sequence number.
 	void storeReceipt(const QString &key, Receipt receipt, const RsGxsId &from = RsGxsId());
 	void recompute();
+	// Receipts often arrive in bursts (a sync answer is many packets of 10
+	// receipts, and every accepted receipt is gossiped on). Saving the whole
+	// file and recomputing every rating for each one froze the GUI for
+	// seconds. Changes are marked here and committed once per burst.
+	// ratingsChanged=false: only the "already sent" set changed (save only).
+	void scheduleCommit(bool ratingsChanged = true);
+	void commitChanges();
 	void load();
 	void save() const;
 	void broadcastReceipt(const Receipt &receipt, const RsGxsId &excludePeer = RsGxsId());
@@ -114,6 +121,9 @@ private:
 	QMap<QString, Player> mPlayers;
 	QSet<QString> mGossipedReceipts;
 	QTimer *mSyncTimer;
+	QTimer *mCommitTimer;
+	bool mSaveNeeded = false;
+	bool mRecomputeNeeded = false;
 	QElapsedTimer mSyncClock;
 	QMap<RsGxsId, qint64> mLastSyncRequest;
 	QMap<RsGxsId, qint64> mLastSyncResponse;      // any answer to a peer

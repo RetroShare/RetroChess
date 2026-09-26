@@ -1,4 +1,9 @@
-"""Build/run deterministic tests against the production presence methods."""
+"""Build/run deterministic tests against the production tunnel lifecycle methods.
+
+Optional: set RETROCHESS_TEST_QT_INCLUDE to a directory with Qt-compatible
+headers to build without qmake (the default uses qmake + Qt5Core like
+chess-presence.py).
+"""
 from pathlib import Path
 import os
 import subprocess
@@ -23,6 +28,7 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'services/p3RetroChess.cc').read_text()
 header = (root / 'services/p3RetroChess.h').read_text()
 
+
 def extract(text, signature):
     start = text.index(signature)
     opening = text.index('{', start)
@@ -36,35 +42,45 @@ def extract(text, signature):
         end += 1
     return text[start:end]
 
-fixture = (root / 'tests/chess-presence.cpp').read_text()
-fixture = fixture.replace('// CONTACT_STRUCT', extract(header, 'struct ChessContact') + ';')
+
 def constants(text):
     start = text.index('static const unsigned int kPresenceMaxFailures')
     return text[start:text.index('static time_t chessPresenceRetryDelay(')] + \
         extract(text, 'static time_t chessPresenceRetryDelay(')
 
 
+fixture = (root / 'tests/tunnel-lifecycle.cpp').read_text()
+fixture = fixture.replace('// CONTACT_STRUCT', extract(header, 'struct ChessContact') + ';')
 fixture = fixture.replace('// PRODUCTION_METHODS', '\n\n'.join([
     constants(source),
+    extract(source, 'bool p3RetroChess::closeGxsTunnel('),
+    extract(source, 'bool p3RetroChess::closeGxsTunnelNow('),
+    extract(source, 'void p3RetroChess::processDeferredCloses()'),
+    extract(source, 'bool p3RetroChess::openGxsTunnel('),
+    extract(source, 'bool p3RetroChess::sendGxsData('),
+    extract(source, 'void p3RetroChess::dumpTunnelState()'),
+    extract(source, 'void p3RetroChess::closeQueuedGxsTunnels()'),
+    extract(source, 'void p3RetroChess::sweepOrphanGxsTunnels()'),
     extract(source, 'void p3RetroChess::tickChessPresence()'),
     extract(source, 'bool p3RetroChess::handleChessPresence('),
-    extract(source, 'bool p3RetroChess::saveList('),
-    extract(source, 'bool p3RetroChess::loadList('),
-    extract(source, 'bool p3RetroChess::addChessContact('),
-    extract(source, 'void p3RetroChess::removeChessContact('),
-    extract(source, 'bool p3RetroChess::acceptDataFromPeer('),
-    extract(source, 'void p3RetroChess::receiveData('),
+    extract(source, 'void p3RetroChess::notifyTunnelStatus('),
+    extract(source, 'void p3RetroChess::handleGxsTick()'),
 ]))
 temporary = root / 'temp'
 temporary.mkdir(exist_ok=True)
-test_source = temporary / 'chess-presence-test.cpp'
-test_exe = temporary / ('chess-presence-test.exe' if os.name == 'nt' else 'chess-presence-test')
+test_source = temporary / 'tunnel-lifecycle-test.cpp'
+test_exe = temporary / ('tunnel-lifecycle-test.exe' if os.name == 'nt' else 'tunnel-lifecycle-test')
 test_source.write_text(fixture)
 compiler = Path(shutil.which('g++'))
 environment = dict(os.environ, TMPDIR=str(temporary))
+flags = ['-fPIC', '-Wall', str(test_source), '-I' + str(root)]
+shim = os.environ.get('RETROCHESS_TEST_QT_INCLUDE')
+if shim:
+    flags += ['-std=c++17', '-I' + shim]
+else:
+    flags += qt_core_flags(compiler)
 try:
-    subprocess.run([str(compiler), '-fPIC', str(test_source), '-I' + str(root)] + qt_core_flags(compiler)
-                   + ['-o', str(test_exe)], check=True, env=environment)
+    subprocess.run([str(compiler)] + flags + ['-o', str(test_exe)], check=True, env=environment)
     subprocess.run([str(test_exe)], check=True, env=environment)
 finally:
     test_source.unlink(missing_ok=True)
