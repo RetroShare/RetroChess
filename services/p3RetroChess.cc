@@ -863,6 +863,10 @@ void p3RetroChess::tickChessPresence()
                         mOwnGxsIdByPeer.erase(id);
                         if (contact.nextProbe < now + kPresenceReopenDelaySec) {
                             contact.nextProbe = now + kPresenceReopenDelaySec;
+                            // The reopen delay already gives the peer time to dial us
+                            // first: count it as the tie-break wait, so a peer with the
+                            // lower id is not made to wait another kPresenceYieldSec.
+                            contact.yieldUntil = contact.nextProbe;
                             CHESS_TLOG("PRESENCE reopen delay peer=" << id << ": tunnel closed, next probe in "
                                        << kPresenceReopenDelaySec << "s (lets both sides drop the old session keys)");
                         }
@@ -2507,6 +2511,25 @@ void p3RetroChess::setLobbySeek(bool active, const ChessTimeControl &tc)
 bool p3RetroChess::openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason)
 {
     if (!mGxsTunnels) return false;
+    // Reuse a tunnel GxsTunnel already has for this identity pair: typically
+    // one the contact opened to us whose first chess packet has not arrived
+    // yet, or one of ours that turtle is re-digging. Requesting another one
+    // starts a second turtle tunnel and a second key exchange for the same
+    // tunnel id; the second key then overwrites the first and both sides
+    // drop each other's packets ("packet HMAC does not match").
+    // Called without mRetroChessMtx held (GxsTunnel takes its own lock).
+    std::vector<RsGxsTunnelService::GxsTunnelInfo> infos;
+    mGxsTunnels->getTunnelsInfo(infos);
+    for (const auto &info : infos) {
+        if (info.destination_gxs_id != to || info.source_gxs_id != from) continue;
+        if (info.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK
+                && info.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) continue;
+        tunnel = info.tunnel_id;
+        CHESS_TLOG("REUSE tunnel=" << tunnel << " to=" << to << " from=" << from
+                   << " status=" << statusName(info.tunnel_status)
+                   << " (already known to GxsTunnel, no new request) reason: " << reason);
+        return true;
+    }
     uint32_t error_code = 0;
     const bool ok = mGxsTunnels->requestSecuredTunnel(to, from, tunnel,
             RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, error_code);
