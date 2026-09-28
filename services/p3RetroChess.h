@@ -22,6 +22,7 @@
 #pragma once
 
 #include <list>
+#include <vector>
 #include <set>
 #include <string>
 #include <QVariantMap>
@@ -217,6 +218,16 @@ private:
 		QString status = "unknown";
 		QString nonce;
 		RsGxsTunnelId probeTunnel;
+		// Last time any chess packet arrived from this contact (not saved).
+		time_t lastData = 0;
+		// The reply deadline of the current probe was already extended once
+		// because the contact was sending us data (slow route, not offline).
+		bool graceUsed = false;
+		// Probes that timed out or were replaced recently. Over a slow turtle
+		// route their reply can arrive a minute late; it still proves that the
+		// contact is online, so it is accepted instead of dropped (not saved).
+		struct StaleProbe { QString nonce; RsGxsTunnelId tunnel; time_t since; };
+		std::vector<StaleProbe> staleProbes;
 		QString opponentId;
 		QString opponentName;
 		QString gameId;
@@ -225,6 +236,8 @@ private:
 		bool seeking = false;
 	};
 	std::map<RsGxsId, ChessContact> mChessContacts;
+	// Moves the current probe nonce (if any) to contact.staleProbes and clears it.
+	static void retireProbe(ChessContact &contact, time_t now);
 	std::set<RsGxsId> mChessIdentities;
 	RsGxsId mPreferredChessIdentity;
 	bool mChessIdentitiesConfigured = false;
