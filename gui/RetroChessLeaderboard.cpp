@@ -67,7 +67,9 @@ constexpr double kTau = 0.5;
 // Leaderboard sync. Peers ask every 5 minutes for the receipts they have not
 // seen yet ("since" = last sequence number received from that peer). The full
 // history is only sent on first contact, after a restart, or to old versions
-// that do not send "since". Full history at most every 5 minutes per peer for
+// that do not send "since". Epoch, sequence numbers and the peers' cursors are
+// saved in the leaderboard file, so a restart does not force a full sync either.
+// Full history at most every 5 minutes per peer for
 // current versions (they switch to incremental right after the first one) and
 // every 30 minutes for old versions (they never switch).
 constexpr qint64 kSyncRequestIntervalMs = 5 * 60 * 1000;
@@ -608,15 +610,51 @@ void RetroChessLeaderboard::load()
 			if (doc.isObject()) {
 				const QJsonObject root = doc.object();
 				const QJsonArray array = root.value("receipts").toArray();
+				// Sync numbering saved by this version: keep our epoch and every
+				// receipt's sequence number, so peers holding a cursor can continue
+				// incrementally after our restart instead of getting the full history.
+				// Files from older versions (or with broken numbering) are numbered
+				// again under the new random epoch: peers then get one full sync.
+				const QString savedEpoch = root.value("sync_epoch").toString();
+				bool keepNumbering = !savedEpoch.isEmpty();
+				QSet<quint64> usedSeq;
+				quint64 maxSeq = 0;
+				QList<QPair<QString, Receipt>> loaded;
 				for (const QJsonValue &v : array) {
 					const QJsonObject o = v.toObject();
 					Receipt r{o["game_id"].toString(), o["white"].toString(), o["black"].toString(),
 					          o["result"].toString(), o["signer"].toString(), static_cast<qint64>(o["finished_at"].toDouble())};
 					if (!r.gameId.isEmpty() && r.gameId.size() <= 128 && r.white != r.black
 					    && !RsGxsId(r.white.toStdString()).isNull() && !RsGxsId(r.black.toStdString()).isNull()
-					    && validResult(r.result) && r.finishedAt > 0 && (r.signer == r.white || r.signer == r.black))
-						storeReceipt(canonicalKey(r) + '|' + r.signer, r);
+					    && validResult(r.result) && r.finishedAt > 0 && (r.signer == r.white || r.signer == r.black)) {
+						r.seq = static_cast<quint64>(o["seq"].toDouble());
+						r.learnedFrom = o["learned_from"].toString();
+						if (r.seq == 0 || usedSeq.contains(r.seq)) keepNumbering = false;
+						usedSeq.insert(r.seq);
+						maxSeq = std::max(maxSeq, r.seq);
+						loaded.append(qMakePair(canonicalKey(r) + '|' + r.signer, r));
+					}
 				}
+				if (keepNumbering) {
+					mSyncEpoch = savedEpoch;
+					mNextSeq = std::max(maxSeq, static_cast<quint64>(root.value("next_seq").toDouble()));
+					for (const auto &entry : loaded) mReceipts.insert(entry.first, entry.second);
+				} else {
+					for (const auto &entry : loaded) storeReceipt(entry.first, entry.second);
+				}
+				// Cursors we got from our peers (their epoch and sequence number).
+				const QJsonObject cursors = root.value("sync_cursors").toObject();
+				for (auto it = cursors.constBegin(); it != cursors.constEnd(); ++it) {
+					const RsGxsId peer(it.key().toStdString());
+					const QJsonObject c = it.value().toObject();
+					if (peer.isNull() || c.value("epoch").toString().isEmpty()) continue;
+					SyncCursor &cursor = mSyncCursors[peer];
+					cursor.epoch = c.value("epoch").toString();
+					cursor.seq = static_cast<quint64>(c.value("seq").toDouble());
+				}
+				CHESS_STORELOG("LOAD sync numbering: " << (keepNumbering ? "kept epoch " : "new epoch ")
+				               << mSyncEpoch.toStdString() << ", next seq=" << mNextSeq << ", "
+				               << mSyncCursors.size() << " peer cursor(s)");
 				const QJsonArray gossipedArray = root.value("gossiped").toArray();
 				for (const QJsonValue &gv : gossipedArray) {
 					const QString key = gv.toString();
@@ -684,14 +722,20 @@ void RetroChessLeaderboard::save() const
 
 	QJsonArray receiptsArray;
 	for (const Receipt &r : mReceipts) {
-		receiptsArray.append(QJsonObject{
+		QJsonObject o{
 			{"game_id", r.gameId},
 			{"white", r.white},
 			{"black", r.black},
 			{"result", r.result},
 			{"signer", r.signer},
-			{"finished_at", static_cast<double>(r.finishedAt)}
-		});
+			{"finished_at", static_cast<double>(r.finishedAt)},
+			// Local sync numbering, kept across restarts (see load()). Older
+			// versions ignore these fields.
+			{"seq", static_cast<double>(r.seq)}
+		};
+		if (!r.learnedFrom.isEmpty() && !RsGxsId(r.learnedFrom.toStdString()).isNull())
+			o["learned_from"] = r.learnedFrom;
+		receiptsArray.append(o);
 	}
 
 	QJsonArray gossipedArray;
@@ -703,6 +747,13 @@ void RetroChessLeaderboard::save() const
 	root["version"] = 1;
 	root["receipts"] = receiptsArray;
 	root["gossiped"] = gossipedArray;
+	root["sync_epoch"] = mSyncEpoch;
+	root["next_seq"] = static_cast<double>(mNextSeq);
+	QJsonObject cursors;
+	for (auto it = mSyncCursors.constBegin(); it != mSyncCursors.constEnd(); ++it)
+		cursors[QString::fromStdString(it.key().toStdString())] = QJsonObject{
+			{"epoch", it.value().epoch}, {"seq", static_cast<double>(it.value().seq)}};
+	root["sync_cursors"] = cursors;
 
 	QSaveFile saveFile(filePath);
 	if (saveFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -769,7 +820,7 @@ void RetroChessLeaderboard::sendSyncToPeer(const RsGxsId &peerId, const QJsonObj
 	const qint64 now = mSyncClock.elapsed();
 	const char *kind = incremental ? "incremental" : (!hasCursor ? "full (old version, no cursor)"
 	        : (request.value("epoch").toString().isEmpty() ? "full (no cursor yet)"
-	        : (request.value("epoch").toString() != mSyncEpoch ? "full (cursor from before our restart)"
+	        : (request.value("epoch").toString() != mSyncEpoch ? "full (cursor from another epoch)"
 	        : "full (cursor ahead of our sequence)")));
 	if (mLastSyncResponse.contains(peerId)
 	        && now - mLastSyncResponse.value(peerId) < kIncrementalSyncMinIntervalMs) {
@@ -905,8 +956,14 @@ void RetroChessLeaderboard::handleTunnelData(const RsGxsId &sender, const QByteA
 		// Remember how far we got with this peer (sent on its last batch only).
 		if (obj.value("final").toBool() && !obj.value("epoch").toString().isEmpty()) {
 			SyncCursor &cursor = mSyncCursors[sender];
-			cursor.epoch = obj.value("epoch").toString();
-			cursor.seq = static_cast<quint64>(obj.value("seq").toDouble());
+			const QString epoch = obj.value("epoch").toString();
+			const quint64 seq = static_cast<quint64>(obj.value("seq").toDouble());
+			if (cursor.epoch != epoch || cursor.seq != seq) {
+				cursor.epoch = epoch;
+				cursor.seq = seq;
+				// Saved with the file, so that we can still ask incrementally after our restart.
+				scheduleCommit(false);
+			}
 		}
 		const QJsonArray array = obj.value("receipts").toArray();
 		int stored = 0, waiting = 0, known = 0;

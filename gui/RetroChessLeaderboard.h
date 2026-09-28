@@ -78,12 +78,12 @@ private:
 	struct Receipt {
 		QString gameId, white, black, result, signer;
 		qint64 finishedAt = 0;
-		// Local, in-memory insertion order (not saved, not sent as receipt
-		// data). Used for incremental sync: a peer only asks for receipts
-		// with a sequence number above the last one it got from us.
+		// Local insertion order (saved in the leaderboard file, not sent as
+		// receipt data). Used for incremental sync: a peer only asks for
+		// receipts with a sequence number above the last one it got from us.
 		quint64 seq = 0;
-		// Peer we learned this receipt from (in memory only): never echoed
-		// back to it by the sync.
+		// Peer we learned this receipt from (saved in the leaderboard file):
+		// never echoed back to it by the sync.
 		QString learnedFrom;
 		Receipt() = default;
 		Receipt(const QString &g, const QString &w, const QString &b,
@@ -129,11 +129,12 @@ private:
 	QMap<RsGxsId, qint64> mLastSyncResponse;      // any answer to a peer
 	QMap<RsGxsId, qint64> mLastFullSyncResponse;  // full-history answers only
 
-	// Incremental sync. mSyncEpoch identifies this run's sequence numbering
-	// (random per start); a peer quoting another epoch gets a full sync once.
+	// Incremental sync. mSyncEpoch identifies our sequence numbering. It is
+	// random for a new leaderboard file and then kept (saved with the file);
+	// a peer quoting another epoch gets a full sync once.
 	QString mSyncEpoch;
 	quint64 mNextSeq = 0;
 	struct SyncCursor { QString epoch; quint64 seq = 0; };
-	// Per peer: the last epoch/sequence we received from its sync answers.
+	// Per peer: the last epoch/sequence we received from its sync answers (saved).
 	QMap<RsGxsId, SyncCursor> mSyncCursors;
 };
