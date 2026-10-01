@@ -59,6 +59,22 @@ static const time_t kPresenceDormantRetrySec = 3600;
 // the lower GXS id dials. The other one waits this long for the incoming
 // tunnel before dialing itself (for contacts that do not list us).
 static const time_t kPresenceYieldSec = 75;
+// Slow routes: a probe reply may take longer than the 45 s reply timeout.
+// If the contact sent us any packet during the last kPresenceRecentDataSec,
+// the timeout is extended once by kPresenceGraceSec instead of marking the
+// contact offline and closing a tunnel that is in use. A reply to an older
+// probe is still accepted for kPresenceStaleProbeSec.
+static const time_t kPresenceRecentDataSec = 90;
+static const time_t kPresenceGraceSec = 45;
+static const time_t kPresenceStaleProbeSec = 300;
+static const size_t kPresenceMaxStaleProbes = 4;
+// After we close a contact's tunnel we wait this long before opening it again.
+// Tunnel ids are the same for every connection between two identities. When
+// the same tunnel is reopened within seconds, the peer can still hold the old
+// session keys and drops our packets ("packet HMAC does not match" in its
+// console), so our probes never arrive and the contact looks offline. The
+// contact can still open the tunnel to us meanwhile; that is accepted.
+static const time_t kPresenceReopenDelaySec = 120;
 // Orphan sweep and debug state dump interval.
 static const time_t kTunnelMaintenanceIntervalSec = 60;
 
@@ -731,6 +747,8 @@ void p3RetroChess::setChessIdentities(const std::list<RsGxsId> &ids, const RsGxs
             entry.second.failures = 0;
             entry.second.yieldUntil = 0;
             entry.second.nonce.clear();
+            entry.second.graceUsed = false;
+            entry.second.staleProbes.clear();
             entry.second.status = "unknown";
         }
         // Keep in-progress games on their original identity, but rebuild idle
@@ -768,6 +786,19 @@ void p3RetroChess::setChessBusy(bool busy)
     IndicateConfigChanged();
 }
 
+void p3RetroChess::retireProbe(ChessContact &contact, time_t now)
+{
+    auto &stale = contact.staleProbes;
+    stale.erase(std::remove_if(stale.begin(), stale.end(), [now](const ChessContact::StaleProbe &p) {
+        return now - p.since > kPresenceStaleProbeSec; }), stale.end());
+    if (!contact.nonce.isEmpty()) {
+        if (stale.size() >= kPresenceMaxStaleProbes) stale.erase(stale.begin());
+        stale.push_back(ChessContact::StaleProbe{contact.nonce, contact.probeTunnel, now});
+    }
+    contact.nonce.clear();
+    contact.graceUsed = false;
+}
+
 void p3RetroChess::tickChessPresence()
 {
     if (!mGxsTunnels || !rsIdentity) return;
@@ -792,9 +823,19 @@ void p3RetroChess::tickChessPresence()
             const RsGxsId &id = entry.first;
             ChessContact &contact = entry.second;
             if (ownIds.count(id)) continue;
+            if (contact.deadline && now >= contact.deadline && !contact.graceUsed
+                    && !contact.nonce.isEmpty() && mActiveTunnels.count(id)
+                    && contact.lastData && now - contact.lastData < kPresenceRecentDataSec) {
+                // The probe went out on a working tunnel and this contact sent
+                // us data recently: a slow route, not an offline contact.
+                contact.graceUsed = true;
+                contact.deadline = now + kPresenceGraceSec;
+                CHESS_TLOG("PRESENCE slow reply peer=" << id << ": data received " << (now - contact.lastData)
+                           << "s ago, waiting " << kPresenceGraceSec << "s more");
+            }
             if (contact.deadline && now >= contact.deadline) {
                 contact.deadline = 0;
-                contact.nonce.clear();
+                retireProbe(contact, now);
                 contact.status = "offline";
                 contact.seeking = false;
                 contact.seekTimeControl = ChessTimeControl{};
@@ -820,6 +861,15 @@ void p3RetroChess::tickChessPresence()
                         mActiveTunnels.erase(id);
                         mTunnelToGxsIdMap.erase(tunnel);
                         mOwnGxsIdByPeer.erase(id);
+                        if (contact.nextProbe < now + kPresenceReopenDelaySec) {
+                            contact.nextProbe = now + kPresenceReopenDelaySec;
+                            // The reopen delay already gives the peer time to dial us
+                            // first: count it as the tie-break wait, so a peer with the
+                            // lower id is not made to wait another kPresenceYieldSec.
+                            contact.yieldUntil = contact.nextProbe;
+                            CHESS_TLOG("PRESENCE reopen delay peer=" << id << ": tunnel closed, next probe in "
+                                       << kPresenceReopenDelaySec << "s (lets both sides drop the old session keys)");
+                        }
                     }
                 }
             }
@@ -854,7 +904,7 @@ void p3RetroChess::tickChessPresence()
                 contact.yieldUntil = 0;
                 // GXS discovery and its key exchange need their own connection budget.
                 contact.deadline = now + 120;
-                contact.nonce.clear();
+                retireProbe(contact, now);
                 if (!mActiveTunnels.count(id)) ++inFlight;
                 if (contact.status == "unknown" || contact.status == "offline") {
                     contact.status = "checking";
@@ -867,6 +917,7 @@ void p3RetroChess::tickChessPresence()
             }
             auto active = mActiveTunnels.find(id);
             if (enabled && contact.deadline && contact.nonce.isEmpty() && active != mActiveTunnels.end()) {
+                contact.graceUsed = false;
                 contact.nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
                 contact.probeTunnel = active->second;
                 // Start the reply timeout when the probe is actually sent, not
@@ -950,6 +1001,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
                     CHESS_TLOG("PRESENCE adopt incoming tunnel=" << tunnel << " from contact " << sender
                                << " (was " << contact.status.toStdString() << ", failures=" << contact.failures << ")");
                     contact.deadline = now + 45;
+                    retireProbe(contact, now);
                     contact.nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
                     contact.probeTunnel = tunnel;
                     if (contact.status == "offline" || contact.status == "unknown")
@@ -1001,9 +1053,35 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
         {
             RsStackMutex stack(mRetroChessMtx);
             auto it = mChessContacts.find(sender);
-            if (it == mChessContacts.end() || !it->second.deadline || it->second.deadline <= time(nullptr)
-                    || it->second.nonce != nonce || it->second.probeTunnel != tunnel) return true;
+            if (it == mChessContacts.end()) return true;
             ChessContact &contact = it->second;
+            const time_t now = time(nullptr);
+            const bool current = contact.deadline && contact.deadline > now
+                    && contact.nonce == nonce && contact.probeTunnel == tunnel;
+            bool late = false;
+            if (!current) {
+                // A reply to an earlier probe (timed out or replaced) over a
+                // slow route: the contact is online after all.
+                for (const auto &probe : contact.staleProbes)
+                    if (probe.nonce == nonce && probe.tunnel == tunnel && now - probe.since <= kPresenceStaleProbeSec)
+                        late = true;
+                if (!late) return true;
+                const bool wasOffline = contact.status == "offline" || contact.status == "checking"
+                        || contact.status == "unknown";
+                CHESS_TLOG("PRESENCE late reply accepted peer=" << sender << " tunnel=" << tunnel
+                           << (wasOffline ? " (was " + contact.status.toStdString() + ")" : std::string()));
+                contact.staleProbes.clear();
+                // Keep the tunnel instead of closing it: a deferred close is
+                // cancelled by processDeferredCloses() once it is in use again.
+                if (!mActiveTunnels.count(sender) && (mDeferredCloses.count(tunnel)
+                        || (mPendingTunnels.count(sender) && mPendingTunnels[sender] == tunnel))) {
+                    mActiveTunnels[sender] = tunnel;
+                    mPendingTunnels.erase(sender);
+                    mTunnelToGxsIdMap[tunnel] = sender;
+                    mOwnGxsIdByPeer[sender] = info.source_gxs_id;
+                    CHESS_TLOG("PRESENCE keep tunnel=" << tunnel << " for peer=" << sender << " (late reply)");
+                }
+            }
             contact.status = state;
             contact.seeking = state == "available" && message.value("seeking").toBool();
             contact.seekTimeControl = contact.seeking
@@ -1014,7 +1092,10 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
             contact.lastSeen = time(nullptr);
             contact.nextProbe = contact.lastSeen + 60;
             contact.deadline = 0;
+            // A reply to a still outstanding newer probe is accepted later as well.
+            if (late) retireProbe(contact, now);
             contact.nonce.clear();
+            contact.graceUsed = false;
             contact.failures = 0;
         }
         IndicateConfigChanged();
@@ -1795,6 +1876,14 @@ void p3RetroChess::handleRawData(const RsGxsId& sender_id,
               << std::string((const char*)data, data_size) << std::endl;
 #endif
 
+    {
+        // Any packet from a contact shows that its route works (see the slow
+        // reply grace in tickChessPresence()).
+        RsStackMutex stack(mRetroChessMtx);
+        auto contact = mChessContacts.find(sender_id);
+        if (contact != mChessContacts.end()) contact->second.lastData = time(nullptr);
+    }
+
     QJsonDocument jsondoc = QJsonDocument::fromJson(QByteArray((const char*)data, data_size));
     QVariantMap map = jsondoc.toVariant().toMap();
     QString type = map.value("type").toString();
@@ -2287,14 +2376,15 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
                 contact->second.seeking = false;
                 contact->second.seekTimeControl = ChessTimeControl{};
                 contact->second.deadline = 0;
-                contact->second.nonce.clear();
+                retireProbe(contact->second, now);
                 contact->second.yieldUntil = 0;
                 if (remoteClose) {
                     // The peer closed it on purpose (plugin disabled, contact
                     // removed, identity changed...). Count it as a failure so
                     // the normal backoff applies instead of redialing in 15s.
                     contact->second.failures = std::min(contact->second.failures + 1, kPresenceMaxFailures);
-                    contact->second.nextProbe = now + chessPresenceRetryDelay(contact->second.failures);
+                    contact->second.nextProbe = now + std::max(chessPresenceRetryDelay(contact->second.failures),
+                                                               kPresenceReopenDelaySec);
                     backoffChanged = true;
                 } else {
                     // Network hiccup: the tunnel is being re-dug already.
@@ -2421,6 +2511,25 @@ void p3RetroChess::setLobbySeek(bool active, const ChessTimeControl &tc)
 bool p3RetroChess::openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason)
 {
     if (!mGxsTunnels) return false;
+    // Reuse a tunnel GxsTunnel already has for this identity pair: typically
+    // one the contact opened to us whose first chess packet has not arrived
+    // yet, or one of ours that turtle is re-digging. Requesting another one
+    // starts a second turtle tunnel and a second key exchange for the same
+    // tunnel id; the second key then overwrites the first and both sides
+    // drop each other's packets ("packet HMAC does not match").
+    // Called without mRetroChessMtx held (GxsTunnel takes its own lock).
+    std::vector<RsGxsTunnelService::GxsTunnelInfo> infos;
+    mGxsTunnels->getTunnelsInfo(infos);
+    for (const auto &info : infos) {
+        if (info.destination_gxs_id != to || info.source_gxs_id != from) continue;
+        if (info.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK
+                && info.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) continue;
+        tunnel = info.tunnel_id;
+        CHESS_TLOG("REUSE tunnel=" << tunnel << " to=" << to << " from=" << from
+                   << " status=" << statusName(info.tunnel_status)
+                   << " (already known to GxsTunnel, no new request) reason: " << reason);
+        return true;
+    }
     uint32_t error_code = 0;
     const bool ok = mGxsTunnels->requestSecuredTunnel(to, from, tunnel,
             RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, error_code);
