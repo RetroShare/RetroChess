@@ -230,9 +230,16 @@ inline const char *statusName(uint32_t status)
 // Short description of a tunnel payload: JSON "type" field, or "raw".
 inline std::string payloadType(const uint8_t *data, uint32_t size)
 {
-	const std::string text(reinterpret_cast<const char *>(data), size < 256 ? size : 256);
 	const std::string key = "\"type\":\"";
-	const size_t start = text.find(key);
+	std::string text(reinterpret_cast<const char *>(data), size < 256 ? size : 256);
+	size_t start = text.find(key);
+	if (start == std::string::npos && size > 256) {
+		// Qt writes JSON keys sorted, so in large packets (leaderboard sync
+		// batches) "type" comes after the long "receipts" array: look near
+		// the end of the packet as well.
+		text.assign(reinterpret_cast<const char *>(data), size);
+		start = text.rfind(key);
+	}
 	if (start == std::string::npos) return "raw";
 	const size_t begin = start + key.size();
 	const size_t end = text.find('"', begin);
