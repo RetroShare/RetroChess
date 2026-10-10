@@ -1,7 +1,19 @@
 !include("../Common/retroshare_plugin.pri"): error("Could not include file ../Common/retroshare_plugin.pri")
 
+# Generated files must never be shared between Qt major versions or build modes.
+CONFIG(debug, debug|release) {
+    RETROCHESS_BUILD_MODE = debug
+} else {
+    RETROCHESS_BUILD_MODE = release
+}
+RETROCHESS_GENERATED_DIR = $$OUT_PWD/temp/qt$${QT_MAJOR_VERSION}/$${RETROCHESS_BUILD_MODE}
+OBJECTS_DIR = $$RETROCHESS_GENERATED_DIR/obj
+MOC_DIR = $$RETROCHESS_GENERATED_DIR/moc
+RCC_DIR = $$RETROCHESS_GENERATED_DIR/qrc
+UI_DIR = $$RETROCHESS_GENERATED_DIR/ui
+
 greaterThan(QT_MAJOR_VERSION, 4) {
-	# Qt 5
+	# Qt 5 and Qt 6
 	QT += widgets
 }
 
