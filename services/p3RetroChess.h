@@ -196,7 +196,10 @@ private:
 	bool closeGxsTunnel(const RsGxsTunnelId &tunnel, const char *reason);
 	bool closeGxsTunnelNow(const RsGxsTunnelId &tunnel, const char *reason);
 	void processDeferredCloses();
-	bool openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason);
+	// reuseDownTunnel=false: an existing tunnel that is TUNNEL_DN is closed
+	// and a fresh one requested instead of reusing it (see sendGxsInvite()).
+	bool openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason,
+	                   bool reuseDownTunnel = true);
 
 	void tickChessPresence();
 	bool handleChessPresence(const RsGxsId &sender, const RsGxsTunnelId &tunnel,

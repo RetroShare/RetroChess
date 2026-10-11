@@ -1196,9 +1196,17 @@ void p3RetroChess::sendGxsInvite(const RsGxsId &to_gxs_id)
     if (from_gxs_id.isNull()) return;
 
     RsGxsTunnelId tunnel_id;
+    // After a failed "route down" wait, a tunnel that is still down is not
+    // worth reusing: request a fresh one instead.
+    bool reuseDownTunnel = true;
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        auto contact = mChessContacts.find(to_gxs_id);
+        if (contact != mChessContacts.end() && contact->second.routeWaitUsed) reuseDownTunnel = false;
+    }
 
     // Open a tunnel using mGxsTunnel (Async Request)
-    if (openGxsTunnel(to_gxs_id, from_gxs_id, tunnel_id, "sendGxsInvite/requestGxsTunnel"))
+    if (openGxsTunnel(to_gxs_id, from_gxs_id, tunnel_id, "sendGxsInvite/requestGxsTunnel", reuseDownTunnel))
     {
         {
             RsStackMutex stack(mRetroChessMtx);
@@ -2577,7 +2585,8 @@ void p3RetroChess::setLobbySeek(bool active, const ChessTimeControl &tc)
  * whole tunnel lifecycle shows up in the debug log.
  *****************************************************************************/
 
-bool p3RetroChess::openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason)
+bool p3RetroChess::openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason,
+                                 bool reuseDownTunnel)
 {
     if (!mGxsTunnels) return false;
     // Reuse a tunnel GxsTunnel already has for this identity pair: typically
@@ -2593,6 +2602,16 @@ bool p3RetroChess::openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTu
         if (info.destination_gxs_id != to || info.source_gxs_id != from) continue;
         if (info.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK
                 && info.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) continue;
+        if (!reuseDownTunnel && info.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) {
+            // We already waited for this route to come back and it did not:
+            // GxsTunnel keeps re-digging the dead route, while a fresh request
+            // usually finds a working one within seconds. Nothing can be sent
+            // over a down tunnel anyway, so its unacknowledged packets are lost.
+            CHESS_TLOG("REUSE skipped tunnel=" << info.tunnel_id << " to=" << to
+                       << ": still TUNNEL_DN after waiting for its route, closing it and requesting a fresh one");
+            closeGxsTunnelNow(info.tunnel_id, "route did not come back, requesting a fresh tunnel");
+            break;
+        }
         tunnel = info.tunnel_id;
         CHESS_TLOG("REUSE tunnel=" << tunnel << " to=" << to << " from=" << from
                    << " status=" << statusName(info.tunnel_status)
