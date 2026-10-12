@@ -68,15 +68,12 @@ static const time_t kPresenceRecentDataSec = 90;
 static const time_t kPresenceGraceSec = 45;
 static const time_t kPresenceStaleProbeSec = 300;
 static const size_t kPresenceMaxStaleProbes = 4;
-// After we close a contact's tunnel we wait this long before opening it again.
-// Tunnel ids are the same for every connection between two identities. When
-// the same tunnel is reopened within seconds, the peer can still hold the old
-// session keys and drops our packets ("packet HMAC does not match" in its
-// console), so our probes never arrive and the contact looks offline. The
-// contact can still open the tunnel to us meanwhile; that is accepted.
-// Kept short: openGxsTunnel() reuses a tunnel GxsTunnel still has (same keys)
-// instead of starting a second key exchange, so this only has to cover the
-// moment right after the close.
+// Precautionary delay after closing a contact's tunnel before redialing.
+// If CLOSING never reaches the peer, a redial within its keep-alive window
+// can hit libretroshare's duplicate-tunnel guard: the peer ignores the new DH
+// key and retains the old session keys. Recovery must be fixed in the library;
+// this delay only gives the peer time to expire the old session. It does not
+// guarantee re-keying. Incoming tunnels are still accepted during the wait.
 static const time_t kPresenceReopenDelaySec = 30;
 // A contact that was online recently and whose tunnel is only down (turtle
 // lost the route and is digging a new one, same tunnel and keys) is not
@@ -915,7 +912,7 @@ void p3RetroChess::tickChessPresence()
                             // lower id is not made to wait another kPresenceYieldSec.
                             contact.yieldUntil = contact.nextProbe;
                             CHESS_TLOG("PRESENCE reopen delay peer=" << id << ": tunnel closed, next probe in "
-                                       << kPresenceReopenDelaySec << "s (lets both sides drop the old session keys)");
+                                       << kPresenceReopenDelaySec << "s (precautionary wait for peer session expiry)");
                         }
                     }
                 }
@@ -2589,12 +2586,10 @@ bool p3RetroChess::openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTu
                                  bool reuseDownTunnel)
 {
     if (!mGxsTunnels) return false;
-    // Reuse a tunnel GxsTunnel already has for this identity pair: typically
-    // one the contact opened to us whose first chess packet has not arrived
-    // yet, or one of ours that turtle is re-digging. Requesting another one
-    // starts a second turtle tunnel and a second key exchange for the same
-    // tunnel id; the second key then overwrites the first and both sides
-    // drop each other's packets ("packet HMAC does not match").
+    // Look up an existing tunnel for explicit reuse logging and to apply our
+    // policy for a route that stayed down. GxsTunnel already deduplicates
+    // requests for the same identity pair and returns the same tunnel id;
+    // this lookup does not prevent a second turtle tunnel or key exchange.
     // Called without mRetroChessMtx held (GxsTunnel takes its own lock).
     std::vector<RsGxsTunnelService::GxsTunnelInfo> infos;
     mGxsTunnels->getTunnelsInfo(infos);
