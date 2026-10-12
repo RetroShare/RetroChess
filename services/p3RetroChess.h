@@ -22,6 +22,7 @@
 #pragma once
 
 #include <list>
+#include <vector>
 #include <set>
 #include <string>
 #include <QVariantMap>
@@ -195,7 +196,10 @@ private:
 	bool closeGxsTunnel(const RsGxsTunnelId &tunnel, const char *reason);
 	bool closeGxsTunnelNow(const RsGxsTunnelId &tunnel, const char *reason);
 	void processDeferredCloses();
-	bool openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason);
+	// reuseDownTunnel=false: an existing tunnel that is TUNNEL_DN is closed
+	// and a fresh one requested instead of reusing it (see sendGxsInvite()).
+	bool openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTunnelId &tunnel, const char *reason,
+	                   bool reuseDownTunnel = true);
 
 	void tickChessPresence();
 	bool handleChessPresence(const RsGxsId &sender, const RsGxsTunnelId &tunnel,
@@ -217,6 +221,20 @@ private:
 		QString status = "unknown";
 		QString nonce;
 		RsGxsTunnelId probeTunnel;
+		// Last time any chess packet arrived from this contact (not saved).
+		time_t lastData = 0;
+		// The reply deadline of the current probe was already extended once
+		// because the contact was sending us data (slow route, not offline).
+		bool graceUsed = false;
+		// The tunnel went down (route lost, turtle digging a new one) while the
+		// contact was online: we already waited once for it to come back
+		// instead of closing it (not saved).
+		bool routeWaitUsed = false;
+		// Probes that timed out or were replaced recently. Over a slow turtle
+		// route their reply can arrive a minute late; it still proves that the
+		// contact is online, so it is accepted instead of dropped (not saved).
+		struct StaleProbe { QString nonce; RsGxsTunnelId tunnel; time_t since; };
+		std::vector<StaleProbe> staleProbes;
 		QString opponentId;
 		QString opponentName;
 		QString gameId;
@@ -225,6 +243,8 @@ private:
 		bool seeking = false;
 	};
 	std::map<RsGxsId, ChessContact> mChessContacts;
+	// Moves the current probe nonce (if any) to contact.staleProbes and clears it.
+	static void retireProbe(ChessContact &contact, time_t now);
 	std::set<RsGxsId> mChessIdentities;
 	RsGxsId mPreferredChessIdentity;
 	bool mChessIdentitiesConfigured = false;
