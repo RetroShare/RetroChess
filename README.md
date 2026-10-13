@@ -1,6 +1,20 @@
 # RetroShare Chess Plugin
 
-This is a Chess plugin, to play with your RetroShare Friends & Contacts
+## Features
+
+- **Play with RetroShare friends and contacts**: Challenge players from the chess player list or a RetroShare chat, with secure GXS tunnels for identity-based games.
+- **Player profiles and presence**: Choose your chess identity, manage contacts, and see who is available, playing, busy, or offline.
+- **Open challenges**: Advertise that you are looking for a game with your preferred time control.
+- **Flexible time controls**: Play unlimited games or timed games with a per-move increment.
+- **Chess rules and game controls**: Legal move validation, castling, en passant, pawn promotion, checkmate, stalemate, draw offers and claims, and resignation.
+- **Interactive board**: Click or drag pieces to move, with legal move hints, last-move highlighting, check indicators, and a move list with piece icons.
+- **Customizable appearance and sounds**: Choose board themes and piece sets, flip the board, and configure sounds.
+- **Live spectating**: Watch ongoing games and see the spectators connected through you.
+- **Game history and replay**: Save completed games and review them move by move.
+- **PGN export**: Export games for use in external chess tools.
+- **Glicko-2 ratings and leaderboard**: Track player ratings with provisional status and rating reliability information.
+- **Decentralized result verification**: Exchange signed game receipts and synchronize results between peers without a central leaderboard server.
+- **Standalone board debugger**: Load FEN positions and test chess rules without running RetroShare or connecting another player.
 
 # Build & install:
 
