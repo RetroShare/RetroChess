@@ -112,6 +112,14 @@ target_link_libraries(RetroChess PRIVATE
 )
 
 target_compile_definitions(RetroChess PRIVATE RS_NO_WARN_DEPRECATED)
+
+# Must match the host build: RS_USE_CALENDAR adds a member to RsPlugInInterfaces
+# (retroshare/rsplugin.h) before mGxsTunnels, so a plugin built without it reads
+# the wrong pointer and crashes at startup. ON by default, like libretroshare.
+option(RS_USE_CALENDAR "Build against a RetroShare with the GXS Calendar service (default in CMake builds)" ON)
+if(RS_USE_CALENDAR)
+    target_compile_definitions(RetroChess PRIVATE RS_USE_CALENDAR)
+endif()
 target_compile_options(RetroChess PRIVATE
     $<$<CXX_COMPILER_ID:GNU>:-Wall;-Wextra;-Wno-deprecated-declarations>
     $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_GREATER_EQUAL:$<CXX_COMPILER_VERSION>,15>>:-Wno-template-body>
