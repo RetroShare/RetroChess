@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
+        <file>piece/random.png</file>
         <file>piece/alpha/bB.svg</file>
         <file>piece/alpha/bK.svg</file>
         <file>piece/alpha/bN.svg</file>
