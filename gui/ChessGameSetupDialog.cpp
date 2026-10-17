@@ -30,6 +30,9 @@
 #include <QDialogButtonBox>
 #include <QFrame>
 #include <QSpacerItem>
+#include <QButtonGroup>
+#include <QToolButton>
+#include <QIcon>
 
 // ---------------------------------------------------------------------------
 // Preset definitions  (minutes, increment)
@@ -82,6 +85,37 @@ ChessGameSetupDialog::ChessGameSetupDialog(QWidget *parent)
     m_tabs->addTab(realTimeTab, tr("Real time"));
 
     root->addWidget(m_tabs);
+
+    QLabel *sideLabel = new QLabel(tr("Your side"), this);
+    sideLabel->setAlignment(Qt::AlignCenter);
+    root->addWidget(sideLabel);
+    QHBoxLayout *sides = new QHBoxLayout;
+    sides->setSpacing(0);
+    m_sideButtons = new QButtonGroup(this);
+    const QString labels[] = {tr("White"), tr("Black"), tr("Random side")};
+    const QIcon whiteKing(QStringLiteral(":/piece/wK.svg"));
+    const QIcon blackKing(QStringLiteral(":/piece/bK.svg"));
+    const QIcon icons[] = {
+        whiteKing, blackKing, QIcon(QStringLiteral(":/piece/random.png"))
+    };
+    for (int side : {0, 2, 1}) {
+        QToolButton *button = new QToolButton(this);
+        button->setText(labels[side]);
+        button->setIcon(icons[side]);
+        button->setIconSize(QSize(56, 40));
+        button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        button->setCheckable(true);
+        button->setMinimumHeight(88);
+        button->setStyleSheet(QStringLiteral(
+            "QToolButton { border: 1px solid #aaa; padding: 8px; }"
+            "QToolButton:checked { background: #5d9c3a; color: white; font-weight: bold; }"
+            "QToolButton:hover:!checked { background: #536273; color: white; }"));
+        m_sideButtons->addButton(button, side);
+        sides->addWidget(button, 1);
+    }
+    m_sideButtons->button(2)->setChecked(true);
+    root->addLayout(sides);
 
     // "Create lobby game" button
     QPushButton *createBtn = new QPushButton(this);
@@ -288,4 +322,9 @@ ChessTimeControl ChessGameSetupDialog::selectedTimeControl() const
         return ChessTimeControl{};
 
     return ChessTimeControl(m_minutesSlider->value(), m_incrSlider->value());
+}
+
+int ChessGameSetupDialog::selectedSide() const
+{
+    return m_sideButtons->checkedId();
 }

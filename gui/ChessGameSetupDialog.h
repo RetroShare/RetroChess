@@ -27,6 +27,7 @@ class QTabWidget;
 class QSlider;
 class QLabel;
 class QPushButton;
+class QButtonGroup;
 
 /**
  * @brief Lichess-style "Game Setup" dialog shown before creating a lobby game.
@@ -35,8 +36,8 @@ class QPushButton;
  *  - Unlimited  — "Take all the time you need"
  *  - Real time  — minutes-per-side slider + increment slider + preset buttons
  *
- * After exec() == QDialog::Accepted, call selectedTimeControl() to obtain
- * the chosen ChessTimeControl.
+ * The side selector applies to both tabs. After exec() == QDialog::Accepted,
+ * call selectedTimeControl() and selectedSide() to obtain the game settings.
  */
 class ChessGameSetupDialog : public QDialog
 {
@@ -47,6 +48,8 @@ public:
 
     /// Returns the time control selected by the user.
     ChessTimeControl selectedTimeControl() const;
+    /// Creator's side: 0 = White, 1 = Black, 2 = Random.
+    int selectedSide() const;
 
 private slots:
     void onPresetClicked(int minutes, int increment);
@@ -59,6 +62,7 @@ private:
     void updateCategoryLabel();
 
     QTabWidget  *m_tabs          = nullptr;
+    QButtonGroup *m_sideButtons = nullptr;
     QSlider     *m_minutesSlider = nullptr;
     QSlider     *m_incrSlider    = nullptr;
     QLabel      *m_minutesBadge  = nullptr;

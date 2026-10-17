@@ -1166,14 +1166,14 @@ void NEMainpage::chessStart(const RsPeerId &peer_id)
 
 void NEMainpage::chessStartGxs(const RsGxsId &gxs_id)
 {
-	// The remote participant accepted our invitation: we are White and move first.
-	create_chess_window_gxs(gxs_id, 0);
+	// Use the negotiated side, with White as the legacy default.
+	create_chess_window_gxs(gxs_id, rsRetroChess->gameSideForPeer(gxs_id, 0));
 }
 
 void NEMainpage::chessStartGxsAsBlack(const RsGxsId &gxs_id)
 {
-	// We accepted the remote participant's invitation: we are Black.
-	create_chess_window_gxs(gxs_id, 1);
+	// Lobby creators choose their side when accepting a join request.
+	create_chess_window_gxs(gxs_id, rsRetroChess->gameSideForPeer(gxs_id, 1));
 }
 
 namespace
@@ -2534,7 +2534,7 @@ void NEMainpage::onCreateLobbyGame()
     const ChessTimeControl tc = dlg.selectedTimeControl();
     m_pendingSeek = tc;
     m_seekActive = true;
-    broadcastSeek(true, tc);
+    rsRetroChess->setLobbySeek(true, tc, dlg.selectedSide());
     refreshAvailablePlayers();
 }
 
