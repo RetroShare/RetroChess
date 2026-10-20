@@ -1312,8 +1312,9 @@ void NEMainpage::chessRematchGxs(const RsGxsId &gxs_id, int remoteColor)
 	if (!alreadyRequested)
 		rsRetroChess->sendRematchGxs(gxs_id, window->m_localplayer_turn);
 	window->closeForRematch();
-	const int localColor = remoteColor == 0 ? 1 : 0;
-	create_chess_window_gxs(gxs_id, localColor == 0 ? 1 : 0);
+	// Rematch packets carry the opponent's OLD board color (0 Black, 1 White).
+	// Take that color, converting to the window's player id (0 White, 1 Black).
+	create_chess_window_gxs(gxs_id, remoteColor == 0 ? 1 : 0);
 }
 
 void NEMainpage::chessGameActionGxs(const RsGxsId &gxs_id, QString action)
@@ -1507,8 +1508,8 @@ void NEMainpage::chessRematchPeer(const RsPeerId &peer_id, int remoteColor)
 		rsRetroChess->qvm_msg_peer(peer_id, reply);
 	}
 	window->closeForRematch();
-	const int localColor = remoteColor == 0 ? 1 : 0;
-	create_chess_window(key.toStdString(), localColor == 0 ? 1 : 0);
+	// Take the opponent's old color; board colors and window player ids are inverse.
+	create_chess_window(key.toStdString(), remoteColor == 0 ? 1 : 0);
 }
 
 void NEMainpage::create_chess_window(std::string peer_id, int player_id)
