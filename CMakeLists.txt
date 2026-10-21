@@ -99,9 +99,43 @@ set_target_properties(RetroChess PROPERTIES
     AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/gui;${CMAKE_CURRENT_SOURCE_DIR}/gui/toaster"
 )
 
+# Resolve the RetroShare super-project root so this file works both from the
+# super-project (add_subdirectory) and standalone (cmake run in this dir),
+# as long as the plugin lives in <root>/plugins/RetroChess.
+get_filename_component(RS_SUPERPROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+
 if(WIN32)
     target_compile_definitions(RetroChess PRIVATE WINDOWS_SYS)
-    target_link_libraries(RetroChess PRIVATE retroshare retroshare-gui)
+
+    # A Windows DLL has to resolve every symbol at link time, so unlike the ELF
+    # builds this plugin must link against RetroShare itself. In the super-project
+    # the CMake targets are there; standalone they are not, and this file then did
+    # not even configure. Fall back to the import libraries of a RetroShare build
+    # tree: MinGW writes libretroshare.dll.a next to libretroshare.dll, and
+    # libretroshare-gui.dll.a for the GUI executable, which carries ENABLE_EXPORTS.
+    if(TARGET retroshare AND TARGET retroshare-gui)
+        target_link_libraries(RetroChess PRIVATE retroshare retroshare-gui)
+    else()
+        set(RS_BUILD_DIR "${RS_SUPERPROJECT_ROOT}/Build-cmake" CACHE PATH
+            "RetroShare build directory to link against when building standalone")
+
+        find_library(RS_LIBRETROSHARE_IMPLIB NAMES retroshare
+                     HINTS "${RS_BUILD_DIR}/libretroshare" NO_DEFAULT_PATH)
+        find_library(RS_GUI_IMPLIB NAMES retroshare-gui
+                     HINTS "${RS_BUILD_DIR}/retroshare-gui" NO_DEFAULT_PATH)
+
+        if(NOT RS_LIBRETROSHARE_IMPLIB OR NOT RS_GUI_IMPLIB)
+            message(FATAL_ERROR
+                "Standalone Windows build needs the import libraries of a built "
+                "RetroShare. Looked in ${RS_BUILD_DIR} for libretroshare.dll.a and "
+                "libretroshare-gui.dll.a. Build RetroShare first, or point "
+                "-DRS_BUILD_DIR=<its build directory> at it.")
+        endif()
+
+        message(STATUS "RetroChess: standalone Windows link against ${RS_BUILD_DIR}")
+        target_link_libraries(RetroChess PRIVATE
+            "${RS_LIBRETROSHARE_IMPLIB}" "${RS_GUI_IMPLIB}")
+    endif()
 endif()
 
 target_link_libraries(RetroChess PRIVATE
@@ -131,10 +165,6 @@ if(RS_DEVELOPMENT_BUILD)
     )
 endif()
 
-# Resolve the RetroShare super-project root so this file works both from the
-# super-project (add_subdirectory) and standalone (cmake run in this dir),
-# as long as the plugin lives in <root>/plugins/RetroChess.
-get_filename_component(RS_SUPERPROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
 target_include_directories(RetroChess PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
