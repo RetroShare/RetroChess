@@ -38,6 +38,7 @@
 #include <retroshare/rschats.h>
 #include <qjsondocument.h>
 #include <QUuid>
+#include <QRandomGenerator>
 #include <QJsonObject>
 #include <algorithm>
 #include <retroshare/rsinit.h>
@@ -1274,6 +1275,10 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
     {
         RsStackMutex stack(mRetroChessMtx);
         mInvitesFromGxs.erase(gxsId);
+        int side = 1; // Ordinary invitations default to Black for the acceptor.
+        if (mLobbySeekActive && mJoinRequestsFromGxs.count(gxsId))
+            side = mLobbySide == 2 ? QRandomGenerator::global()->bounded(2) : mLobbySide;
+        mGameSideByPeer[gxsId] = side;
         auto it = mActiveTunnels.find(gxsId);
         if (it != mActiveTunnels.end())
             activeTunnel = it->second;
@@ -1281,6 +1286,7 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
             // Client side: we initiated the invite but the tunnel isn't in
             // mActiveTunnels yet. Queue accept for when it becomes CAN_TALK.
             QJsonObject acceptObj{{"type", "chess_accept"}, {"game_id", mGameIdByPeer[gxsId]}};
+            acceptObj["color"] = mGameSideByPeer[gxsId];
             auto tcIt = mInviteTimeControlByPeer.find(gxsId);
             if (tcIt != mInviteTimeControlByPeer.end() && !tcIt->second.unlimited)
                 acceptObj["tc"] = tcIt->second.toNetString();
@@ -1297,6 +1303,7 @@ void p3RetroChess::acceptedInviteGxs(const RsGxsId &gxsId)
         QJsonObject acceptObj{{"type", "chess_accept"}, {"game_id", gameIdForPeer(gxsId)}};
         {
             RsStackMutex stack(mRetroChessMtx);
+            acceptObj["color"] = mGameSideByPeer[gxsId];
             auto tcIt = mInviteTimeControlByPeer.find(gxsId);
             if (tcIt != mInviteTimeControlByPeer.end() && !tcIt->second.unlimited)
                 acceptObj["tc"] = tcIt->second.toNetString();
@@ -2029,6 +2036,8 @@ void p3RetroChess::handleRawData(const RsGxsId& sender_id,
             RsStackMutex stack(mRetroChessMtx);
             invited = mInvitesToGxs.erase(sender_id) > 0;
             if (invited) {
+                const int remoteSide = map.value("color", 1).toInt();
+                mGameSideByPeer[sender_id] = remoteSide == 0 ? 1 : 0;
                 mGameIdByPeer[sender_id] = map.value("game_id").toString();
                 if (map.contains("tc")) {
                     const QString tcStr = map.value("tc").toString();
@@ -2469,6 +2478,7 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
         if (!gxs_id.isNull()) {
             mInvitesFromGxs.erase(gxs_id);
             mJoinRequestsFromGxs.erase(gxs_id);
+            mGameSideByPeer.erase(gxs_id);
             mInvitesToGxs.erase(gxs_id);
             mPendingGxsInvites.erase(gxs_id);
             mPendingGxsCloses.erase(gxs_id);
@@ -2556,12 +2566,20 @@ void p3RetroChess::setTimeControlForPeer(const RsGxsId &gxsId, const ChessTimeCo
     mInviteTimeControlByPeer[gxsId] = tc;
 }
 
-void p3RetroChess::setLobbySeek(bool active, const ChessTimeControl &tc)
+int p3RetroChess::gameSideForPeer(const RsGxsId &id, int fallback)
+{
+    RsStackMutex stack(mRetroChessMtx);
+    auto it = mGameSideByPeer.find(id);
+    return it == mGameSideByPeer.end() ? fallback : it->second;
+}
+
+void p3RetroChess::setLobbySeek(bool active, const ChessTimeControl &tc, int side)
 {
     std::vector<RsGxsTunnelId> tunnels;
     {
         RsStackMutex stack(mRetroChessMtx);
         mLobbySeekActive = active;
+        mLobbySide = (side == 0 || side == 1) ? side : 2;
         mLobbySeek = active ? tc : ChessTimeControl{};
         for (const auto &entry : mActiveTunnels)
             if (chessPeerConfirmedLocked(entry.first)) tunnels.push_back(entry.second);

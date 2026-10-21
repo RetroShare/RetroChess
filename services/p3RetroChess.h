@@ -150,7 +150,8 @@ public:
 	std::vector<RsGxsId> gameSpectators(const RsGxsId &opponent) override;
 
 	ChessTimeControl timeControlForPeer(const RsGxsId &gxsId) override;
-	void setLobbySeek(bool active, const ChessTimeControl &tc) override;
+	void setLobbySeek(bool active, const ChessTimeControl &tc, int side = 2) override;
+	int gameSideForPeer(const RsGxsId &id, int fallback) override;
 	void setTimeControlForPeer(const RsGxsId &gxsId, const ChessTimeControl &tc) override;
 
 	// Async tunnel management
@@ -251,6 +252,8 @@ private:
 	bool mChessBusy = false;
 	bool mLobbySeekActive = false;
 	ChessTimeControl mLobbySeek;
+	int mLobbySide = 2;
+	std::map<RsGxsId, int> mGameSideByPeer;
 	// Lobby seeks and leaderboard data only go to tunnels whose peer has
 	// answered a chess presence probe (or that carry a game, invite or watch
 	// request). Probe tunnels to contacts that never answer get nothing.

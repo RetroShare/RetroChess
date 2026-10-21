@@ -145,7 +145,8 @@ class RsRetroChess
 	{ (void)opponent; return {}; }
 
 	virtual ChessTimeControl timeControlForPeer(const RsGxsId &gxsId) { (void)gxsId; return ChessTimeControl{}; }
-	virtual void setLobbySeek(bool active, const ChessTimeControl &tc) = 0;
+	virtual void setLobbySeek(bool active, const ChessTimeControl &tc, int side = 2) = 0;
+	virtual int gameSideForPeer(const RsGxsId &id, int fallback) { (void)id; return fallback; }
 	virtual void setTimeControlForPeer(const RsGxsId &gxsId, const ChessTimeControl &tc) { (void)gxsId; (void)tc; }
 
 	// Tunnel debug tracing: logs every tunnel request, status change, close
