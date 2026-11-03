@@ -125,6 +125,7 @@ private:
 	ChatDialog *mOfficialLobbyDialog;
 	unsigned int mLobbyUnreadCount;
 	QTimer *mRefreshPlayersTimer = nullptr;
+	QTimer *mSaveLayoutTimer = nullptr;
 	RsEventsHandlerId_t mEventHandlerId_identity = 0;
 	RsEventsHandlerId_t mEventHandlerId_chat = 0;
 
@@ -145,6 +146,7 @@ private:
 	void filterSavedContacts();
 	void loadLayoutSettings();
 	void saveLayoutSettings();
+	void saveLayoutSettingsNow();
 	void setupPlayersTab();
 	void onCreateLobbyGame();
 	void cancelLobbyGame();

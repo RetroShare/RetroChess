@@ -988,7 +988,8 @@ void NEMainpage::refreshActiveContactGames(const std::vector<RsRetroChessAvailab
 
 NEMainpage::~NEMainpage()
 {
-	saveLayoutSettings();
+	if (mSaveLayoutTimer) mSaveLayoutTimer->stop();
+	saveLayoutSettingsNow();
 	if (rsEvents) {
 		if (mEventHandlerId_identity != 0)
 			rsEvents->unregisterEventsHandler(mEventHandlerId_identity);
@@ -2133,7 +2134,21 @@ void NEMainpage::loadLayoutSettings()
 	        this, &NEMainpage::saveLayoutSettings);
 }
 
+// Header signals fire once per column on every programmatic resize (e.g. the
+// leaderboard repopulating on each GXS identity event), so coalesce them into
+// one delayed write instead of rewriting the settings file each time.
 void NEMainpage::saveLayoutSettings()
+{
+	if (!mSaveLayoutTimer) {
+		mSaveLayoutTimer = new QTimer(this);
+		mSaveLayoutTimer->setSingleShot(true);
+		mSaveLayoutTimer->setInterval(1000);
+		connect(mSaveLayoutTimer, &QTimer::timeout, this, &NEMainpage::saveLayoutSettingsNow);
+	}
+	mSaveLayoutTimer->start();
+}
+
+void NEMainpage::saveLayoutSettingsNow()
 {
 	Settings->setValueToGroup("RetroChess", "PlayersSplitterState", ui->playersSplitter->saveState());
 
@@ -2178,8 +2193,6 @@ void NEMainpage::saveLayoutSettings()
 		activeGamesWidths.append(ui->active_games->columnWidth(col));
 	}
 	Settings->setValueToGroup("RetroChess", "ActiveGamesColumnWidths", activeGamesWidths);
-
-	Settings->sync();
 }
 
 QMenu *NEMainpage::createSavedContactsContextMenu(QMenu *contextMenu)
