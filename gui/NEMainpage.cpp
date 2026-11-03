@@ -1153,6 +1153,11 @@ void NEMainpage::showEvent(QShowEvent *event)
 		emit lobbyUnreadCountChanged();
 	}
 	MainPage::showEvent(event);
+	if (mIdentityRefreshTimer) mIdentityRefreshTimer->stop();
+	if (mIdentityRefreshPending) {
+		mIdentityRefreshPending = false;
+		refreshGameHistory();
+	}
 	refreshAvailablePlayers();
 	refreshLeaderboard();
 	autoJoinOfficialLobby();
@@ -1898,13 +1903,31 @@ void NEMainpage::handleEvent_identity_main_thread(std::shared_ptr<const RsEvent>
 	case RsGxsIdentityEventCode::NEW_IDENTITY:
 	case RsGxsIdentityEventCode::UPDATED_IDENTITY:
 	case RsGxsIdentityEventCode::DELETED_IDENTITY:
-		refreshAvailablePlayers();
-		refreshLeaderboard();
-		refreshGameHistory();
+		// Identity events come in bursts (hundreds after startup or a GXS
+		// sync). Rebuild the three lists once per burst, and not at all
+		// while the page is hidden: showEvent() catches up.
+		mIdentityRefreshPending = true;
+		if (!isVisible()) break;
+		if (!mIdentityRefreshTimer) {
+			mIdentityRefreshTimer = new QTimer(this);
+			mIdentityRefreshTimer->setSingleShot(true);
+			mIdentityRefreshTimer->setInterval(500);
+			connect(mIdentityRefreshTimer, &QTimer::timeout,
+			        this, &NEMainpage::refreshAfterIdentityChanges);
+		}
+		if (!mIdentityRefreshTimer->isActive()) mIdentityRefreshTimer->start();
 		break;
 	default:
 		break;
 	}
+}
+
+void NEMainpage::refreshAfterIdentityChanges()
+{
+	if (!mIdentityRefreshPending) return;
+	mIdentityRefreshPending = false;
+	refreshLeaderboard(); // also refreshes the player lists
+	refreshGameHistory();
 }
 
 void NEMainpage::handleEvent_chat_main_thread(std::shared_ptr<const RsEvent> event)
