@@ -125,6 +125,9 @@ private:
 	ChatDialog *mOfficialLobbyDialog;
 	unsigned int mLobbyUnreadCount;
 	QTimer *mRefreshPlayersTimer = nullptr;
+	QTimer *mSaveLayoutTimer = nullptr;
+	QTimer *mIdentityRefreshTimer = nullptr;
+	bool mIdentityRefreshPending = false;
 	RsEventsHandlerId_t mEventHandlerId_identity = 0;
 	RsEventsHandlerId_t mEventHandlerId_chat = 0;
 
@@ -145,6 +148,8 @@ private:
 	void filterSavedContacts();
 	void loadLayoutSettings();
 	void saveLayoutSettings();
+	void saveLayoutSettingsNow();
+	void refreshAfterIdentityChanges();
 	void setupPlayersTab();
 	void onCreateLobbyGame();
 	void cancelLobbyGame();
