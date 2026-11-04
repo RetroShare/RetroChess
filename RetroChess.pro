@@ -59,6 +59,7 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 14) {
 ################################### HEADERS & SOURCES #############################
 
 SOURCES = RetroChessPlugin.cpp               \
+          4connect/FourConnect.cpp           \
           services/p3RetroChess.cc           \
           services/rsRetroChessItems.cc \
           gui/NEMainpage.cpp \
@@ -83,6 +84,8 @@ SOURCES = RetroChessPlugin.cpp               \
           gui/ChessGameSetupDialog.cpp
 
 HEADERS = RetroChessPlugin.h                 \
+          4connect/FourBoard.h               \
+          4connect/FourConnect.h             \
           gui/ChessDebugWidget.h \
           gui/ChessTrafficDialog.h \
           gui/ChessSpectatorsWidget.h \

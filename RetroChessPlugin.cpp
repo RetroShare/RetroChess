@@ -26,6 +26,7 @@
 
 #include "gui/chat/ChatWidget.h"
 #include "RetroChessPlugin.h"
+#include "4connect/FourConnect.h"
 #include "interface/rsRetroChess.h"
 #include "gui/NEMainpage.h"
 #include "gui/RetroChessNotify.h"
@@ -107,6 +108,7 @@ void RetroChessPlugin::setInterfaces(RsPlugInInterfaces &interfaces)
 {
 	mPeers = interfaces.mPeers;
 	mGxsTunnels = interfaces.mGxsTunnels;
+	FourConnect::registerService(mGxsTunnels);
 	mIdentity = interfaces.mIdentity;
 	mChats = interfaces.mChats;
 
