@@ -155,7 +155,14 @@ struct Match : QDialog
         setSizeGripEnabled(true);
         opponent = new PlayerStrip(peer,me == 1 ? tr("Opponent · Yellow") : tr("Opponent · Red"));
         layout->addWidget(opponent,0,0);
-        layout->addWidget(&area,1,0);
+        auto *boardColumn = new QVBoxLayout;
+        result.setAlignment(Qt::AlignCenter);
+        result.setWordWrap(true);
+        result.setTextFormat(Qt::PlainText);
+        result.hide();
+        boardColumn->addWidget(&result);
+        boardColumn->addWidget(&area,1);
+        layout->addLayout(boardColumn,1,0);
         self = new PlayerStrip(local,me == 1 ? tr("You · Red") : tr("You · Yellow"));
         layout->addWidget(self,2,0);
         layout->addWidget(&status,0,1);
@@ -186,7 +193,44 @@ struct Match : QDialog
         if (phase == Playing)
             status.setText(board.turn() == me ? tr("Your turn — choose a column") : tr("Opponent’s turn"));
     }
-    void finish(const QString &message) { phase = Ended; status.setText(message); refresh(); }
+    void playSound(const QString &source, bool enabled)
+    {
+        if (!enabled || SoundManager::isMute()) return;
+        if (!audio) {
+            audio = new QMediaPlayer(this);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            auto *output = new QAudioOutput(audio);
+            output->setVolume(1.0f);
+            audio->setAudioOutput(output);
+            connect(audio,&QMediaPlayer::errorOccurred,audio,[] { QApplication::beep(); });
+#else
+            audio->setVolume(100);
+            connect(audio,QOverload<QMediaPlayer::Error>::of(&QMediaPlayer::error),
+                    audio,[] { QApplication::beep(); });
+#endif
+        }
+        audio->stop();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        audio->setSource(QUrl(source));
+#else
+        audio->setMedia(QUrl(source));
+#endif
+        audio->play();
+    }
+    void finish(const QString &message, const QString &sound = QString())
+    {
+        if (phase == Ended) return;
+        phase = Ended;
+        status.setText(message);
+        result.setText(message);
+        result.setStyleSheet(QStringLiteral(
+            "QLabel { font-size: 24px; font-weight: bold; padding: 18px;"
+            " color: white; background: #34343c; border: 3px solid #babac8; border-radius: 10px; }"));
+        result.show();
+        setWindowTitle(tr("Connect Four — %1").arg(message));
+        refresh();
+        if (!sound.isEmpty()) playSound(sound,RetroChessSettings::gameResultSoundEnabled());
+    }
     void move(int column)
     {
         const int player = board.turn();
@@ -194,16 +238,24 @@ struct Match : QDialog
         history.addItem(tr("%1. Col %2, %3").arg(board.moves).arg(column+1)
                         .arg((player == me ? self : opponent)->nickname()));
         history.scrollToBottom();
-        if (board.winner) finish(player == me ? tr("You won!") : tr("Opponent won"));
-        else if (board.moves == 42) finish(tr("Draw"));
-        else refresh();
+        if (board.winner)
+            finish(player == me ? tr("You won!") : tr("You lost"),
+                   player == me ? QStringLiteral("qrc:/sound/victory.mp3")
+                                : QStringLiteral("qrc:/sound/Defeat.mp3"));
+        else if (board.moves == 42)
+            finish(tr("Draw"),QStringLiteral("qrc:/sound/Draw.mp3"));
+        else {
+            refresh();
+            playSound(QStringLiteral("qrc:/sound/Move.mp3"),RetroChessSettings::moveSoundEnabled());
+        }
     }
     PlayerStrip *self, *opponent;
     FourBoard board;
     int me;
     Phase phase = Connecting;
     QByteArray token;
-    QLabel status;
+    QLabel status, result;
+    QMediaPlayer *audio = nullptr;
     QListWidget history;
     QPushButton accept{tr("Accept")}, leave;
     BoardArea area;
@@ -337,23 +389,8 @@ public:
                 if (op != 'I' || !net->getTunnelInfo(id,info)) return;
                 auto *m = make(id,info.destination_gxs_id,info.source_gxs_id,2,token);
                 m->phase = Offered;
-                if (!SoundManager::isMute() && RetroChessSettings::invitationSoundEnabled()) {
-                    auto *ping = new QMediaPlayer(m);
-                    const QUrl source(QStringLiteral("qrc:/sound/ping.mp3"));
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-                    auto *output = new QAudioOutput(ping);
-                    output->setVolume(1.0f);
-                    ping->setAudioOutput(output);
-                    QObject::connect(ping,&QMediaPlayer::errorOccurred,ping,[] { QApplication::beep(); });
-                    ping->setSource(source);
-#else
-                    ping->setVolume(100);
-                    QObject::connect(ping,QOverload<QMediaPlayer::Error>::of(&QMediaPlayer::error),
-                                     ping,[] { QApplication::beep(); });
-                    ping->setMedia(source);
-#endif
-                    ping->play();
-                }
+                m->playSound(QStringLiteral("qrc:/sound/ping.mp3"),
+                             RetroChessSettings::invitationSoundEnabled());
                 m->status.setText(QObject::tr("Invited you to play Connect Four"));
                 m->refresh();
                 return;
