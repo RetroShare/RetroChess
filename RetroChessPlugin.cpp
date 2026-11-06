@@ -104,6 +104,15 @@ RetroChessPlugin::~RetroChessPlugin()
 	delete mIcon;
 }
 
+void RetroChessPlugin::stop()
+{
+	// The service stays registered with GxsTunnel after the plugin is deleted
+	// (it is never deleted itself, so that remains safe), but it must stop
+	// touching mRetroChessNotify, deleted with the plugin.
+	if (mRetroChess)
+		mRetroChess->shutdown();
+}
+
 void RetroChessPlugin::setInterfaces(RsPlugInInterfaces &interfaces)
 {
 	mPeers = interfaces.mPeers;
