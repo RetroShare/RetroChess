@@ -1,4 +1,4 @@
-﻿/*******************************************************************************
+/*******************************************************************************
  * 4connect/FourConnect.cpp                                                    *
  *                                                                             *
  * Copyright (C) 2026 RetroShare Team <retroshare.project@gmail.com>           *
@@ -21,9 +21,12 @@
 #include "FourConnect.h"
 #include "FourBoard.h"
 #include "../gui/RetroChessSettings.h"
+#include "../interface/rsRetroChess.h"
 #include "gui/SoundManager.h"
 
 #include "gui/gxs/GxsIdDetails.h"
+#include <retroshare/rsidentity.h>
+#include <retroshare/rsreputations.h>
 #include <QPainter>
 #include <QApplication>
 #include <QDialog>
@@ -39,11 +42,15 @@
 #include <QPushButton>
 #include <QTimer>
 #include <QUuid>
+#include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <map>
 
 namespace {
 constexpr uint32_t serviceId = 0x34434e54; // "4CNT"
+// How long a match survives a dropped tunnel before it is abandoned.
+constexpr int linkGraceMs = 90000;
 enum Phase { Connecting, Waiting, Offered, Confirming, Playing, Ended };
 
 class PlayerStrip : public QWidget
@@ -175,7 +182,33 @@ struct Match : QDialog
         actions->addWidget(&accept);
         actions->addWidget(&leave);
         layout->addLayout(actions,2,1);
-        connect(&leave,&QPushButton::clicked,this,&QDialog::close);
+        connect(&leave,&QPushButton::clicked,this,[this] {
+            if (phase != Playing) { close(); return; }
+            // Resigning keeps the window open so the result stays visible.
+            if (confirmResign(tr("Resign this game?"))) resign(true);
+        });
+    }
+    // Esc, the title bar close button and close() all end up here.
+    void reject() override
+    {
+        if (phase == Playing) {
+            if (!confirmResign(tr("Leaving now resigns the game. Leave anyway?"))) return;
+            resign(false);
+        }
+        QDialog::reject();
+    }
+    bool confirmResign(const QString &question)
+    {
+        return QMessageBox::question(this,tr("Connect Four"),question,
+                                     QMessageBox::Yes | QMessageBox::No,
+                                     QMessageBox::No) == QMessageBox::Yes;
+    }
+    void resign(bool withSound)
+    {
+        // The game may have ended while the confirmation was open.
+        if (phase != Playing) return;
+        if (onResign) onResign();
+        finish(tr("You resigned"),withSound ? QStringLiteral("qrc:/sound/Defeat.mp3") : QString());
     }
     void refresh()
     {
@@ -184,14 +217,24 @@ struct Match : QDialog
         for (int r = 0; r < 6; ++r)
             for (int c = 0; c < 7; ++c) {
                 auto *button = area.cells[r][c];
-                button->setEnabled(phase == Playing && board.turn() == me && board.landing(c) >= 0);
+                button->setEnabled(phase == Playing && !linkDown && board.turn() == me && board.landing(c) >= 0);
                 button->player = board.at(r,c);
                 button->preview = r == board.landing(c) ? me : 0;
                 button->update();
                 button->setAccessibleName(tr("Row %1, column %2").arg(r+1).arg(c+1));
             }
-        if (phase == Playing)
-            status.setText(board.turn() == me ? tr("Your turn — choose a column") : tr("Opponent’s turn"));
+        if (phase == Ended) return; // finish() owns the final status text
+        QString text;
+        switch (phase) {
+        case Connecting: text = tr("Connecting to opponent…"); break;
+        case Waiting:    text = tr("Waiting for your opponent to accept"); break;
+        case Offered:    text = tr("Invited you to play Connect Four"); break;
+        case Confirming: text = tr("Confirming game start…"); break;
+        case Playing:    text = board.turn() == me ? tr("Your turn — choose a column") : tr("Opponent’s turn"); break;
+        case Ended:      break;
+        }
+        if (linkDown) text = tr("Connection lost — reconnecting…");
+        status.setText(text);
     }
     void playSound(const QString &source, bool enabled)
     {
@@ -221,6 +264,7 @@ struct Match : QDialog
     {
         if (phase == Ended) return;
         phase = Ended;
+        linkDown = false;
         status.setText(message);
         result.setText(message);
         result.setStyleSheet(QStringLiteral(
@@ -253,6 +297,9 @@ struct Match : QDialog
     FourBoard board;
     int me;
     Phase phase = Connecting;
+    bool linkDown = false; // tunnel reported down, waiting for it to come back
+    int linkEpoch = 0;     // invalidates older connection-lost timers
+    std::function<void()> onResign;
     QByteArray token;
     QLabel status, result;
     QMediaPlayer *audio = nullptr;
@@ -284,7 +331,23 @@ public:
     {
         if (s && s != net && s->registerClientService(serviceId,this)) net = s;
     }
+    // Packets are filtered in receiveData(): the core does not free a buffer
+    // refused here, so refusing would leak it.
     bool acceptDataFromPeer(const RsGxsId&,const RsGxsTunnelId&,bool) override { return true; }
+    // Same rules as chess: never our own identity, never a banned identity,
+    // and only on one of our identities enabled for chess.
+    static bool allowedPeer(const RsGxsTunnelService::GxsTunnelInfo &info)
+    {
+        const RsGxsId &peer = info.destination_gxs_id, &local = info.source_gxs_id;
+        if (peer.isNull() || local.isNull() || peer == local) return false;
+        if (rsIdentity && rsIdentity->isOwnId(peer)) return false;
+        if (rsReputations && rsReputations->isIdentityBanned(peer)) return false;
+        if (rsRetroChess) {
+            const auto ids = rsRetroChess->chessIdentities();
+            if (std::find(ids.begin(),ids.end(),local) == ids.end()) return false;
+        }
+        return true;
+    }
     // Each packet carries a match UUID, operation, and zero-based ply/column.
     bool send(const RsGxsTunnelId &id,const QByteArray &token,char op,int ply=0,int col=0)
     {
@@ -292,15 +355,32 @@ public:
         packet.append(op).append(char(ply)).append(char(col));
         return net->sendData(id,serviceId,reinterpret_cast<const uint8_t*>(packet.constData()),packet.size());
     }
+    // Drops the current match of a tunnel so a new one can take its place.
+    // The old window is closed without sending anything.
+    void retire(const RsGxsTunnelId &id)
+    {
+        auto it = games.find(id);
+        if (it == games.end()) return;
+        Match *old = it->second;
+        games.erase(it);
+        old->phase = Ended; // no resign prompt, no 'X'
+        old->close();
+    }
     Match *make(const RsGxsTunnelId &id,const RsGxsId &peer,const RsGxsId &local,int color,const QByteArray &token)
     {
         auto *m = new Match(peer,local,color);
         m->token = token;
         idle.erase(id);
         games[id] = m;
+        m->onResign = [=] {
+            send(id,token,'R');
+            send(id,token,'X'); // older peers only understand 'X'
+        };
         QObject::connect(m,&QDialog::finished,m,[=] {
+            auto it = games.find(id);
+            if (it == games.end() || it->second != m) return; // replaced by a newer match
             if (m->phase != Ended && m->phase != Connecting) send(id,token,'X');
-            games.erase(id);
+            games.erase(it);
             // Keep the tunnel available for a quick rematch. A new match
             // invalidates this close timer even if it has since ended too.
             idle[id] = token;
@@ -310,7 +390,6 @@ public:
             if (m->phase != Offered) return;
             if (!send(id,token,'A')) { m->finish(QObject::tr("Could not send acceptance")); return; }
             m->phase = Confirming;
-            m->status.setText(QObject::tr("Confirming game start…"));
             m->refresh();
             auto *retry = new QTimer(m);
             QObject::connect(retry,&QTimer::timeout,m,[=] {
@@ -328,7 +407,8 @@ public:
         for (auto &row : m->area.cells)
             for (int c = 0; c < 7; ++c)
                 QObject::connect(row[c],&QPushButton::clicked,m,[=] {
-                    if (m->phase != Playing || m->board.turn() != color || m->board.landing(c)<0) return;
+                    if (m->phase != Playing || m->linkDown || m->board.turn() != color
+                            || m->board.landing(c) < 0) return;
                     if (send(id,token,'M',m->board.moves,c)) m->move(c);
                     else m->finish(QObject::tr("Could not send move"));
                 });
@@ -340,7 +420,7 @@ public:
         if (m->phase != Connecting) return;
         if (!send(id,m->token,'I')) { m->finish(QObject::tr("Could not send invitation")); return; }
         m->phase = Waiting;
-        m->status.setText(QObject::tr("Waiting for your opponent to accept"));
+        m->refresh();
     }
     void invite(const RsGxsId &peer,const RsGxsId &local)
     {
@@ -350,9 +430,13 @@ public:
             QMessageBox::warning(nullptr,QObject::tr("Connect Four"),QObject::tr("Could not open tunnel (error %1)").arg(error));
             return;
         }
-        if (games.count(id)) { games[id]->raise(); games[id]->activateWindow(); return; }
+        auto existing = games.find(id);
+        if (existing != games.end()) {
+            Match *old = existing->second;
+            if (old->phase != Ended) { old->raise(); old->activateWindow(); return; }
+            retire(id); // rematch: the finished board makes room for the new one
+        }
         auto *m = make(id,peer,local,1,QUuid::createUuid().toRfc4122());
-        m->status.setText(QObject::tr("Connecting to opponent…"));
         m->refresh();
         // The core queues packets until the tunnel is ready. This also covers
         // reusing a chess tunnel whose initial status callback already ran.
@@ -364,14 +448,43 @@ public:
             }
         });
     }
+    void offer(const RsGxsTunnelId &id,const QByteArray &token,
+               const RsGxsTunnelService::GxsTunnelInfo &info,bool autoAccept)
+    {
+        auto *m = make(id,info.destination_gxs_id,info.source_gxs_id,2,token);
+        m->phase = Offered;
+        m->refresh();
+        if (autoAccept) {
+            // Both players invited each other: start right away.
+            m->accept.click();
+            return;
+        }
+        m->playSound(QStringLiteral("qrc:/sound/ping.mp3"),
+                     RetroChessSettings::invitationSoundEnabled());
+    }
     void notifyTunnelStatus(const RsGxsTunnelId &id,uint32_t state) override
     {
         QTimer::singleShot(0,qApp,[=] {
             auto it = games.find(id);
             if (it == games.end()) return;
-            if (state == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK) ready(id,it->second);
-            if (state == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED && it->second->phase != Ended)
-                it->second->finish(QObject::tr("Opponent disconnected"));
+            Match *m = it->second;
+            if (state == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK) {
+                if (m->linkDown) { m->linkDown = false; m->refresh(); }
+                ready(id,m);
+            } else if (state == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) {
+                // The core re-digs the tunnel by itself; give it time, then
+                // give up instead of waiting for a move forever.
+                if (m->phase == Ended || m->linkDown) return;
+                m->linkDown = true;
+                const int epoch = ++m->linkEpoch;
+                m->refresh();
+                QTimer::singleShot(linkGraceMs,m,[m,epoch] {
+                    if (m->linkDown && m->linkEpoch == epoch)
+                        m->finish(QObject::tr("Connection to opponent lost"));
+                });
+            } else if (state == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED) {
+                if (m->phase != Ended) m->finish(QObject::tr("Opponent disconnected"));
+            }
         });
     }
     void receiveData(const RsGxsTunnelId &id,unsigned char *data,uint32_t size) override
@@ -383,21 +496,36 @@ public:
         QTimer::singleShot(0,qApp,[=] {
             const QByteArray token = packet.left(16);
             const char op = packet.at(16);
+            const int ply = packet.at(17), col = packet.at(18);
             auto it = games.find(id);
-            if (it == games.end()) {
+            Match *m = it == games.end() ? nullptr : it->second;
+            if (!m || token != m->token) {
+                if (op != 'I') return; // late packet of an earlier match
+                auto last = idle.find(id);
+                if (last != idle.end() && last->second == token) return; // late copy of a closed match
+                // Crossed invitations: the larger token is kept and the other
+                // side accepts it, so exactly one match starts.
+                const bool crossed = m && m->me == 1 && m->phase == Waiting;
+                if (crossed && token < m->token) return;
                 RsGxsTunnelService::GxsTunnelInfo info;
-                if (op != 'I' || !net->getTunnelInfo(id,info)) return;
-                auto *m = make(id,info.destination_gxs_id,info.source_gxs_id,2,token);
-                m->phase = Offered;
-                m->playSound(QStringLiteral("qrc:/sound/ping.mp3"),
-                             RetroChessSettings::invitationSoundEnabled());
-                m->status.setText(QObject::tr("Invited you to play Connect Four"));
-                m->refresh();
+                if (!net->getTunnelInfo(id,info) || !allowedPeer(info)) return;
+                // A new invitation replaces an older match on this tunnel:
+                // a finished one (rematch) or one the opponent has abandoned.
+                retire(id);
+                offer(id,token,info,crossed);
                 return;
             }
-            auto *m = it->second;
-            if (token != m->token) { if (op == 'I') send(id,token,'X'); return; }
-            if (op == 'X' && m->phase != Ended) m->finish(QObject::tr("Opponent left the match"));
+            // Any packet of this match proves the tunnel works again.
+            if (m->linkDown) { m->linkDown = false; m->refresh(); }
+            if (op == 'R' || op == 'X') {
+                if (m->phase == Playing)
+                    m->finish(op == 'R' ? QObject::tr("Opponent resigned — you won!")
+                                        : QObject::tr("Opponent left — you won!"),
+                              QStringLiteral("qrc:/sound/victory.mp3"));
+                else if (m->phase != Ended)
+                    m->finish(QObject::tr("Opponent left the match"));
+                return;
+            }
             if (op == 'A' && m->me == 1 && (m->phase == Waiting || m->phase == Playing)) {
                 send(id,token,'S');
                 m->phase = Playing;
@@ -405,22 +533,21 @@ public:
             }
             // An opening move also confirms acceptance for older peers.
             if (m->phase == Confirming && (op == 'S' ||
-                    (op == 'M' && packet.at(17) == 0 && m->board.landing(packet.at(18)) >= 0))) {
+                    (op == 'M' && ply == 0 && m->board.landing(col) >= 0))) {
                 m->phase = Playing;
                 m->refresh();
             }
-            const int col = packet.at(18);
             if (op == 'M' && m->phase == Playing && m->board.turn() != m->me &&
-                packet.at(17) == m->board.moves && m->board.landing(col) >= 0) m->move(col);
+                ply == m->board.moves && m->board.landing(col) >= 0) m->move(col);
         });
     }
 };
 Client client;
 }
 void FourConnect::registerService(RsGxsTunnelService *service) { client.connectToGxsTunnelService(service); }
-void FourConnect::addContactAction(QMenu &menu,const RsGxsId &peer,const RsGxsId &local)
+void FourConnect::addContactAction(QMenu &menu,const RsGxsId &peer,const RsGxsId &local,bool online)
 {
     auto *action = menu.addAction(QObject::tr("Invite to Connect Four"));
-    action->setEnabled(client.net && !local.isNull() && !peer.isNull() && peer != local);
+    action->setEnabled(online && client.net && !local.isNull() && !peer.isNull() && peer != local);
     QObject::connect(action,&QAction::triggered,&menu,[=] { client.invite(peer,local); });
 }

@@ -24,5 +24,6 @@
 class QMenu;
 namespace FourConnect {
 void registerService(RsGxsTunnelService *service);
-void addContactAction(QMenu &menu, const RsGxsId &peer, const RsGxsId &local);
+// online: the contact is reachable right now (available, playing or busy).
+void addContactAction(QMenu &menu, const RsGxsId &peer, const RsGxsId &local, bool online);
 }

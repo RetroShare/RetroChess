@@ -2372,7 +2372,9 @@ void NEMainpage::setupPlayersTab()
 			        && (!mGameSessions->game(endpoint) || mGameSessions->game(endpoint)->m_flag_finished != 0)
 			        && !rsRetroChess->preferredChessIdentity().isNull()));
 			QAction *accept = incoming ? menu.addAction(tr("Accept invitation")) : nullptr;
-			FourConnect::addContactAction(menu, id, rsRetroChess->preferredChessIdentity());
+			const QString peerStatus = item->data(1, Qt::UserRole + 1).toString();
+			FourConnect::addContactAction(menu, id, rsRetroChess->preferredChessIdentity(),
+			        peerStatus == "available" || peerStatus == "playing" || peerStatus == "busy");
 			QAction *decline = incoming ? menu.addAction(tr("Decline invitation")) : nullptr;
 			QAction *chatAction = nullptr;
 			if (tree == ui->savedContacts) {
