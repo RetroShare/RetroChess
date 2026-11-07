@@ -1,0 +1,29 @@
+/*******************************************************************************
+ * 4connect/FourConnect.h                                                      *
+ *                                                                             *
+ * Copyright (C) 2026 RetroShare Team <retroshare.project@gmail.com>           *
+ *                                                                             *
+ * This program is free software: you can redistribute it and/or modify        *
+ * it under the terms of the GNU Affero General Public License as              *
+ * published by the Free Software Foundation, either version 3 of the          *
+ * License, or (at your option) any later version.                             *
+ *                                                                             *
+ * This program is distributed in the hope that it will be useful,             *
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the                *
+ * GNU Affero General Public License for more details.                         *
+ *                                                                             *
+ * You should have received a copy of the GNU Affero General Public License    *
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.       *
+ *                                                                             *
+ *******************************************************************************/
+
+#pragma once
+#include <retroshare/rsgxstunnel.h>
+
+class QMenu;
+namespace FourConnect {
+void registerService(RsGxsTunnelService *service);
+// online: the contact is reachable right now (available, playing or busy).
+void addContactAction(QMenu &menu, const RsGxsId &peer, const RsGxsId &local, bool online);
+}

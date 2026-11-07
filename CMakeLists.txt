@@ -22,6 +22,7 @@ set(RETROCHESS_SOURCES
     services/p3RetroChess.cc
     services/rsRetroChessItems.cc
     gui/NEMainpage.cpp
+    4connect/FourConnect.cpp
     gui/RetroChessNotify.cpp
     gui/chess.cpp
     gui/ChessDebugWidget.cpp
@@ -46,6 +47,8 @@ set(RETROCHESS_SOURCES
 
 set(RETROCHESS_HEADERS
     RetroChessPlugin.h
+    4connect/FourBoard.h
+    4connect/FourConnect.h
     services/p3RetroChess.h
     services/RetroChessTunnelDebug.h
     services/rsRetroChessItems.h
