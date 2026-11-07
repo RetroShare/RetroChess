@@ -67,6 +67,7 @@ public:
 	virtual std::string getShortPluginDescription() const ;
 	virtual std::string getPluginName() const;
 	virtual void setInterfaces(RsPlugInInterfaces& interfaces);
+	void stop() override;
 
 	//================================== RsPlugin Notify ==================================//
 	virtual ToasterNotify *qt_toasterNotify();

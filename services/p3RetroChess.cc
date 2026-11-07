@@ -2377,6 +2377,9 @@ void p3RetroChess::closePendingGxsTunnels()
 
 void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t tunnel_status)
 {
+    std::lock_guard<std::recursive_mutex> guard(mTunnelCallbackMtx);
+    if (mShutDown) return;
+
     CHESS_TLOG("STATUS tunnel=" << tunnel_id << " -> " << statusName(tunnel_status));
 
     // React to tunnel being closed or going down
@@ -2500,6 +2503,9 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
 
 void p3RetroChess::receiveData(const RsGxsTunnelId& id, unsigned char *data, uint32_t data_size)
 {
+    std::lock_guard<std::recursive_mutex> guard(mTunnelCallbackMtx);
+    if (mShutDown) { free(data); return; }
+
     // Consume denied packets here as well: this core transfers buffer ownership
     // to the client and does not free a packet rejected by acceptDataFromPeer.
     RsGxsTunnelService::GxsTunnelInfo info;
@@ -2525,6 +2531,12 @@ void p3RetroChess::receiveData(const RsGxsTunnelId& id, unsigned char *data, uin
     }
     handleRawData(sender_gxs_id, id, info, (const uint8_t*)data, data_size);
     free(data); // RS tunnel service transfers ownership
+}
+
+void p3RetroChess::shutdown()
+{
+    std::lock_guard<std::recursive_mutex> guard(mTunnelCallbackMtx);
+    mShutDown = true;
 }
 
 void p3RetroChess::connectToGxsTunnelService(RsGxsTunnelService *tunnel_service)

@@ -22,6 +22,7 @@
 #pragma once
 
 #include <list>
+#include <mutex>
 #include <vector>
 #include <set>
 #include <string>
@@ -180,12 +181,24 @@ public:
 	virtual void connectToGxsTunnelService(RsGxsTunnelService *tunnel_service) override;
 	virtual bool acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side) override;
 
+	// Called when the plugin is stopped, before the GUI objects mNotify points
+	// to are deleted. GxsTunnel has no way to unregister a client, so it keeps
+	// calling notifyTunnelStatus() and receiveData() until the tunnel threads
+	// stop; from here on they do nothing. Returns once no callback is running.
+	void shutdown();
+
 	// Tunnel debug logging (see services/RetroChessTunnelDebug.h)
 	void setTunnelDebugEnabled(bool enabled) override;
 	bool tunnelDebugEnabled() override;
 	bool tunnelTraffic(std::vector<RsGxsTunnelService::GxsTunnelInfo> &infos) override;
 
 private:
+	// Held by the GxsTunnel callbacks for their whole run, so that shutdown()
+	// waits for one in progress. Recursive: a callback may make GxsTunnel call
+	// back into this object on the same thread.
+	std::recursive_mutex mTunnelCallbackMtx;
+	bool mShutDown = false;
+
 	// All tunnel traffic goes through these two helpers so that it can be traced.
 	// Neither takes mRetroChessMtx for sending; closeGxsTunnel() does, so it
 	// must be called with the mutex released.
