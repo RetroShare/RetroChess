@@ -2488,6 +2488,10 @@ void NEMainpage::setupPlayersTab()
 		filterSavedContacts();
 		saveLayoutSettings();
 	});
+	connect(ui->recheckContactsButton, &QToolButton::clicked, this, [this]() {
+		if (rsRetroChess) rsRetroChess->recheckChessContacts();
+		refreshAvailablePlayers();
+	});
 	connect(ui->addChessPlayerButton, &QToolButton::clicked, this, [this]() {
 		QDialog dialog(this);
 		dialog.setWindowTitle(tr("Add Chess Player"));

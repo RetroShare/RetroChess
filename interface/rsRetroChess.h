@@ -123,6 +123,9 @@ class RsRetroChess
 	virtual std::vector<RsRetroChessAvailablePeer> availableChessPeers() = 0;
 	virtual bool addChessContact(const RsGxsId &id) = 0;
 	virtual void removeChessContact(const RsGxsId &id) = 0;
+	// Forget the presence backoff and re-check every chess contact soon
+	// ("Check now" button). Contacts are only dialed while turtle is up.
+	virtual void recheckChessContacts() {}
 	virtual std::list<RsGxsId> chessIdentities() = 0;
 	virtual RsGxsId preferredChessIdentity() = 0;
 	virtual void setChessIdentities(const std::list<RsGxsId> &ids, const RsGxsId &preferred) = 0;

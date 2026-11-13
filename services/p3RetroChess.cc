@@ -42,6 +42,7 @@
 #include <QJsonObject>
 #include <algorithm>
 #include <retroshare/rsinit.h>
+#include <retroshare/rsservicecontrol.h>
 
 #include "services/RetroChessTunnelDebug.h"
 
@@ -52,10 +53,18 @@ using RetroChessTunnelDebug::payloadType;
 // Stay responsive for the first retries, then back off so that offline
 // contacts do not cause a new GXS tunnel discovery + DH handshake every few
 // minutes. After kPresenceMaxFailures failures the contact is considered
-// dormant and only re-checked hourly; an incoming probe from that contact
+// dormant and only re-checked every 15 minutes; an incoming probe from that contact
 // wakes it up immediately (see handleChessPresence).
 static const unsigned int kPresenceMaxFailures = 7;
-static const time_t kPresenceDormantRetrySec = 3600;
+static const time_t kPresenceDormantRetrySec = 900;
+// Turtle availability. With no friend connected to the turtle router no GXS
+// tunnel can be built (turtle disabled, network down, client just started):
+// a failed probe then says nothing about the contact. Such failures are not
+// counted, no new tunnels are dialed, and once turtle is back every contact
+// is re-checked after kTurtleSettleSec, spread kWakeStaggerSec apart.
+static const uint16_t kTurtleServiceType = 0x0014; // RS_SERVICE_TYPE_TURTLE
+static const time_t kTurtleSettleSec = 30;
+static const time_t kWakeStaggerSec = 3;
 // Tie-break: when both sides have each other as contact, only the side with
 // the lower GXS id dials. The other one waits this long for the incoming
 // tunnel before dialing itself (for contacts that do not list us).
@@ -808,6 +817,45 @@ void p3RetroChess::retireProbe(ChessContact &contact, time_t now)
     contact.graceUsed = false;
 }
 
+bool p3RetroChess::turtleHasPeers()
+{
+    // Cannot tell: behave as before (always dial).
+    if (!mServiceControl) return true;
+    std::set<RsPeerId> peers;
+    // Service control keys services by their full 32-bit id
+    // (packet version << 24 | type << 8), not by the 16-bit type.
+    static const uint32_t turtleFullId = RsServiceInfo::RsServiceInfoUIn16ToFullServiceId(kTurtleServiceType);
+    mServiceControl->getPeersConnected(turtleFullId, peers);
+    return !peers.empty();
+}
+
+void p3RetroChess::wakeChessContactsLocked(time_t now, time_t firstDelay, bool resetFailures, const char *why)
+{
+    unsigned int woken = 0;
+    for (auto &entry : mChessContacts) {
+        ChessContact &contact = entry.second;
+        // A check already running keeps going; working tunnels keep their heartbeat.
+        if (contact.deadline || mActiveTunnels.count(entry.first)) continue;
+        if (resetFailures) contact.failures = 0;
+        // Dormant contacts get one check; if it fails they are dormant again.
+        else contact.failures = std::min(contact.failures, kPresenceMaxFailures - 1);
+        contact.nextProbe = now + firstDelay + static_cast<time_t>(woken) * kWakeStaggerSec;
+        contact.yieldUntil = 0;
+        contact.routeWaitUsed = false;
+        ++woken;
+    }
+    CHESS_TLOG("PRESENCE wake " << woken << " contact(s): " << why << ", first check in " << firstDelay << "s");
+}
+
+void p3RetroChess::recheckChessContacts()
+{
+    {
+        RsStackMutex stack(mRetroChessMtx);
+        wakeChessContactsLocked(time(nullptr), 0, true, "requested by user");
+    }
+    IndicateConfigChanged();
+}
+
 void p3RetroChess::tickChessPresence()
 {
     if (!mGxsTunnels || !rsIdentity) return;
@@ -816,6 +864,10 @@ void p3RetroChess::tickChessPresence()
     rsIdentity->getOwnIds(ownIdList);   // once per tick, not once per helper
     const RsGxsId preferred = preferredChessIdentityFrom(chessIdentitiesFrom(ownIdList));
     const bool enabled = !preferred.isNull();
+    // Queried outside mRetroChessMtx (service control takes its own lock).
+    const bool turtleUp = turtleHasPeers();
+    // New tunnels are only dialed while turtle can actually build them.
+    const bool canDial = enabled && turtleUp;
     const std::set<RsGxsId> ownIds(ownIdList.begin(), ownIdList.end());
     std::vector<RsGxsId> open;
     std::vector<RsGxsTunnelId> close;
@@ -845,6 +897,18 @@ void p3RetroChess::tickChessPresence()
     }
     {
         RsStackMutex stack(mRetroChessMtx);
+        if (turtleUp != mTurtleUp) {
+            mTurtleUp = turtleUp;
+            if (turtleUp) {
+                CHESS_TLOG("PRESENCE turtle up" << (mTurtleDownSince ? " again after " + std::to_string(now - mTurtleDownSince) + "s" : std::string(" (first time since start)")));
+                mTurtleUpSince = now;
+                wakeChessContactsLocked(now, kTurtleSettleSec, false, "turtle is up");
+                backoffChanged = true;
+            } else {
+                mTurtleDownSince = now;
+                CHESS_TLOG("PRESENCE turtle down: no friend connected to turtle, presence failures are not counted until it is back");
+            }
+        }
         unsigned int inFlight = 0;
         // Bound expensive tunnel discovery, not heartbeats on working tunnels.
         for (const auto &entry : mChessContacts)
@@ -884,12 +948,21 @@ void p3RetroChess::tickChessPresence()
                 contact.status = "offline";
                 contact.seeking = false;
                 contact.seekTimeControl = ChessTimeControl{};
-                contact.failures = std::min(contact.failures + 1, kPresenceMaxFailures);
-                contact.nextProbe = now + chessPresenceRetryDelay(contact.failures);
+                // Our own outage (turtle down now, or down when this attempt
+                // started) is not the contact's fault: keep its backoff.
+                const bool localOutage = !turtleUp || contact.attemptStarted < mTurtleUpSince;
+                if (localOutage) {
+                    contact.nextProbe = now + chessPresenceRetryDelay(0);
+                    CHESS_TLOG("PRESENCE timeout peer=" << id << " not counted (turtle was down), failures stay "
+                               << contact.failures);
+                } else {
+                    contact.failures = std::min(contact.failures + 1, kPresenceMaxFailures);
+                    contact.nextProbe = now + chessPresenceRetryDelay(contact.failures);
+                    CHESS_TLOG("PRESENCE timeout peer=" << id << " failures=" << contact.failures
+                               << " next probe in " << (contact.nextProbe - now) << "s"
+                               << (contact.failures >= kPresenceMaxFailures ? " (dormant: checks every 15 min)" : ""));
+                }
                 backoffChanged = true;
-                CHESS_TLOG("PRESENCE timeout peer=" << id << " failures=" << contact.failures
-                           << " next probe in " << (contact.nextProbe - now) << "s"
-                           << (contact.failures >= kPresenceMaxFailures ? " (dormant: hourly checks only)" : ""));
                 if (!mActiveTunnels.count(id)) --inFlight;
                 changed = true;
                 // Presence failures must never tear down an invitation, game, or watch request.
@@ -929,7 +1002,7 @@ void p3RetroChess::tickChessPresence()
             const bool needsTunnel = !mActiveTunnels.count(id) && !mPendingTunnels.count(id);
             bool yielding = false;
             if (!needsTunnel) contact.yieldUntil = 0;
-            if (enabled && !contact.deadline && now >= contact.nextProbe && needsTunnel) {
+            if (canDial && !contact.deadline && now >= contact.nextProbe && needsTunnel) {
                 // Both sides dialing each other produce the same (symmetric)
                 // GXS tunnel id, and the second handshake overwrites the first
                 // inside GxsTunnel, making the tunnel flap. Let the lower id dial.
@@ -945,10 +1018,11 @@ void p3RetroChess::tickChessPresence()
                 }
             }
             if (enabled && !yielding && !contact.deadline && now >= contact.nextProbe
-                    && (mActiveTunnels.count(id) || inFlight < 4)) {
+                    && (mActiveTunnels.count(id) || (turtleUp && inFlight < 4))) {
                 contact.yieldUntil = 0;
                 // GXS discovery and its key exchange need their own connection budget.
                 contact.deadline = now + 120;
+                contact.attemptStarted = now;
                 retireProbe(contact, now);
                 if (!mActiveTunnels.count(id)) ++inFlight;
                 if (contact.status == "unknown" || contact.status == "offline") {
@@ -1047,6 +1121,7 @@ bool p3RetroChess::handleChessPresence(const RsGxsId &sender, const RsGxsTunnelI
                     CHESS_TLOG("PRESENCE adopt incoming tunnel=" << tunnel << " from contact " << sender
                                << " (was " << contact.status.toStdString() << ", failures=" << contact.failures << ")");
                     contact.deadline = now + 45;
+                    contact.attemptStarted = now;
                     retireProbe(contact, now);
                     contact.nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
                     contact.probeTunnel = tunnel;

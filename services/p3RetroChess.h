@@ -130,6 +130,7 @@ public:
 	std::vector<RsRetroChessAvailablePeer> availableChessPeers() override;
 	bool addChessContact(const RsGxsId &id) override;
 	void removeChessContact(const RsGxsId &id) override;
+	void recheckChessContacts() override;
 	std::list<RsGxsId> chessIdentities() override;
 	RsGxsId preferredChessIdentity() override;
 	void setChessIdentities(const std::list<RsGxsId> &ids, const RsGxsId &preferred) override;
@@ -216,6 +217,13 @@ private:
 	                   bool reuseDownTunnel = true);
 
 	void tickChessPresence();
+	// True when at least one friend is connected to the turtle router. Without
+	// one no GXS tunnel can be built, so presence failures mean nothing.
+	bool turtleHasPeers();
+	// Schedules a presence check of every idle contact, the first one in
+	// firstDelay seconds, the others staggered. resetFailures=false keeps the
+	// backoff but gives dormant contacts one check. Caller holds mRetroChessMtx.
+	void wakeChessContactsLocked(time_t now, time_t firstDelay, bool resetFailures, const char *why);
 	bool handleChessPresence(const RsGxsId &sender, const RsGxsTunnelId &tunnel,
 	                         const RsGxsTunnelService::GxsTunnelInfo &info, const QVariantMap &message);
 	bool chessIdentityEnabled(const RsGxsId &id);
@@ -229,6 +237,9 @@ private:
 		time_t nextProbe = 0;
 		time_t deadline = 0;
 		unsigned int failures = 0;
+		// When the current presence attempt started (not saved). An attempt
+		// that started before turtle came back is not counted as a failure.
+		time_t attemptStarted = 0;
 		// Tie-break (see tickChessPresence): the side with the higher identity
 		// waits until this time for the other side to open the tunnel first.
 		time_t yieldUntil = 0;
@@ -314,6 +325,11 @@ private:
 	time_t mLastMaintenanceTick = 0;
 	time_t mLastOrphanSweep = 0;
 	time_t mLastTunnelDump = 0;
+	// Turtle availability seen by tickChessPresence(). Starts as down, so the
+	// first presence round waits until friends are connected after start.
+	bool mTurtleUp = false;
+	time_t mTurtleUpSince = 0;
+	time_t mTurtleDownSince = 0;
 	// DistantChatIds for which sendInvite_chat() was called but getDistantChatStatus()
 	// failed (tunnel not established yet). Retried every tick() until it succeeds
 	// or the give-up deadline passes.
