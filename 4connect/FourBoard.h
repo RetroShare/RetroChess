@@ -40,23 +40,36 @@ public:
         const int player = turn();
         cells[row][column] = player;
         ++moves;
+        lastRow = row;
+        lastColumn = column;
         const int directions[][2] = {{1,0},{0,1},{1,1},{1,-1}};
         for (const auto &d : directions) {
+            // A line through one cell holds at most 7 cells.
+            int line[7][2] = {{row,column}};
             int count = 1;
             for (int sign : {-1,1}) {
                 int r = row + sign*d[0], c = column + sign*d[1];
                 while (r >= 0 && r < 6 && c >= 0 && c < 7 && at(r,c) == player) {
+                    line[count][0] = r;
+                    line[count][1] = c;
                     ++count;
                     r += sign*d[0];
                     c += sign*d[1];
                 }
             }
-            if (count >= 4) winner = player;
+            if (count >= 4) {
+                winner = player;
+                for (int i = 0; i < count; ++i) win[line[i][0]][line[i][1]] = true;
+            }
         }
         return true;
     }
+    // True for every disc of the winning line(s).
+    bool winning(int row, int column) const { return win[row][column]; }
     int moves = 0;
     int winner = 0;
+    int lastRow = -1, lastColumn = -1;
 private:
     std::array<std::array<int,7>,6> cells{};
+    std::array<std::array<bool,7>,6> win{};
 };

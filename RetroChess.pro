@@ -115,7 +115,8 @@ HEADERS = RetroChessPlugin.h                 \
 FORMS += \
           gui/NEMainpage.ui \
           gui/chess.ui \
-          gui/toaster/ChessToaster.ui
+          gui/toaster/ChessToaster.ui \
+          4connect/FourResultDialog.ui
 
 RESOURCES = gui/RetroChess_images.qrc
 RESOURCES += gui/RetroChess_pieces.qrc

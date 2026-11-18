@@ -20,6 +20,7 @@
 
 #include "FourConnect.h"
 #include "FourBoard.h"
+#include "ui_FourResultDialog.h"
 #include "../gui/RetroChessSettings.h"
 #include "../interface/rsRetroChess.h"
 #include "gui/SoundManager.h"
@@ -52,17 +53,56 @@ constexpr uint32_t serviceId = 0x34434e54; // "4CNT"
 // How long a match survives a dropped tunnel before it is abandoned.
 constexpr int linkGraceMs = 90000;
 enum Phase { Connecting, Waiting, Offered, Confirming, Playing, Ended };
+enum Outcome { NoResult, Won, Lost, Drawn };
+
+// Glossy disc of player 1 (red) or 2 (yellow), filling rect.
+void paintPiece(QPainter &painter, const QRectF &rect, int player)
+{
+    const QColor light[] = {QColor(), QColor("#ff9b93"), QColor("#ffeaa6")};
+    const QColor base[]  = {QColor(), QColor("#e8464f"), QColor("#f2be35")};
+    const QColor dark[]  = {QColor(), QColor("#a5202b"), QColor("#c08510")};
+    const QColor rim[]   = {QColor(), QColor("#8c1a24"), QColor("#a2700c")};
+    QRadialGradient gradient(rect.center() - QPointF(rect.width()*0.18, rect.height()*0.22),
+                             rect.width()*0.72);
+    gradient.setColorAt(0, light[player]);
+    gradient.setColorAt(0.5, base[player]);
+    gradient.setColorAt(1, dark[player]);
+    painter.setBrush(gradient);
+    painter.setPen(QPen(rim[player], qMax<qreal>(1.0, rect.width()*0.03)));
+    painter.drawEllipse(rect);
+    // Inner groove like a real counter.
+    const qreal inset = rect.width()*0.17;
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(QColor(0,0,0,45), qMax<qreal>(1.0, rect.width()*0.025)));
+    painter.drawEllipse(rect.adjusted(inset,inset,-inset,-inset));
+}
+
+QPixmap pieceIcon(int player, int size)
+{
+    const qreal ratio = qApp->devicePixelRatio();
+    QPixmap pixmap(QSize(size,size)*ratio);
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    paintPiece(painter, QRectF(1,1,size-2,size-2), player);
+    painter.end(); // finish painting before the pixmap is copied out
+    return pixmap;
+}
 
 class PlayerStrip : public QWidget
 {
 public:
     QString nickname() const { return name.text(); }
-    PlayerStrip(const RsGxsId &id, const QString &role)
+    PlayerStrip(const RsGxsId &id, const QString &role, int player)
     {
         auto *row = new QHBoxLayout(this);
         row->setContentsMargins(0,0,0,0);
         row->addWidget(&avatar);
         row->addWidget(&name,1);
+        auto *piece = new QLabel;
+        piece->setPixmap(pieceIcon(player,16));
+        row->addWidget(piece);
         row->addWidget(new QLabel(role));
         name.setTextFormat(Qt::PlainText);
         name.setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);
@@ -93,21 +133,47 @@ public:
     int player = 0;
     int preview = 0;
     bool columnHovered = false;
+    bool last = false;      // most recent move: white dot
+    bool highlight = false; // part of the winning line: white ring
+    bool dim = false;       // game won, but not part of the winning line
 protected:
     void paintEvent(QPaintEvent *) override
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        const QColor colors[] = {QColor("#302e30"), QColor("#ed5043"), QColor("#f2c519")};
-        const bool showPreview = isEnabled() && columnHovered && preview;
-        painter.setBrush(showPreview ? colors[preview].darker(165) : colors[player]);
-        painter.setPen(QPen(showPreview ? colors[preview] : QColor("#514e50"),
-                            showPreview ? 3 : 2));
-        painter.drawEllipse(rect().adjusted(2,2,-2,-2));
+        const qreal margin = width()*0.07;
+        const QRectF hole = QRectF(rect()).adjusted(margin,margin,-margin,-margin);
+        // Recessed hole, a little lighter while its column is hovered.
+        const bool hot = isEnabled() && columnHovered;
+        QLinearGradient depth(hole.topLeft(), hole.bottomLeft());
+        depth.setColorAt(0, hot ? QColor("#0e1a30") : QColor("#070d18"));
+        depth.setColorAt(1, hot ? QColor("#26385a") : QColor("#1a2740"));
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(depth);
+        painter.drawEllipse(hole);
+        const bool showPreview = !player && hot && preview;
+        if (player || showPreview) {
+            painter.setOpacity(showPreview ? 0.35 : dim ? 0.3 : 1.0);
+            paintPiece(painter, hole.adjusted(1,1,-1,-1), player ? player : preview);
+            painter.setOpacity(1.0);
+        }
+        if (highlight) {
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(QColor(255,255,255,70), margin*1.3));
+            painter.drawEllipse(hole);
+            painter.setPen(QPen(Qt::white, qMax<qreal>(2.0, width()*0.035)));
+            painter.drawEllipse(hole);
+        }
+        if (last && player) {
+            const qreal radius = qMax<qreal>(2.0, width()*0.045);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(255,255,255,235));
+            painter.drawEllipse(hole.center(), radius, radius);
+        }
         if (isEnabled() && hasFocus() && !columnHovered) {
             painter.setBrush(Qt::NoBrush);
-            painter.setPen(QPen(palette().color(QPalette::Highlight),1,Qt::DashLine));
-            painter.drawEllipse(rect().adjusted(5,5,-5,-5));
+            painter.setPen(QPen(QColor(255,255,255,160),1,Qt::DashLine));
+            painter.drawEllipse(hole.adjusted(3,3,-3,-3));
         }
     }
 };
@@ -118,7 +184,7 @@ public:
     Disc *cells[6][7];
     BoardArea()
     {
-        setMinimumSize(7*24,6*24);
+        setMinimumSize(7*28,6*28);
         for (auto &row : cells)
             for (auto &cell : row) {
                 cell = new Disc(this);
@@ -143,12 +209,33 @@ protected:
     }
     void resizeEvent(QResizeEvent *) override
     {
-        const int side = qMin(width()/7,height()/6);
-        const int left = (width()-7*side)/2, top = (height()-6*side)/2;
+        // Leave a frame of 0.2 cell around the grid and room for the shadow.
+        const int side = qMax(1, int(qMin(width()/7.4, (height()-shadow)/6.4)));
+        const int pad = side/5;
+        const int left = (width()-7*side)/2, top = (height()-shadow-6*side)/2;
+        panel = QRectF(left-pad, top-pad, 7*side+2*pad, 6*side+2*pad);
         for (int r = 0; r < 6; ++r)
             for (int c = 0; c < 7; ++c)
                 cells[r][c]->setGeometry(left+c*side,top+r*side,side,side);
     }
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const qreal radius = qMax<qreal>(10.0, panel.width()*0.035);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0,0,0,110));
+        painter.drawRoundedRect(panel.translated(0,shadow), radius, radius);
+        QLinearGradient body(panel.topLeft(), panel.bottomRight());
+        body.setColorAt(0, QColor("#4b689a"));
+        body.setColorAt(1, QColor("#22385f"));
+        painter.setBrush(body);
+        painter.setPen(QPen(QColor("#6280b3"), 1));
+        painter.drawRoundedRect(panel, radius, radius);
+    }
+private:
+    static constexpr int shadow = 6;
+    QRectF panel;
 };
 
 struct Match : QDialog
@@ -160,32 +247,42 @@ struct Match : QDialog
         auto *layout = new QGridLayout(this);
         resize(760,590);
         setSizeGripEnabled(true);
-        opponent = new PlayerStrip(peer,me == 1 ? tr("Opponent · Yellow") : tr("Opponent · Red"));
+        // Own widgets are matched by object name so the discs (also
+        // QPushButtons) keep their custom painting.
+        setStyleSheet(QStringLiteral(
+            "QDialog { background: #111a2b; }"
+            "QLabel { color: #e3e8f0; background: transparent; }"
+            "QLabel#fourStatus { font-size: 14px; font-weight: bold; color: white; }"
+            "QListWidget { background: #18233a; color: #d3dbe8; border: 1px solid #2b3c5e;"
+            " border-radius: 8px; padding: 4px; }"
+            "QPushButton#fourLeave, QPushButton#fourAccept { min-height: 30px; padding: 3px 18px;"
+            " color: white; background: #2a3a58; border: 1px solid #415a86; border-radius: 6px; }"
+            "QPushButton#fourLeave:hover { background: #3c5a8e; }"
+            "QPushButton#fourAccept { background: #3f7d32; border-color: #56a145; }"
+            "QPushButton#fourAccept:hover { background: #4f9a3f; }"));
+        opponent = new PlayerStrip(peer,me == 1 ? tr("Opponent · Yellow") : tr("Opponent · Red"),3-me);
         layout->addWidget(opponent,0,0);
-        auto *boardColumn = new QVBoxLayout;
-        result.setAlignment(Qt::AlignCenter);
-        result.setWordWrap(true);
-        result.setTextFormat(Qt::PlainText);
-        result.hide();
-        boardColumn->addWidget(&result);
-        boardColumn->addWidget(&area,1);
-        layout->addLayout(boardColumn,1,0);
-        self = new PlayerStrip(local,me == 1 ? tr("You · Red") : tr("You · Yellow"));
+        layout->addWidget(&area,1,0);
+        self = new PlayerStrip(local,me == 1 ? tr("You · Red") : tr("You · Yellow"),me);
         layout->addWidget(self,2,0);
+        status.setObjectName(QStringLiteral("fourStatus"));
+        status.setWordWrap(true);
         layout->addWidget(&status,0,1);
         layout->addWidget(&history,1,1);
         history.setMinimumWidth(130);
         layout->setColumnStretch(0,3);
         layout->setColumnStretch(1,1);
         layout->setRowStretch(1,1);
+        accept.setObjectName(QStringLiteral("fourAccept"));
+        leave.setObjectName(QStringLiteral("fourLeave"));
         auto *actions = new QHBoxLayout;
         actions->addWidget(&accept);
         actions->addWidget(&leave);
         layout->addLayout(actions,2,1);
         connect(&leave,&QPushButton::clicked,this,[this] {
             if (phase != Playing) { close(); return; }
-            // Resigning keeps the window open so the result stays visible.
-            if (confirmResign(tr("Resign this game?"))) resign(true);
+            // Resigning keeps the window open and shows the result popup.
+            if (confirmResign(tr("Resign this game?"))) resign(false);
         });
     }
     // Esc, the title bar close button and close() all end up here.
@@ -193,7 +290,7 @@ struct Match : QDialog
     {
         if (phase == Playing) {
             if (!confirmResign(tr("Leaving now resigns the game. Leave anyway?"))) return;
-            resign(false);
+            resign(true);
         }
         QDialog::reject();
     }
@@ -203,12 +300,13 @@ struct Match : QDialog
                                      QMessageBox::Yes | QMessageBox::No,
                                      QMessageBox::No) == QMessageBox::Yes;
     }
-    void resign(bool withSound)
+    // quiet: the window is closing, so no sound and no popup.
+    void resign(bool quiet)
     {
         // The game may have ended while the confirmation was open.
         if (phase != Playing) return;
         if (onResign) onResign();
-        finish(tr("You resigned"),withSound ? QStringLiteral("qrc:/sound/Defeat.mp3") : QString());
+        finish(tr("You resigned."),Lost,quiet);
     }
     void refresh()
     {
@@ -220,6 +318,9 @@ struct Match : QDialog
                 button->setEnabled(phase == Playing && !linkDown && board.turn() == me && board.landing(c) >= 0);
                 button->player = board.at(r,c);
                 button->preview = r == board.landing(c) ? me : 0;
+                button->last = r == board.lastRow && c == board.lastColumn;
+                button->highlight = board.winning(r,c);
+                button->dim = board.winner && !board.winning(r,c);
                 button->update();
                 button->setAccessibleName(tr("Row %1, column %2").arg(r+1).arg(c+1));
             }
@@ -260,20 +361,74 @@ struct Match : QDialog
 #endif
         audio->play();
     }
-    void finish(const QString &message, const QString &sound = QString())
+    QString headline(Outcome outcome, const QString &reason) const
+    {
+        switch (outcome) {
+        case Won:      return tr("You won!");
+        case Lost:     return tr("You lost");
+        case Drawn:    return tr("Draw");
+        case NoResult: break;
+        }
+        return reason;
+    }
+    // Ends the match. Results, and any game cut short after it started,
+    // are announced in a popup like RetroChess does.
+    void finish(const QString &reason, Outcome outcome = NoResult, bool quiet = false)
     {
         if (phase == Ended) return;
+        const bool started = phase == Playing;
         phase = Ended;
         linkDown = false;
-        status.setText(message);
-        result.setText(message);
-        result.setStyleSheet(QStringLiteral(
-            "QLabel { font-size: 24px; font-weight: bold; padding: 18px;"
-            " color: white; background: #34343c; border: 3px solid #babac8; border-radius: 10px; }"));
-        result.show();
-        setWindowTitle(tr("Connect Four — %1").arg(message));
+        status.setText(headline(outcome,reason));
+        setWindowTitle(tr("Connect Four — %1").arg(headline(outcome,reason)));
         refresh();
-        if (!sound.isEmpty()) playSound(sound,RetroChessSettings::gameResultSoundEnabled());
+        if (quiet) return;
+        const char *sounds[] = {nullptr, "qrc:/sound/victory.mp3", "qrc:/sound/Defeat.mp3", "qrc:/sound/Draw.mp3"};
+        if (outcome != NoResult)
+            playSound(QString::fromLatin1(sounds[outcome]),RetroChessSettings::gameResultSoundEnabled());
+        if (outcome != NoResult || started) showResult(outcome,reason);
+    }
+    void showResult(Outcome outcome, const QString &reason)
+    {
+        auto *dialog = new QDialog(this);
+        Ui::FourResultDialog ui;
+        ui.setupUi(dialog);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        // Blocks only this game window, not the rest of RetroShare.
+        dialog->setWindowModality(Qt::WindowModal);
+        const int winnerColor = outcome == Won ? me : outcome == Lost ? 3-me : 0;
+        if (winnerColor) {
+            ui.resultIcon->setPixmap(pieceIcon(winnerColor,52));
+        } else if (outcome == Drawn) {
+            const qreal ratio = qApp->devicePixelRatio();
+            QPixmap both(QSize(86,52)*ratio);
+            both.setDevicePixelRatio(ratio);
+            both.fill(Qt::transparent);
+            QPainter painter(&both);
+            painter.setRenderHint(QPainter::Antialiasing);
+            paintPiece(painter,QRectF(1,1,50,50),1);
+            paintPiece(painter,QRectF(35,1,50,50),2);
+            painter.end();
+            ui.resultIcon->setPixmap(both);
+        } else {
+            ui.resultIcon->hide();
+        }
+        ui.resultTitle->setText(outcome == NoResult ? tr("Game over") : headline(outcome,reason));
+        ui.resultText->setText(reason);
+        ui.rematchButton->setVisible(outcome != NoResult && onRematch);
+        connect(ui.closeButton,&QPushButton::clicked,this,[this,dialog] {
+            dialog->close();
+            close();
+        });
+        connect(ui.rematchButton,&QPushButton::clicked,this,[this,dialog] {
+            dialog->close();
+            // Call a copy: invite() can end up closing this window (and so
+            // destroying onRematch) while it is still running, e.g. when an
+            // invitation from the opponent arrives during an error message box.
+            const auto rematch = onRematch;
+            if (rematch) rematch(); // replaces this window with a new invitation
+        });
+        dialog->show();
     }
     void move(int column)
     {
@@ -283,11 +438,10 @@ struct Match : QDialog
                         .arg((player == me ? self : opponent)->nickname()));
         history.scrollToBottom();
         if (board.winner)
-            finish(player == me ? tr("You won!") : tr("You lost"),
-                   player == me ? QStringLiteral("qrc:/sound/victory.mp3")
-                                : QStringLiteral("qrc:/sound/Defeat.mp3"));
+            finish(player == me ? tr("Four in a row — well played.") : tr("Your opponent connected four."),
+                   player == me ? Won : Lost);
         else if (board.moves == 42)
-            finish(tr("Draw"),QStringLiteral("qrc:/sound/Draw.mp3"));
+            finish(tr("The board is full."),Drawn);
         else {
             refresh();
             playSound(QStringLiteral("qrc:/sound/Move.mp3"),RetroChessSettings::moveSoundEnabled());
@@ -299,9 +453,9 @@ struct Match : QDialog
     Phase phase = Connecting;
     bool linkDown = false; // tunnel reported down, waiting for it to come back
     int linkEpoch = 0;     // invalidates older connection-lost timers
-    std::function<void()> onResign;
+    std::function<void()> onResign, onRematch;
     QByteArray token;
-    QLabel status, result;
+    QLabel status;
     QMediaPlayer *audio = nullptr;
     QListWidget history;
     QPushButton accept{tr("Accept")}, leave;
@@ -376,6 +530,8 @@ public:
             send(id,token,'R');
             send(id,token,'X'); // older peers only understand 'X'
         };
+        // Same tunnel, fresh invitation: invite() retires this finished match.
+        m->onRematch = [=] { invite(peer,local); };
         QObject::connect(m,&QDialog::finished,m,[=] {
             auto it = games.find(id);
             if (it == games.end() || it->second != m) return; // replaced by a newer match
@@ -519,9 +675,8 @@ public:
             if (m->linkDown) { m->linkDown = false; m->refresh(); }
             if (op == 'R' || op == 'X') {
                 if (m->phase == Playing)
-                    m->finish(op == 'R' ? QObject::tr("Opponent resigned — you won!")
-                                        : QObject::tr("Opponent left — you won!"),
-                              QStringLiteral("qrc:/sound/victory.mp3"));
+                    m->finish(op == 'R' ? QObject::tr("Your opponent resigned.")
+                                        : QObject::tr("Your opponent left the game."),Won);
                 else if (m->phase != Ended)
                     m->finish(QObject::tr("Opponent left the match"));
                 return;

@@ -81,6 +81,7 @@ set(RETROCHESS_FORMS
     gui/NEMainpage.ui
     gui/chess.ui
     gui/toaster/ChessToaster.ui
+    4connect/FourResultDialog.ui
 )
 
 set(RETROCHESS_RESOURCES
@@ -99,7 +100,7 @@ set_target_properties(RetroChess PROPERTIES
     PREFIX "lib"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
-    AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/gui;${CMAKE_CURRENT_SOURCE_DIR}/gui/toaster"
+    AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/gui;${CMAKE_CURRENT_SOURCE_DIR}/gui/toaster;${CMAKE_CURRENT_SOURCE_DIR}/4connect"
 )
 
 # Resolve the RetroShare super-project root so this file works both from the
