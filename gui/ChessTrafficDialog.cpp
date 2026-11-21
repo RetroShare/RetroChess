@@ -109,11 +109,11 @@ void ChessTrafficDialog::refreshTraffic()
 	for (const auto &info : infos) {
 		QString status;
 		switch (info.tunnel_status) {
-		case RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_UNKNOWN: status = tr("Unknown"); break;
-		case RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN: status = tr("Down / connecting"); break;
-		case RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK: status = tr("Ready"); break;
-		case RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED: status = tr("Remotely closed"); break;
-		default: status = tr("Unknown (%1)").arg(info.tunnel_status); break;
+		case RsGxsTunnelService::GxsTunnelStatus::UNKNOWN: status = tr("Unknown"); break;
+		case RsGxsTunnelService::GxsTunnelStatus::TUNNEL_DN: status = tr("Down / connecting"); break;
+		case RsGxsTunnelService::GxsTunnelStatus::CAN_TALK: status = tr("Ready"); break;
+		case RsGxsTunnelService::GxsTunnelStatus::REMOTELY_CLOSED: status = tr("Remotely closed"); break;
+		default: status = tr("Unknown (%1)").arg(static_cast<int>(info.tunnel_status)); break;
 		}
 		auto *item = new QTreeWidgetItem(m_traffic, {
 		        QString::fromStdString(info.tunnel_id.toStdString()),

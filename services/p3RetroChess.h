@@ -176,7 +176,7 @@ public:
 	                   const RsGxsTunnelService::GxsTunnelInfo &info,
 	                   const uint8_t *data, uint32_t data_size);
 
-	virtual void notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t tunnel_status) override;
+	virtual void notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, RsGxsTunnelService::GxsTunnelStatus tunnel_status) override;
 	virtual void receiveData(const RsGxsTunnelId& id, unsigned char *data, uint32_t data_size) override;
 	virtual void connectToGxsTunnelService(RsGxsTunnelService *tunnel_service) override;
 	virtual bool acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side) override;
