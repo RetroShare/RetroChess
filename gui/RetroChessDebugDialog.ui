@@ -1,0 +1,440 @@
+<?xml version="1.0" ?>
+<ui version="4.0">
+ <class>RetroChessDebugDialog</class>
+ <widget class="QDialog" name="RetroChessDebugDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1100</width>
+    <height>620</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>RetroChess – Debug</string>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing">
+    <number>8</number>
+   </property>
+   <property name="leftMargin">
+    <number>10</number>
+   </property>
+   <property name="topMargin">
+    <number>10</number>
+   </property>
+   <property name="rightMargin">
+    <number>10</number>
+   </property>
+   <property name="bottomMargin">
+    <number>10</number>
+   </property>
+   <item>
+    <widget class="QTabWidget" name="tabs">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QWidget" name="tabTraffic">
+      <attribute name="title">
+       <string>Traffic</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="trafficLayout">
+       <property name="spacing">
+        <number>6</number>
+       </property>
+       <property name="leftMargin">
+        <number>6</number>
+       </property>
+       <property name="topMargin">
+        <number>6</number>
+       </property>
+       <property name="rightMargin">
+        <number>6</number>
+       </property>
+       <property name="bottomMargin">
+        <number>6</number>
+       </property>
+       <item>
+        <layout class="QHBoxLayout" name="trafficBar">
+         <property name="spacing">
+          <number>6</number>
+         </property>
+         <item>
+          <widget class="QLineEdit" name="lineFilter">
+           <property name="placeholderText">
+            <string>Filter: name, tunnel, message, note…</string>
+           </property>
+           <property name="clearButtonEnabled">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="comboArea">
+           <property name="toolTip">
+            <string>Show only one area of RetroChess</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QCheckBox" name="checkProblems">
+           <property name="toolTip">
+            <string>Failed sends, dropped or ignored packets, timeouts, tunnels going down, desynchronizations</string>
+           </property>
+           <property name="text">
+            <string>Only problems</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QCheckBox" name="checkPause">
+           <property name="toolTip">
+            <string>Stop adding new lines; they are added when you uncheck it</string>
+           </property>
+           <property name="text">
+            <string>Pause</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="trafficSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>10</width>
+             <height>10</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnCopy">
+           <property name="toolTip">
+            <string>Copy the shown lines, e.g. to send them to a developer</string>
+           </property>
+           <property name="text">
+            <string>Copy all</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnClear">
+           <property name="toolTip">
+            <string>Forget all lines kept so far</string>
+           </property>
+           <property name="text">
+            <string>Clear</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QTreeWidget" name="treeTraffic">
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="rootIsDecorated">
+          <bool>false</bool>
+         </property>
+         <property name="uniformRowHeights">
+          <bool>true</bool>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::ExtendedSelection</enum>
+         </property>
+         <column>
+          <property name="text">
+           <string>Time</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>What</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Area</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Peer</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Tunnel</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Message</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Bytes</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Note</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tabTunnels">
+      <attribute name="title">
+       <string>Tunnels</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="tunnelsLayout">
+       <property name="spacing">
+        <number>6</number>
+       </property>
+       <property name="leftMargin">
+        <number>6</number>
+       </property>
+       <property name="topMargin">
+        <number>6</number>
+       </property>
+       <property name="rightMargin">
+        <number>6</number>
+       </property>
+       <property name="bottomMargin">
+        <number>6</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="labelTunnelsHelp">
+         <property name="text">
+          <string>GXS tunnels used by RetroChess. &quot;RetroChess&quot; says what the tunnel is used for. &quot;Pending&quot; packets were sent but not acknowledged by the other side yet. Byte totals include tunnel management and other services sharing the tunnel.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTreeWidget" name="treeTunnels">
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="rootIsDecorated">
+          <bool>false</bool>
+         </property>
+         <property name="uniformRowHeights">
+          <bool>true</bool>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::ExtendedSelection</enum>
+         </property>
+         <column>
+          <property name="text">
+           <string>Tunnel</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Peer</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Own identity</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Side</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Status</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>RetroChess</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Pending</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Bytes out</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Bytes in</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tabContacts">
+      <attribute name="title">
+       <string>Contacts &amp;&amp; games</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="contactsLayout">
+       <property name="spacing">
+        <number>6</number>
+       </property>
+       <property name="leftMargin">
+        <number>6</number>
+       </property>
+       <property name="topMargin">
+        <number>6</number>
+       </property>
+       <property name="rightMargin">
+        <number>6</number>
+       </property>
+       <property name="bottomMargin">
+        <number>6</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="labelContactsHelp">
+         <property name="text">
+          <string>Every chess contact and every identity RetroChess has a tunnel, game or invitation with. Presence is checked with a probe over the tunnel; after 7 probes in a row without answer the contact is dormant and checked rarely.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTreeWidget" name="treeContacts">
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="rootIsDecorated">
+          <bool>false</bool>
+         </property>
+         <property name="uniformRowHeights">
+          <bool>true</bool>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::ExtendedSelection</enum>
+         </property>
+         <column>
+          <property name="text">
+           <string>Contact</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Own identity</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Presence</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Failures</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Last seen</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Next probe</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Reply due</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Tunnel</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Tunnel status</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Activity</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="bottomLayout">
+     <property name="spacing">
+      <number>6</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="labelSummary">
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="bottomSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>10</width>
+         <height>10</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnClose">
+       <property name="text">
+        <string>Close</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>btnClose</sender>
+   <signal>clicked()</signal>
+   <receiver>RetroChessDebugDialog</receiver>
+   <slot>close()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>1050</x>
+     <y>600</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>550</x>
+     <y>310</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

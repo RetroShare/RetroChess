@@ -2655,7 +2655,7 @@ bool p3RetroChess::sendGxsData(const RsGxsTunnelId &tunnel, const uint8_t *data,
 {
     if (!mGxsTunnels) return false;
     const bool ok = mGxsTunnels->sendData(tunnel, RETRO_CHESS_GXS_TUNNEL_SERVICE_ID, data, size);
-    if (RetroChessTunnelDebug::enabled()) {
+    if (RetroChessTunnelDebug::enabled() || RetroChessTunnelDebug::capturing()) {
         RsGxsTunnelService::GxsTunnelInfo info;
         if (mGxsTunnels->getTunnelInfo(tunnel, info)) {
             CHESS_TLOG("SEND tunnel=" << tunnel << " to=" << info.destination_gxs_id
@@ -2867,6 +2867,76 @@ void p3RetroChess::setTunnelDebugEnabled(bool enabled)
 bool p3RetroChess::tunnelDebugEnabled()
 {
     return RetroChessTunnelDebug::enabled();
+}
+
+bool p3RetroChess::debugPeers(std::vector<RsRetroChessDebugPeer> &peers,
+                              std::map<RsGxsTunnelId, std::string> &roles)
+{
+    peers.clear();
+    roles.clear();
+    const time_t now = time(nullptr);
+    std::map<RsGxsId, RsRetroChessDebugPeer> byId;
+    auto peer = [&byId](const RsGxsId &id) -> RsRetroChessDebugPeer & {
+        RsRetroChessDebugPeer &p = byId[id];
+        p.id = id;
+        return p;
+    };
+    auto addActivity = [&peer](const RsGxsId &id, const char *what) {
+        RsRetroChessDebugPeer &p = peer(id);
+        if (!p.activity.empty()) p.activity += ", ";
+        p.activity += what;
+    };
+    {
+        // Copies only: no tunnel service calls under the chess mutex (T4).
+        RsStackMutex stack(mRetroChessMtx);
+        for (const auto &entry : mChessContacts) {
+            const ChessContact &c = entry.second;
+            RsRetroChessDebugPeer &p = peer(entry.first);
+            p.contact = true;
+            p.presence = c.status.toStdString();
+            p.failures = c.failures;
+            p.dormant = c.failures >= kPresenceMaxFailures;
+            p.yielding = c.yieldUntil > now;
+            p.lastSeenAgo = c.lastSeen ? int64_t(now - c.lastSeen) : -1;
+            p.nextProbeIn = c.nextProbe > now ? int64_t(c.nextProbe - now) : 0;
+            p.replyDueIn = c.deadline > now ? int64_t(c.deadline - now) : 0;
+            if (!c.probeTunnel.isNull()) {
+                p.tunnel = c.probeTunnel;
+                p.tunnelRole = "probe";
+            }
+        }
+        for (const auto &entry : mPendingTunnels) {
+            RsRetroChessDebugPeer &p = peer(entry.first);
+            p.tunnel = entry.second;
+            p.tunnelRole = "pending";
+            roles[entry.second] = "pending: " + entry.first.toStdString();
+        }
+        for (const auto &entry : mActiveTunnels) {
+            RsRetroChessDebugPeer &p = peer(entry.first);
+            p.tunnel = entry.second;
+            p.tunnelRole = "active";
+            roles[entry.second] = "active: " + entry.first.toStdString();
+        }
+        for (const auto &entry : mDeferredCloses)
+            roles[entry.first] = "closing (waiting for acknowledgements)";
+        for (const auto &tunnel : mTunnelsToClose)
+            if (!roles.count(tunnel)) roles[tunnel] = "queued for close";
+        for (const auto &entry : mTunnelToGxsIdMap)
+            if (!roles.count(entry.first)) roles[entry.first] = "opened by " + entry.second.toStdString();
+        for (const auto &tunnel : mOpenedTunnels)
+            if (!roles.count(tunnel)) roles[tunnel] = "ORPHAN (opened by RetroChess, untracked)";
+        for (const auto &entry : mOwnGxsIdByPeer) peer(entry.first).ownId = entry.second;
+        for (const auto &entry : mGameSessions)
+            if (entry.second.gxs) addActivity(RsGxsId(entry.second.endpointId.toStdString()), "game");
+        for (const auto &id : mInvitesToGxs) addActivity(id, "invite sent");
+        for (const auto &id : mInvitesFromGxs) addActivity(id, "invite received");
+        for (const auto &id : mJoinRequestsFromGxs) addActivity(id, "join request");
+        for (const auto &entry : mPendingGxsInvites) addActivity(entry.first, "invite queued until the tunnel is up");
+        for (const auto &entry : mPendingWatchRequests) addActivity(entry.first, "watch request");
+    }
+    byId.erase(RsGxsId());
+    for (const auto &entry : byId) peers.push_back(entry.second);
+    return true;
 }
 
 bool p3RetroChess::tunnelTraffic(std::vector<RsGxsTunnelService::GxsTunnelInfo> &infos)

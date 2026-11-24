@@ -37,7 +37,7 @@
 #include <QApplication>
 #include "chess.h"
 #include "ChessGameReviewDialog.h"
-#include "ChessTrafficDialog.h"
+#include "RetroChessDebugDialog.h"
 #include <QPointer>
 #include <QMediaPlayer>
 #include <QPainter>
@@ -477,16 +477,12 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 		activityOn = activityOn || RetroChessTunnelDebug::enabled(c);
 	activityDebug->setChecked(activityOn);
 	debugLayout->addWidget(activityDebug);
-	QPushButton *viewTraffic = new QPushButton(tr("View traffic…"), debugGroup);
-	debugLayout->addWidget(viewTraffic);
-	connect(viewTraffic, &QPushButton::clicked, this, []() {
-		// Independent modeless window survives closing the settings dialog.
-		static QPointer<ChessTrafficDialog> traffic;
-		if (!traffic) traffic = new ChessTrafficDialog;
-		traffic->show();
-		traffic->raise();
-		traffic->activateWindow();
-	});
+	QPushButton *debugWindow = new QPushButton(tr("Debug window…"), debugGroup);
+	debugWindow->setToolTip(tr("Live traffic (works without the log files), tunnels, and "
+	                           "chess contacts with their presence state, games and invitations."));
+	debugLayout->addWidget(debugWindow);
+	// Independent modeless window: survives closing the settings dialog.
+	connect(debugWindow, &QPushButton::clicked, this, []() { RetroChessDebugDialog::showDialog(); });
 	dateLayout->addWidget(cmboDateFormat);
 	generalRoot->addSpacing(9);
 	generalRoot->addWidget(dateGroup);

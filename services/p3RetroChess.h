@@ -191,6 +191,8 @@ public:
 	void setTunnelDebugEnabled(bool enabled) override;
 	bool tunnelDebugEnabled() override;
 	bool tunnelTraffic(std::vector<RsGxsTunnelService::GxsTunnelInfo> &infos) override;
+	bool debugPeers(std::vector<RsRetroChessDebugPeer> &peers,
+	                std::map<RsGxsTunnelId, std::string> &tunnelRoles) override;
 
 private:
 	// Held by the GxsTunnel callbacks for their whole run, so that shutdown()

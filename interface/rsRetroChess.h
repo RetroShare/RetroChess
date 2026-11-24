@@ -26,6 +26,7 @@
 #include <ctime>
 #include <string>
 #include <list>
+#include <map>
 #include <vector>
 #include <retroshare/rstypes.h>
 #include <retroshare/rschats.h>  // for ChatId
@@ -73,6 +74,25 @@ struct RsRetroChessAvailablePeer
 	bool seeking = false;
 	/// Time control advertised when seeking is true.
 	ChessTimeControl timeControl;
+};
+
+// Debug window (gui/RetroChessDebugDialog, Contacts tab): one entry per
+// chess contact and per identity we have a tunnel, game or invitation with.
+struct RsRetroChessDebugPeer
+{
+	RsGxsId id;
+	RsGxsId ownId;                // our identity used with this peer, if known
+	bool contact = false;         // in the chess contact list (presence checks)
+	std::string presence;         // "available", "playing", "offline"...
+	unsigned int failures = 0;    // presence probes in a row without answer
+	bool dormant = false;         // too many failures: checked rarely
+	bool yielding = false;        // waiting for the peer to open the tunnel
+	int64_t lastSeenAgo = -1;     // seconds, -1: never
+	int64_t nextProbeIn = 0;      // seconds
+	int64_t replyDueIn = 0;       // seconds until the current probe times out
+	RsGxsTunnelId tunnel;
+	std::string tunnelRole;       // "active", "pending", "probe"
+	std::string activity;         // "game, invite sent"...
 };
 
 class RsRetroChess ;
@@ -158,6 +178,11 @@ class RsRetroChess
 	// include traffic from other clients; byte totals include tunnel management.
 	virtual bool tunnelTraffic(std::vector<RsGxsTunnelService::GxsTunnelInfo> &infos)
 	{ infos.clear(); return false; }
+	// Snapshot for the debug window: contacts, games and invitations per peer,
+	// and what RetroChess uses each of its tunnels for.
+	virtual bool debugPeers(std::vector<RsRetroChessDebugPeer> &peers,
+	                        std::map<RsGxsTunnelId, std::string> &tunnelRoles)
+	{ peers.clear(); tunnelRoles.clear(); return false; }
 };
 
 
