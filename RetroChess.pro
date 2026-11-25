@@ -73,6 +73,8 @@ SOURCES = RetroChessPlugin.cpp               \
           backgammon/gui/BoardTheme.cpp \
           backgammon/gui/BoardWidget.cpp \
           backgammon/gui/BackgammonSettings.cpp \
+          backgammon/gui/toaster/BackgammonToaster.cpp \
+          backgammon/gui/toaster/BackgammonToasterNotify.cpp \
           services/p3RetroChess.cc           \
           services/rsRetroChessItems.cc \
           gui/NEMainpage.cpp \
@@ -115,6 +117,8 @@ HEADERS = RetroChessPlugin.h                 \
           backgammon/gui/BoardTheme.h \
           backgammon/gui/BoardWidget.h \
           backgammon/gui/BackgammonSettings.h \
+          backgammon/gui/toaster/BackgammonToaster.h \
+          backgammon/gui/toaster/BackgammonToasterNotify.h \
           gui/ChessDebugWidget.h \
           gui/RetroChessDebugDialog.h \
           gui/ChessSpectatorsWidget.h \
@@ -151,7 +155,8 @@ FORMS += \
           backgammon/gui/BackgammonSettingsWidget.ui \
           backgammon/gui/BackgammonSettingsDialog.ui \
           backgammon/gui/BackgammonResultDialog.ui \
-          backgammon/gui/BackgammonTrafficDialog.ui
+          backgammon/gui/BackgammonTrafficDialog.ui \
+          backgammon/gui/toaster/BackgammonToaster.ui
 
 RESOURCES = gui/RetroChess_images.qrc
 RESOURCES += gui/RetroChess_pieces.qrc

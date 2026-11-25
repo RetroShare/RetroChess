@@ -25,6 +25,7 @@
 #include "gui/BackgammonSettings.h"
 #include "gui/BoardTheme.h"
 #include "services/BackgammonService.h"
+#include "gui/toaster/BackgammonToasterNotify.h"
 
 #include "gui/settings/rsharesettings.h"
 
@@ -42,6 +43,10 @@ static void initBackgammonResources()
 }
 
 namespace {
+
+// The Backgammon plugin's own toaster notifier, unchanged: it queues
+// invitations itself and follows Backgammon's "Show a toaster" setting.
+BackgammonToasterNotify *toasters = nullptr;
 
 // Same keys as the standalone plugin, so both share the player's choices.
 void loadSettings()
@@ -72,11 +77,13 @@ void RetroChessBackgammon::registerService(RsGxsTunnelService *service)
         initialised = true;
         initBackgammonResources();
         BackgammonService &games = BackgammonService::instance();
-        // RetroChess has no Backgammon page or toaster: an invitation always
-        // opens its game window, where it is accepted or declined.
+        toasters = new BackgammonToasterNotify(&games);
+        // Toaster and game window follow the Backgammon settings, as in the
+        // Backgammon plugin. RetroChess has no "Your games" list, so with
+        // both switched off the window opens anyway.
         QObject::connect(&games, &BackgammonService::invitationReceived, &games,
                          [](BackgammonGameWindow *window) {
-            if (window && !window->isVisible())
+            if (window && !window->isVisible() && !BackgammonSettings::invitationToaster())
                 window->show();
         });
         // Settings are read once the GUI runs.
@@ -117,4 +124,9 @@ void RetroChessBackgammon::addContactAction(QMenu &menu, const RsGxsId &peer,
         const int length = choice.length;
         QObject::connect(action, &QAction::triggered, &menu, [=] { invite(peer, local, variant, length); });
     }
+}
+
+ToasterItem *RetroChessBackgammon::toasterItem()
+{
+    return toasters ? toasters->toasterItem() : nullptr;
 }

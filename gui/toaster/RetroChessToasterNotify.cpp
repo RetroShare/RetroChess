@@ -20,6 +20,7 @@
 #include "RetroChessToasterNotify.h"
 
 #include "ChessToaster.h"
+#include "../../backgammon/RetroChessBackgammon.h"
 #include "gui/RetroChessNotify.h"
 #include "gui/RetroChessSettings.h"
 #include "gui/SoundManager.h"
@@ -92,7 +93,7 @@ void RetroChessToasterNotify::setNotifyEnabled(bool enabled)
 
 ToasterItem *RetroChessToasterNotify::toasterItem()
 {
-	if (mPending.isEmpty()) return nullptr;
+	if (mPending.isEmpty()) return RetroChessBackgammon::toasterItem();
 	const Invitation invitation = mPending.takeFirst();
 	if (!invitation.peerId.isNull())
 		CHESS_INVLOG("TOASTER shown for friend=" << invitation.peerId << " (" << mPending.size() << " more queued)");

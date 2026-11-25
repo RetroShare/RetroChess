@@ -36,6 +36,8 @@ set(RETROCHESS_SOURCES
     backgammon/gui/BoardTheme.cpp
     backgammon/gui/BoardWidget.cpp
     backgammon/gui/BackgammonSettings.cpp
+    backgammon/gui/toaster/BackgammonToaster.cpp
+    backgammon/gui/toaster/BackgammonToasterNotify.cpp
     gui/RetroChessNotify.cpp
     gui/chess.cpp
     gui/ChessDebugWidget.cpp
@@ -78,6 +80,8 @@ set(RETROCHESS_HEADERS
     backgammon/gui/BoardTheme.h
     backgammon/gui/BoardWidget.h
     backgammon/gui/BackgammonSettings.h
+    backgammon/gui/toaster/BackgammonToaster.h
+    backgammon/gui/toaster/BackgammonToasterNotify.h
     services/p3RetroChess.h
     services/RetroChessTunnelDebug.h
     services/rsRetroChessItems.h
@@ -117,6 +121,7 @@ set(RETROCHESS_FORMS
     backgammon/gui/BackgammonSettingsDialog.ui
     backgammon/gui/BackgammonResultDialog.ui
     backgammon/gui/BackgammonTrafficDialog.ui
+    backgammon/gui/toaster/BackgammonToaster.ui
 )
 
 set(RETROCHESS_RESOURCES
@@ -138,7 +143,7 @@ set_target_properties(RetroChess PROPERTIES
     PREFIX "lib"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
-    AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/gui;${CMAKE_CURRENT_SOURCE_DIR}/gui/toaster;${CMAKE_CURRENT_SOURCE_DIR}/4connect;${CMAKE_CURRENT_SOURCE_DIR}/backgammon/gui"
+    AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/gui;${CMAKE_CURRENT_SOURCE_DIR}/gui/toaster;${CMAKE_CURRENT_SOURCE_DIR}/4connect;${CMAKE_CURRENT_SOURCE_DIR}/backgammon/gui;${CMAKE_CURRENT_SOURCE_DIR}/backgammon/gui/toaster"
 )
 
 # Resolve the RetroShare super-project root so this file works both from the

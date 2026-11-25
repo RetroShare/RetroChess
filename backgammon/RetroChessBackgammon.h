@@ -25,7 +25,7 @@
 // core/, services/ and gui/ are copied from the standalone Backgammon plugin
 // (plugins/Backgammon) without changes, minus its main page, toaster and
 // Preferences page: invitations are sent from RetroChess' contact menu.
-// RetroChess only uses the three calls below.
+// RetroChess only uses the calls below.
 //
 // The protocol is the one of the Backgammon plugin (service id "BGMN"), so
 // a RetroChess player can play against a Backgammon plugin user. Only one of
@@ -35,6 +35,7 @@
 #include <retroshare/rsgxstunnel.h>
 
 class QMenu;
+class ToasterItem;
 
 namespace RetroChessBackgammon {
 void registerService(RsGxsTunnelService *service);
@@ -43,4 +44,9 @@ void shutdown();
 // Adds an "Invite to Backgammon" sub-menu to a contact menu of RetroChess.
 // online: the contact is reachable right now (available, playing or busy).
 void addContactAction(QMenu &menu, const RsGxsId &peer, const RsGxsId &local, bool online);
+// Next Backgammon invitation toaster, or nullptr. Backgammon's own setting
+// decides whether there are any; the chess toaster setting does not apply.
+// RetroShare takes one ToasterNotify per plugin, so RetroChessToasterNotify
+// asks here when it has no chess invitation to show.
+ToasterItem *toasterItem();
 }
