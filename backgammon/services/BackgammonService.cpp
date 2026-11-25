@@ -175,8 +175,13 @@ bool BackgammonService::send(const RsGxsTunnelId &id, const QByteArray &token, c
                                     static_cast<uint32_t>(packet.size()));
     if (ok)
         ++m_packets[id].sent;
-    BG_TLOG("send tunnel=" << id << " op=" << op << "(" << BackgammonDebug::opName(op) << ") "
-            << packet.size() << " bytes match=" << shortToken(token) << (ok ? "" : " FAILED"));
+    // RetroChess: format of the RetroChess debug window.
+    const auto peer = m_sessions.find(id);
+    BG_TLOG("SEND tunnel=" << id
+            << (peer != m_sessions.end() && peer->second.window ? " to=" : "")
+            << (peer != m_sessions.end() && peer->second.window ? peer->second.window->peerId().toStdString() : std::string())
+            << " type=" << BackgammonDebug::opName(op) << " bytes=" << packet.size()
+            << " ok=" << (ok ? 1 : 0) << " match=" << shortToken(token));
     BG_GAMELOG("sent " << BackgammonDebug::opName(op) << " match=" << shortToken(token) << " "
                << jsonText(body) << (ok ? "" : " (could not be sent)"));
     return ok;
@@ -208,7 +213,7 @@ void BackgammonService::notifyTunnelStatus(const RsGxsTunnelId &id, uint32_t sta
 {
     if (m_stopped)
         return;
-    BG_TLOG("status tunnel=" << id << " " << BackgammonDebug::statusName(status));
+    BG_TLOG("STATUS tunnel=" << id << " " << BackgammonDebug::statusName(status));
     QMetaObject::invokeMethod(this, [this, id, status] { handleStatus(id, status); },
                               Qt::QueuedConnection);
 }
@@ -344,8 +349,13 @@ void BackgammonService::handlePacket(const RsGxsTunnelId &id, const QByteArray &
     const QJsonDocument document = QJsonDocument::fromJson(packet.mid(HeaderSize));
     const QJsonObject body = document.isObject() ? document.object() : QJsonObject();
     ++m_packets[id].received;
-    BG_TLOG("receive tunnel=" << id << " op=" << op << "(" << BackgammonDebug::opName(op) << ") "
-            << packet.size() << " bytes match=" << shortToken(token));
+    // RetroChess: format of the RetroChess debug window.
+    const auto peer = m_sessions.find(id);
+    BG_TLOG("RECV tunnel=" << id
+            << (peer != m_sessions.end() && peer->second.window ? " from=" : "")
+            << (peer != m_sessions.end() && peer->second.window ? peer->second.window->peerId().toStdString() : std::string())
+            << " type=" << BackgammonDebug::opName(op) << " bytes=" << packet.size()
+            << " match=" << shortToken(token));
 
     auto it = m_sessions.find(id);
     if (it == m_sessions.end() || it->second.token != token) {

@@ -68,7 +68,6 @@ SOURCES = RetroChessPlugin.cpp               \
           backgammon/gui/BackgammonSettingsWidget.cpp \
           backgammon/gui/BackgammonSettingsDialog.cpp \
           backgammon/gui/BackgammonResultDialog.cpp \
-          backgammon/gui/BackgammonTrafficDialog.cpp \
           backgammon/gui/BackgammonSounds.cpp \
           backgammon/gui/BoardTheme.cpp \
           backgammon/gui/BoardWidget.cpp \
@@ -111,7 +110,6 @@ HEADERS = RetroChessPlugin.h                 \
           backgammon/gui/BackgammonSettingsWidget.h \
           backgammon/gui/BackgammonSettingsDialog.h \
           backgammon/gui/BackgammonResultDialog.h \
-          backgammon/gui/BackgammonTrafficDialog.h \
           backgammon/gui/BackgammonSounds.h \
           backgammon/gui/BackgammonStyle.h \
           backgammon/gui/BoardTheme.h \
@@ -155,7 +153,6 @@ FORMS += \
           backgammon/gui/BackgammonSettingsWidget.ui \
           backgammon/gui/BackgammonSettingsDialog.ui \
           backgammon/gui/BackgammonResultDialog.ui \
-          backgammon/gui/BackgammonTrafficDialog.ui \
           backgammon/gui/toaster/BackgammonToaster.ui
 
 RESOURCES = gui/RetroChess_images.qrc

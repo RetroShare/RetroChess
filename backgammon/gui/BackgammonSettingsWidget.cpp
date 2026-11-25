@@ -26,7 +26,8 @@
 #include "services/BackgammonService.h"
 #include "BoardTheme.h"
 #include "BackgammonConstants.h"
-#include "BackgammonTrafficDialog.h"
+// RetroChess: one debug window for chess and Backgammon.
+#include "../../gui/RetroChessDebugDialog.h"
 #include "services/BackgammonDebug.h"
 
 #include "gui/settings/rsharesettings.h"
@@ -77,15 +78,8 @@ BackgammonSettingsWidget::BackgammonSettingsWidget(QWidget *parent)
 
     connect(ui->tunnelLogCheck, &QCheckBox::toggled, this, [](bool on) { BackgammonSettings::setTunnelLogging(on); });
     connect(ui->gameLogCheck, &QCheckBox::toggled, this, [](bool on) { BackgammonSettings::setGameLogging(on); });
-    connect(ui->trafficButton, &QPushButton::clicked, this, [this] {
-        // One viewer at a time; it closes itself (WA_DeleteOnClose).
-        static QPointer<BackgammonTrafficDialog> dialog;
-        if (!dialog)
-            dialog = new BackgammonTrafficDialog(window());
-        dialog->show();
-        dialog->raise();
-        dialog->activateWindow();
-    });
+    // RetroChess: the RetroChess debug window, which shows Backgammon too.
+    connect(ui->trafficButton, &QPushButton::clicked, this, [] { RetroChessDebugDialog::showDialog(); });
     connect(ui->logFolderButton, &QPushButton::clicked, this, [] {
         const QString path = QString::fromStdString(BackgammonDebug::logFilePath(BackgammonDebug::Tunnel));
         if (!path.isEmpty())

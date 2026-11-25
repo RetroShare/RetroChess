@@ -130,3 +130,20 @@ ToasterItem *RetroChessBackgammon::toasterItem()
 {
     return toasters ? toasters->toasterItem() : nullptr;
 }
+
+std::vector<RetroChessBackgammon::DebugMatch> RetroChessBackgammon::debugMatches()
+{
+    std::vector<DebugMatch> out;
+    std::vector<BackgammonService::TunnelTraffic> tunnels;
+    if (!BackgammonService::instance().tunnelTraffic(tunnels))
+        return out;
+    for (const BackgammonService::TunnelTraffic &t : tunnels) {
+        DebugMatch match;
+        match.info = t.info;
+        match.what = t.match.toStdString();
+        match.packetsSent = t.packetsSent;
+        match.packetsReceived = t.packetsReceived;
+        out.push_back(match);
+    }
+    return out;
+}

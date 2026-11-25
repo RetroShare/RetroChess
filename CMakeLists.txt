@@ -31,7 +31,6 @@ set(RETROCHESS_SOURCES
     backgammon/gui/BackgammonSettingsWidget.cpp
     backgammon/gui/BackgammonSettingsDialog.cpp
     backgammon/gui/BackgammonResultDialog.cpp
-    backgammon/gui/BackgammonTrafficDialog.cpp
     backgammon/gui/BackgammonSounds.cpp
     backgammon/gui/BoardTheme.cpp
     backgammon/gui/BoardWidget.cpp
@@ -74,7 +73,6 @@ set(RETROCHESS_HEADERS
     backgammon/gui/BackgammonSettingsWidget.h
     backgammon/gui/BackgammonSettingsDialog.h
     backgammon/gui/BackgammonResultDialog.h
-    backgammon/gui/BackgammonTrafficDialog.h
     backgammon/gui/BackgammonSounds.h
     backgammon/gui/BackgammonStyle.h
     backgammon/gui/BoardTheme.h
@@ -120,7 +118,6 @@ set(RETROCHESS_FORMS
     backgammon/gui/BackgammonSettingsWidget.ui
     backgammon/gui/BackgammonSettingsDialog.ui
     backgammon/gui/BackgammonResultDialog.ui
-    backgammon/gui/BackgammonTrafficDialog.ui
     backgammon/gui/toaster/BackgammonToaster.ui
 )
 

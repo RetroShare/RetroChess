@@ -28,7 +28,11 @@
 //   Tunnels   – the GXS tunnels of RetroChess and what each is used for;
 //   Contacts  – chess contacts with their presence state (failures, dormant,
 //               next probe) and games / invitations per identity.
-// Opened from RetroChess settings -> General -> Debug -> "Debug window…".
+// Backgammon (backgammon/) shows up in all three tabs: its log lines in the
+// areas backgammon-tunnel / backgammon-game, its tunnels and matches next to
+// the chess ones.
+// Opened from RetroChess settings -> General -> Debug -> "Debug window…",
+// and from Backgammon settings -> Debug -> "Debug window…".
 
 #ifndef RETROCHESSDEBUGDIALOG_H
 #define RETROCHESSDEBUGDIALOG_H

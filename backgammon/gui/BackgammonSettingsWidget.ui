@@ -371,10 +371,10 @@
             <item>
              <widget class="QPushButton" name="trafficButton">
               <property name="text">
-               <string>View traffic…</string>
+               <string>Debug window…</string>
               </property>
               <property name="toolTip">
-               <string>Show the tunnels of your Backgammon matches with their traffic. Works without logging.</string>
+               <string>Open the RetroChess debug window: Backgammon packets, tunnels and matches next to the chess ones. Works without logging.</string>
               </property>
              </widget>
             </item>

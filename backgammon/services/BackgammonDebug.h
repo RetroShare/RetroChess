@@ -39,6 +39,11 @@
 //
 // A disabled category costs one atomic load per log call and builds no
 // strings. Safe to use from any thread.
+//
+// RetroChess: every line is also shown in the RetroChess debug window
+// (areas backgammon-tunnel and backgammon-game), whether or not logging is
+// on, like the chess lines. Packet and status lines use the format the
+// window parses: "SEND tunnel=... to=... type=... bytes=... ok=1".
 
 #include <atomic>
 #include <chrono>
@@ -51,6 +56,9 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+
+// RetroChess: every line also goes to the RetroChess debug window.
+#include "../../services/RetroChessTunnelDebug.h"
 
 namespace BackgammonDebug
 {
@@ -201,12 +209,20 @@ inline const char *opName(char op)
 
 } // namespace BackgammonDebug
 
+// RetroChess: besides the Backgammon log files (only when enabled), every
+// line is kept for the RetroChess debug window, like the chess lines.
 #define BG_DLOG(category, expr) \
     do { \
-        if (BackgammonDebug::enabled(category)) { \
+        const bool bg_log_file = BackgammonDebug::enabled(category); \
+        if (bg_log_file || RetroChessTunnelDebug::capturing()) { \
             std::ostringstream bg_log_stream; \
             bg_log_stream << expr; \
-            BackgammonDebug::write(category, bg_log_stream.str()); \
+            if (RetroChessTunnelDebug::capturing()) \
+                RetroChessTunnelDebug::record(category == BackgammonDebug::Tunnel \
+                        ? RetroChessTunnelDebug::BackgammonTunnel \
+                        : RetroChessTunnelDebug::BackgammonGame, bg_log_stream.str()); \
+            if (bg_log_file) \
+                BackgammonDebug::write(category, bg_log_stream.str()); \
         } \
     } while (0)
 

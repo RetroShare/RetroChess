@@ -34,6 +34,9 @@
 
 #include <retroshare/rsgxstunnel.h>
 
+#include <string>
+#include <vector>
+
 class QMenu;
 class ToasterItem;
 
@@ -49,4 +52,14 @@ void addContactAction(QMenu &menu, const RsGxsId &peer, const RsGxsId &local, bo
 // RetroShare takes one ToasterNotify per plugin, so RetroChessToasterNotify
 // asks here when it has no chess invitation to show.
 ToasterItem *toasterItem();
+
+// For the RetroChess debug window (Tunnels and Contacts tabs): the tunnels
+// of Backgammon matches, with RetroShare's statistics in `info`.
+struct DebugMatch {
+    RsGxsTunnelService::GxsTunnelInfo info {};
+    std::string what;              // "Playing, game 2", "Invitation sent"...
+    unsigned int packetsSent = 0;  // Backgammon packets only
+    unsigned int packetsReceived = 0;
+};
+std::vector<DebugMatch> debugMatches();
 }
