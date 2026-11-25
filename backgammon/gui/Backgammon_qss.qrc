@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/qss">
+        <file alias="Backgammon.qss">qss/Backgammon.qss</file>
+    </qresource>
+</RCC>

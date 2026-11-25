@@ -1,0 +1,10 @@
+<RCC>
+    <!-- No settings.png: RetroChess already has :/images/settings.png. -->
+    <qresource prefix="/images">
+        <file alias="backgammon.png">../images/backgammon.png</file>
+        <file alias="backgammon-32.png">../images/backgammon-32.png</file>
+        <file alias="roll.png">../images/roll.png</file>
+        <file alias="undo.png">../images/undo.png</file>
+        <file alias="confirm.png">../images/confirm.png</file>
+    </qresource>
+</RCC>

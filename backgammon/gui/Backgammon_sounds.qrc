@@ -1,0 +1,15 @@
+<RCC>
+    <qresource prefix="/backgammon/sounds">
+        <file alias="chequer.wav">../sounds/chequer.wav</file>
+        <file alias="dance.wav">../sounds/dance.wav</file>
+        <file alias="double.wav">../sounds/double.wav</file>
+        <file alias="drop.wav">../sounds/drop.wav</file>
+        <file alias="fanfare.wav">../sounds/fanfare.wav</file>
+        <file alias="gameover.wav">../sounds/gameover.wav</file>
+        <file alias="matchover.wav">../sounds/matchover.wav</file>
+        <file alias="move.wav">../sounds/move.wav</file>
+        <file alias="resign.wav">../sounds/resign.wav</file>
+        <file alias="roll.wav">../sounds/roll.wav</file>
+        <file alias="take.wav">../sounds/take.wav</file>
+    </qresource>
+</RCC>

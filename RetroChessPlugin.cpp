@@ -27,6 +27,7 @@
 #include "gui/chat/ChatWidget.h"
 #include "RetroChessPlugin.h"
 #include "4connect/FourConnect.h"
+#include "backgammon/RetroChessBackgammon.h"
 #include "interface/rsRetroChess.h"
 #include "gui/NEMainpage.h"
 #include "gui/RetroChessNotify.h"
@@ -111,6 +112,7 @@ void RetroChessPlugin::stop()
 	// touching mRetroChessNotify, deleted with the plugin.
 	if (mRetroChess)
 		mRetroChess->shutdown();
+	RetroChessBackgammon::shutdown();
 }
 
 void RetroChessPlugin::setInterfaces(RsPlugInInterfaces &interfaces)
@@ -118,6 +120,7 @@ void RetroChessPlugin::setInterfaces(RsPlugInInterfaces &interfaces)
 	mPeers = interfaces.mPeers;
 	mGxsTunnels = interfaces.mGxsTunnels;
 	FourConnect::registerService(mGxsTunnels);
+	RetroChessBackgammon::registerService(mGxsTunnels);
 	mIdentity = interfaces.mIdentity;
 	mChats = interfaces.mChats;
 

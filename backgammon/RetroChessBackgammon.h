@@ -1,0 +1,46 @@
+/*******************************************************************************
+ * backgammon/RetroChessBackgammon.h                                           *
+ *                                                                             *
+ * Copyright (C) 2026 RetroShare Team <retroshare.project@gmail.com>           *
+ *                                                                             *
+ * This program is free software: you can redistribute it and/or modify        *
+ * it under the terms of the GNU Affero General Public License as              *
+ * published by the Free Software Foundation, either version 3 of the          *
+ * License, or (at your option) any later version.                             *
+ *                                                                             *
+ * This program is distributed in the hope that it will be useful,             *
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the                *
+ * GNU Affero General Public License for more details.                         *
+ *                                                                             *
+ * You should have received a copy of the GNU Affero General Public License    *
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.       *
+ *                                                                             *
+ *******************************************************************************/
+
+#pragma once
+
+// Backgammon as an extra game of RetroChess, like 4connect/.
+//
+// core/, services/ and gui/ are copied from the standalone Backgammon plugin
+// (plugins/Backgammon) without changes, minus its main page, toaster and
+// Preferences page: invitations are sent from RetroChess' contact menu.
+// RetroChess only uses the three calls below.
+//
+// The protocol is the one of the Backgammon plugin (service id "BGMN"), so
+// a RetroChess player can play against a Backgammon plugin user. Only one of
+// the two can own the service in one RetroShare: when the Backgammon plugin
+// is loaded too, whichever registers first wins and the other stays inactive.
+
+#include <retroshare/rsgxstunnel.h>
+
+class QMenu;
+
+namespace RetroChessBackgammon {
+void registerService(RsGxsTunnelService *service);
+// The plugin is being unloaded: stop handling tunnel callbacks.
+void shutdown();
+// Adds an "Invite to Backgammon" sub-menu to a contact menu of RetroChess.
+// online: the contact is reachable right now (available, playing or busy).
+void addContactAction(QMenu &menu, const RsGxsId &peer, const RsGxsId &local, bool online);
+}

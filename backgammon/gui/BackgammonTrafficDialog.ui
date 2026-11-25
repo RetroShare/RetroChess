@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>BackgammonTrafficDialog</class>
+ <widget class="QDialog" name="BackgammonTrafficDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1150</width>
+    <height>420</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Backgammon — Tunnel traffic</string>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item>
+    <widget class="QLabel" name="noteLabel">
+     <property name="text">
+      <string>Live GXS tunnels of your Backgammon matches, updated every 2 seconds. Sent and Received are RetroShare's byte totals and include tunnel management and any other services sharing the tunnel. Packets sent and received count Backgammon packets only. Closed tunnels disappear. Logging is not required.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="statusLabel">
+     <property name="text">
+      <string notr="true"/>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTreeWidget" name="trafficTree">
+     <property name="alternatingRowColors">
+      <bool>true</bool>
+     </property>
+     <property name="selectionMode">
+      <enum>QAbstractItemView::SelectionMode::ExtendedSelection</enum>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <property name="rootIsDecorated">
+      <bool>false</bool>
+     </property>
+     <property name="uniformRowHeights">
+      <bool>true</bool>
+     </property>
+       <column>
+        <property name="text">
+         <string>Tunnel ID</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Local identity</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Remote identity</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Status</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Used for</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Sent</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Received</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Packets sent</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Packets received</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Unacknowledged</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>Side</string>
+        </property>
+       </column>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="buttonsLayout">
+     <item>
+      <widget class="QPushButton" name="copyButton">
+       <property name="text">
+        <string>Copy table</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="buttonsSpacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="closeButton">
+       <property name="text">
+        <string>Close</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

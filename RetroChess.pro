@@ -60,6 +60,19 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 14) {
 
 SOURCES = RetroChessPlugin.cpp               \
           4connect/FourConnect.cpp           \
+          backgammon/RetroChessBackgammon.cpp \
+          backgammon/core/BgRules.cpp \
+          backgammon/core/BgMatch.cpp \
+          backgammon/services/BackgammonService.cpp \
+          backgammon/gui/BackgammonGameWindow.cpp \
+          backgammon/gui/BackgammonSettingsWidget.cpp \
+          backgammon/gui/BackgammonSettingsDialog.cpp \
+          backgammon/gui/BackgammonResultDialog.cpp \
+          backgammon/gui/BackgammonTrafficDialog.cpp \
+          backgammon/gui/BackgammonSounds.cpp \
+          backgammon/gui/BoardTheme.cpp \
+          backgammon/gui/BoardWidget.cpp \
+          backgammon/gui/BackgammonSettings.cpp \
           services/p3RetroChess.cc           \
           services/rsRetroChessItems.cc \
           gui/NEMainpage.cpp \
@@ -86,6 +99,22 @@ SOURCES = RetroChessPlugin.cpp               \
 HEADERS = RetroChessPlugin.h                 \
           4connect/FourBoard.h               \
           4connect/FourConnect.h             \
+          backgammon/RetroChessBackgammon.h \
+          backgammon/core/BgRules.h \
+          backgammon/core/BgMatch.h \
+          backgammon/services/BackgammonService.h \
+          backgammon/services/BackgammonDebug.h \
+          backgammon/gui/BackgammonConstants.h \
+          backgammon/gui/BackgammonGameWindow.h \
+          backgammon/gui/BackgammonSettingsWidget.h \
+          backgammon/gui/BackgammonSettingsDialog.h \
+          backgammon/gui/BackgammonResultDialog.h \
+          backgammon/gui/BackgammonTrafficDialog.h \
+          backgammon/gui/BackgammonSounds.h \
+          backgammon/gui/BackgammonStyle.h \
+          backgammon/gui/BoardTheme.h \
+          backgammon/gui/BoardWidget.h \
+          backgammon/gui/BackgammonSettings.h \
           gui/ChessDebugWidget.h \
           gui/RetroChessDebugDialog.h \
           gui/ChessSpectatorsWidget.h \
@@ -117,7 +146,21 @@ FORMS += \
           gui/RetroChessDebugDialog.ui \
           gui/chess.ui \
           gui/toaster/ChessToaster.ui \
-          4connect/FourResultDialog.ui
+          4connect/FourResultDialog.ui \
+          backgammon/gui/BackgammonGameWindow.ui \
+          backgammon/gui/BackgammonSettingsWidget.ui \
+          backgammon/gui/BackgammonSettingsDialog.ui \
+          backgammon/gui/BackgammonResultDialog.ui \
+          backgammon/gui/BackgammonTrafficDialog.ui
 
 RESOURCES = gui/RetroChess_images.qrc
 RESOURCES += gui/RetroChess_pieces.qrc
+RESOURCES += backgammon/gui/Backgammon_images.qrc
+RESOURCES += backgammon/gui/Backgammon_sounds.qrc
+RESOURCES += backgammon/gui/Backgammon_qss.qrc
+
+# Backgammon (backgammon/) includes "core/...", "gui/..." and "services/..."
+# relative to its own folder, as in the standalone plugin, and needs C++17.
+INCLUDEPATH += $$PWD/backgammon
+DEPENDPATH  += $$PWD/backgammon
+CONFIG += c++17

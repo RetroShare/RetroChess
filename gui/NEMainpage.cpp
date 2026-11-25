@@ -20,6 +20,7 @@
 
 #include "NEMainpage.h"
 #include "../4connect/FourConnect.h"
+#include "../backgammon/RetroChessBackgammon.h"
 #include "RetroChessLeaderboard.h"
 #include "ChessGameSetupDialog.h"
 #include <QTableWidget>
@@ -2374,6 +2375,8 @@ void NEMainpage::setupPlayersTab()
 			QAction *accept = incoming ? menu.addAction(tr("Accept invitation")) : nullptr;
 			const QString peerStatus = item->data(1, Qt::UserRole + 1).toString();
 			FourConnect::addContactAction(menu, id, rsRetroChess->preferredChessIdentity(),
+			        peerStatus == "available" || peerStatus == "playing" || peerStatus == "busy");
+			RetroChessBackgammon::addContactAction(menu, id, rsRetroChess->preferredChessIdentity(),
 			        peerStatus == "available" || peerStatus == "playing" || peerStatus == "busy");
 			QAction *decline = incoming ? menu.addAction(tr("Decline invitation")) : nullptr;
 			QAction *chatAction = nullptr;
