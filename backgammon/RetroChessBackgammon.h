@@ -34,10 +34,15 @@
 
 #include <retroshare/rsgxstunnel.h>
 
+#include <QList>
+#include <QString>
+
+#include <functional>
 #include <string>
 #include <vector>
 
 class QMenu;
+class QObject;
 class ToasterItem;
 
 namespace RetroChessBackgammon {
@@ -62,4 +67,18 @@ struct DebugMatch {
     unsigned int packetsReceived = 0;
 };
 std::vector<DebugMatch> debugMatches();
+
+// Invitations not answered yet, for the "Available players" list.
+struct Invitation {
+    RsGxsId peer;
+    bool incoming = false;  // received (Accept / Reject) or sent (Pending...)
+    QString game;           // "Backgammon, 3 points", "Long Nardy, 1 point"
+};
+QList<Invitation> invitations();
+void acceptInvitation(const RsGxsId &peer);
+// Declines a received invitation, or cancels a sent one.
+void declineInvitation(const RsGxsId &peer);
+// Calls `changed` (in the GUI thread, coalesced) when invitations or matches
+// change, as long as `context` exists.
+void onChanged(QObject *context, const std::function<void()> &changed);
 }

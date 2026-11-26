@@ -2,7 +2,10 @@
 
 Backgammon and Long Nardy as an extra game of RetroChess, like `4connect/`.
 Right-click a player in the RetroChess Players tab → *Invite to Backgammon*
-→ Backgammon or Long Nardy and the match length. Invitations from others
+→ Backgammon or Long Nardy and the match length.
+Pending invitations are listed in *Available players*: *Accept* / *Reject*
+for a received one, *Pending...* (click to cancel) for a sent one, the game
+in the *Mode* column. A chess invitation from the same player comes first. Invitations from others
 show a Backgammon toaster with *Accept* and/or open the game window (both
 switchable in the Backgammon settings, General); the gear button in the game
 window opens those settings. Backgammon toasters follow only the Backgammon

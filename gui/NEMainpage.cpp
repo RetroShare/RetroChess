@@ -311,6 +311,8 @@ NEMainpage::NEMainpage(QWidget *parent, RetroChessNotify *notify) :
 	});
 
 	connect(mNotify, SIGNAL(NeMsgArrived(RsPeerId,QString)), this, SLOT(NeMsgArrived(RsPeerId,QString)));
+	// Backgammon invitations are listed in "Available players" too.
+	RetroChessBackgammon::onChanged(this, [this] { scheduleRefreshAvailablePlayers(); });
 	connect(mNotify, SIGNAL(chessStart(RsPeerId)), this, SLOT(chessStart(RsPeerId)));
 	connect(mNotify, SIGNAL(chessInvitedGxs(RsGxsId)), this, SLOT(chessInviteReceivedGxs(RsGxsId)));
 	connect(mNotify, SIGNAL(gxsTunnelClosed(RsGxsId)), this, SLOT(chessTunnelClosed(RsGxsId)));
@@ -534,6 +536,10 @@ void NEMainpage::refreshAvailablePlayers()
     if (!ui->savedContacts || !ui->availablePlayers) return;
     updateLobbyGameButton();
     const auto peers = rsRetroChess->availableChessPeers();
+    // Backgammon invitations by identity (backgammon/RetroChessBackgammon.h).
+    QHash<QString, RetroChessBackgammon::Invitation> bgInvites;
+    for (const RetroChessBackgammon::Invitation &invitation : RetroChessBackgammon::invitations())
+        bgInvites.insert(QString::fromStdString(invitation.peer.toStdString()), invitation);
     for (QTreeWidget *tree : {ui->savedContacts, ui->availablePlayers}) {
         const bool isSavedContacts = (tree == ui->savedContacts);
         tree->setSortingEnabled(false);
@@ -548,11 +554,16 @@ void NEMainpage::refreshAvailablePlayers()
             if (!peer.gxs || (rsIdentity && rsIdentity->isOwnId(id))) continue;
             const bool outgoing = rsRetroChess->hasInviteToGxs(id);
             const bool incoming = rsRetroChess->hasInviteFromGxs(id);
+            const auto bgInvite = bgInvites.constFind(peer.endpointId);
+            const bool bgIncoming = bgInvite != bgInvites.constEnd() && bgInvite->incoming;
+            const bool bgOutgoing = bgInvite != bgInvites.constEnd() && !bgInvite->incoming;
+            const QString bgGame = bgInvite != bgInvites.constEnd() ? bgInvite->game : QString();
             QString status = peer.status;
             const RetroChessWindow *game = mGameSessions->game(peer.endpointId);
             if (game && game->m_flag_finished == 0
                     && (status == "available" || status == "busy" || status == "playing")) status = "playing";
-            if (isSavedContacts ? !peer.savedContact : (status != "available" && !outgoing && !incoming)) continue;
+            if (isSavedContacts ? !peer.savedContact
+                    : (status != "available" && !outgoing && !incoming && !bgIncoming && !bgOutgoing)) continue;
             retained.insert(peer.endpointId);
             QTreeWidgetItem *item = rows.value(peer.endpointId);
             if (!item) item = new ChessPlayerItem(tree);
@@ -607,12 +618,17 @@ void NEMainpage::refreshAvailablePlayers()
                     actionState = 1; // Invited
                 } else if (outgoing) {
                     actionState = 2; // Cancel
+                } else if (bgIncoming) {
+                    actionState = 4; // Backgammon: accept
+                } else if (bgOutgoing) {
+                    actionState = 5; // Backgammon: cancel
                 } else if (status == "available" && (!game || game->m_flag_finished != 0)) {
                     actionState = 3; // Invite
                 }
 
                 if (actionState != 0) {
-                    const QString seekKey = peer.seeking ? peer.timeControl.toNetString() : QString();
+                    const QString seekKey = actionState >= 4 ? bgGame
+                            : peer.seeking ? peer.timeControl.toNetString() : QString();
                     if (item->data(2, Qt::UserRole).toInt() != actionState
                             || item->data(2, Qt::UserRole + 1).toString() != seekKey
                             || !tree->itemWidget(item, 2)) {
@@ -628,9 +644,11 @@ void NEMainpage::refreshAvailablePlayers()
                         actionBtn->setFixedHeight(22);
 
                         const QString endpoint = peer.endpointId;
-                        if (actionState == 1) {
+                        if (actionState == 1 || actionState == 4) {
                             actionBtn->setText(tr("Accept"));
-                            actionBtn->setToolTip(tr("Invited by player. Click to accept and start the game."));
+                            actionBtn->setToolTip(actionState == 4
+                                    ? tr("Invited to play %1. Click to accept.").arg(bgGame)
+                                    : tr("Invited by player. Click to accept and start the game."));
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
                                 "  border: 1px solid #199909; color: white; padding: 1px 6px; border-radius: 4px;"
@@ -639,6 +657,12 @@ void NEMainpage::refreshAvailablePlayers()
                                 "QPushButton:hover { border-color: #35d51f; }"
                                 "QPushButton:pressed { background-color: #116a06; }"
                             );
+                            if (actionState == 4) {
+                                connect(actionBtn, &QPushButton::clicked, this, [this, id]() {
+                                    RetroChessBackgammon::acceptInvitation(id);
+                                    refreshAvailablePlayers();
+                                });
+                            } else
                             connect(actionBtn, &QPushButton::clicked, this, [this, id]() {
                                 if (rsRetroChess->hasInviteFromGxs(id)) {
                                     rsRetroChess->acceptedInviteGxs(id);
@@ -646,9 +670,11 @@ void NEMainpage::refreshAvailablePlayers()
                                 }
                                 refreshAvailablePlayers();
                             });
-                        } else if (actionState == 2) {
+                        } else if (actionState == 2 || actionState == 5) {
                             actionBtn->setText(tr("Pending..."));
-                            actionBtn->setToolTip(tr("Click to cancel invitation"));
+                            actionBtn->setToolTip(actionState == 5
+                                    ? tr("Backgammon invitation sent (%1). Click to cancel it.").arg(bgGame)
+                                    : tr("Click to cancel invitation"));
                             actionBtn->setStyleSheet(
                                 "QPushButton {"
                                 "  border: 1px solid #991919; color: white; padding: 1px 6px; border-radius: 4px;"
@@ -657,6 +683,12 @@ void NEMainpage::refreshAvailablePlayers()
                                 "QPushButton:hover { border-color: #d53535; }"
                                 "QPushButton:pressed { background-color: #6a1111; }"
                             );
+                            if (actionState == 5) {
+                                connect(actionBtn, &QPushButton::clicked, this, [this, id]() {
+                                    RetroChessBackgammon::declineInvitation(id);
+                                    refreshAvailablePlayers();
+                                });
+                            } else
                             connect(actionBtn, &QPushButton::clicked, this, [this, id]() {
                                 if (rsRetroChess->hasInviteToGxs(id)) {
                                     if (!rsRetroChess->cancelInviteToGxs(id)) {
@@ -762,15 +794,21 @@ void NEMainpage::refreshAvailablePlayers()
                 }
 
                 // Column 4 — Mode (always Casual for now)
-                item->setText(4, peer.seeking ? tr("Casual") : QString());
+                item->setText(4, peer.seeking ? tr("Casual") : (bgIncoming || bgOutgoing) ? bgGame : QString());
                 item->setData(4, Qt::UserRole, 0);
 
                 item->setText(7, lastSeenText);
                 item->setData(7, Qt::UserRole, static_cast<qlonglong>(peer.lastSeen));
-                item->setText(8, outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
-                        : incoming ? tr("Received") : QString());
+                QString invitationText = outgoing && incoming ? tr("Sent / received") : outgoing ? tr("Sent")
+                        : incoming ? tr("Received") : QString();
+                if (bgIncoming || bgOutgoing) {
+                    const QString bgText = bgIncoming ? tr("Backgammon received") : tr("Backgammon sent");
+                    invitationText = invitationText.isEmpty() ? bgText : invitationText + QStringLiteral(", ") + bgText;
+                }
+                item->setText(8, invitationText);
+                item->setToolTip(8, bgGame);
 
-                if (incoming) {
+                if (incoming || bgIncoming) {
                     if (!tree->itemWidget(item, 9)) {
                         QWidget *rejectWidget = new QWidget(tree);
                         rejectWidget->setObjectName("chessActionContainer");
@@ -783,7 +821,7 @@ void NEMainpage::refreshAvailablePlayers()
                         rejectBtn->setFont(tree->font());
                         rejectBtn->setFixedHeight(22);
                         rejectBtn->setText(tr("Reject"));
-                        rejectBtn->setToolTip(tr("Reject chess invitation"));
+                        rejectBtn->setToolTip(tr("Reject the invitation (chess first, then Backgammon)"));
                         rejectBtn->setStyleSheet(
                             "QPushButton {"
                             "  border: 1px solid #991919; color: white; padding: 1px 8px; border-radius: 4px;"
@@ -799,6 +837,8 @@ void NEMainpage::refreshAvailablePlayers()
                                     QMessageBox::warning(this, tr("Chess invitation"),
                                             tr("The rejection could not be sent. Please try again."));
                                 }
+                            } else {
+                                RetroChessBackgammon::declineInvitation(id);
                             }
                             refreshAvailablePlayers();
                         });

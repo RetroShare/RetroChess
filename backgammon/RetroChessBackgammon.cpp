@@ -147,3 +147,67 @@ std::vector<RetroChessBackgammon::DebugMatch> RetroChessBackgammon::debugMatches
     }
     return out;
 }
+
+namespace {
+// Pending invitation windows: received (Offered) or sent (not answered yet).
+bool pending(const BackgammonGameWindow *window, bool *incoming = nullptr)
+{
+    if (!window)
+        return false;
+    const auto phase = window->phase();
+    if (incoming)
+        *incoming = phase == BackgammonGameWindow::Offered;
+    return phase == BackgammonGameWindow::Offered || phase == BackgammonGameWindow::Connecting
+            || phase == BackgammonGameWindow::Waiting;
+}
+} // namespace
+
+QList<RetroChessBackgammon::Invitation> RetroChessBackgammon::invitations()
+{
+    QList<Invitation> out;
+    for (BackgammonGameWindow *window : BackgammonService::instance().games()) {
+        Invitation invitation;
+        if (!pending(window, &invitation.incoming))
+            continue;
+        invitation.peer = window->peerId();
+        const QString game = window->variant() == bg::Variant::LongNardy
+                ? QObject::tr("Long Nardy") : QObject::tr("Backgammon");
+        invitation.game = window->matchLength() == 1
+                ? QObject::tr("%1, 1 point").arg(game)
+                : QObject::tr("%1, %2 points").arg(game).arg(window->matchLength());
+        out.append(invitation);
+    }
+    return out;
+}
+
+void RetroChessBackgammon::acceptInvitation(const RsGxsId &peer)
+{
+    for (BackgammonGameWindow *window : BackgammonService::instance().games()) {
+        bool incoming = false;
+        if (pending(window, &incoming) && incoming && window->peerId() == peer) {
+            window->acceptInvitation();   // also brings the game window up
+            return;
+        }
+    }
+}
+
+void RetroChessBackgammon::declineInvitation(const RsGxsId &peer)
+{
+    for (BackgammonGameWindow *window : BackgammonService::instance().games()) {
+        bool incoming = false;
+        if (pending(window, &incoming) && window->peerId() == peer) {
+            // Closing the window sends the decline, or withdraws our invitation.
+            if (incoming)
+                window->declineInvitation();
+            else
+                window->close();
+            return;
+        }
+    }
+}
+
+void RetroChessBackgammon::onChanged(QObject *context, const std::function<void()> &changed)
+{
+    QObject::connect(&BackgammonService::instance(), &BackgammonService::gamesChanged, context,
+                     [changed] { changed(); });
+}
