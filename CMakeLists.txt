@@ -23,6 +23,20 @@ set(RETROCHESS_SOURCES
     services/rsRetroChessItems.cc
     gui/NEMainpage.cpp
     4connect/FourConnect.cpp
+    backgammon/RetroChessBackgammon.cpp
+    backgammon/core/BgRules.cpp
+    backgammon/core/BgMatch.cpp
+    backgammon/services/BackgammonService.cpp
+    backgammon/gui/BackgammonGameWindow.cpp
+    backgammon/gui/BackgammonSettingsWidget.cpp
+    backgammon/gui/BackgammonSettingsDialog.cpp
+    backgammon/gui/BackgammonResultDialog.cpp
+    backgammon/gui/BackgammonSounds.cpp
+    backgammon/gui/BoardTheme.cpp
+    backgammon/gui/BoardWidget.cpp
+    backgammon/gui/BackgammonSettings.cpp
+    backgammon/gui/toaster/BackgammonToaster.cpp
+    backgammon/gui/toaster/BackgammonToasterNotify.cpp
     gui/RetroChessNotify.cpp
     gui/chess.cpp
     gui/ChessDebugWidget.cpp
@@ -49,6 +63,23 @@ set(RETROCHESS_HEADERS
     RetroChessPlugin.h
     4connect/FourBoard.h
     4connect/FourConnect.h
+    backgammon/RetroChessBackgammon.h
+    backgammon/core/BgRules.h
+    backgammon/core/BgMatch.h
+    backgammon/services/BackgammonService.h
+    backgammon/services/BackgammonDebug.h
+    backgammon/gui/BackgammonConstants.h
+    backgammon/gui/BackgammonGameWindow.h
+    backgammon/gui/BackgammonSettingsWidget.h
+    backgammon/gui/BackgammonSettingsDialog.h
+    backgammon/gui/BackgammonResultDialog.h
+    backgammon/gui/BackgammonSounds.h
+    backgammon/gui/BackgammonStyle.h
+    backgammon/gui/BoardTheme.h
+    backgammon/gui/BoardWidget.h
+    backgammon/gui/BackgammonSettings.h
+    backgammon/gui/toaster/BackgammonToaster.h
+    backgammon/gui/toaster/BackgammonToasterNotify.h
     services/p3RetroChess.h
     services/RetroChessTunnelDebug.h
     services/rsRetroChessItems.h
@@ -83,11 +114,19 @@ set(RETROCHESS_FORMS
     gui/chess.ui
     gui/toaster/ChessToaster.ui
     4connect/FourResultDialog.ui
+    backgammon/gui/BackgammonGameWindow.ui
+    backgammon/gui/BackgammonSettingsWidget.ui
+    backgammon/gui/BackgammonSettingsDialog.ui
+    backgammon/gui/BackgammonResultDialog.ui
+    backgammon/gui/toaster/BackgammonToaster.ui
 )
 
 set(RETROCHESS_RESOURCES
     gui/RetroChess_images.qrc
     gui/RetroChess_pieces.qrc
+    backgammon/gui/Backgammon_images.qrc
+    backgammon/gui/Backgammon_sounds.qrc
+    backgammon/gui/Backgammon_qss.qrc
 )
 
 add_library(RetroChess MODULE
@@ -101,7 +140,7 @@ set_target_properties(RetroChess PROPERTIES
     PREFIX "lib"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
-    AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/gui;${CMAKE_CURRENT_SOURCE_DIR}/gui/toaster;${CMAKE_CURRENT_SOURCE_DIR}/4connect"
+    AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/gui;${CMAKE_CURRENT_SOURCE_DIR}/gui/toaster;${CMAKE_CURRENT_SOURCE_DIR}/4connect;${CMAKE_CURRENT_SOURCE_DIR}/backgammon/gui;${CMAKE_CURRENT_SOURCE_DIR}/backgammon/gui/toaster"
 )
 
 # Resolve the RetroShare super-project root so this file works both from the
@@ -152,6 +191,9 @@ target_link_libraries(RetroChess PRIVATE
 
 target_compile_definitions(RetroChess PRIVATE RS_NO_WARN_DEPRECATED)
 
+# backgammon/ needs C++17.
+target_compile_features(RetroChess PRIVATE cxx_std_17)
+
 # Must match the host build: RS_USE_CALENDAR adds a member to RsPlugInInterfaces
 # (retroshare/rsplugin.h) before mGxsTunnels, so a plugin built without it reads
 # the wrong pointer and crashes at startup. ON by default, like libretroshare.
@@ -176,6 +218,7 @@ target_include_directories(RetroChess PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/gui
     ${CMAKE_CURRENT_SOURCE_DIR}/services
     ${CMAKE_CURRENT_SOURCE_DIR}/interface
+    ${CMAKE_CURRENT_SOURCE_DIR}/backgammon
     ${RS_SUPERPROJECT_ROOT}/libretroshare/src
     ${RS_SUPERPROJECT_ROOT}/retroshare-gui/src
     ${RS_SUPERPROJECT_ROOT}/retroshare-gui/src/gui

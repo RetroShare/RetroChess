@@ -1,0 +1,417 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>BackgammonSettingsWidget</class>
+ <widget class="QWidget" name="BackgammonSettingsWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>720</width>
+    <height>520</height>
+   </rect>
+  </property>
+  <layout class="QHBoxLayout" name="mainLayout">
+   <item>
+    <widget class="QListWidget" name="navigationList">
+     <property name="spacing">
+      <number>3</number>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>150</width>
+       <height>0</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>150</width>
+       <height>16777215</height>
+      </size>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <item>
+      <property name="text">
+       <string>General</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Board</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Sounds</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Debug</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="pagesStack">
+     <widget class="QWidget" name="generalPage">
+      <layout class="QVBoxLayout" name="generalPageLayout" stretch="0,0,1">
+       <item>
+        <widget class="QLabel" name="generalTitle">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="text">
+          <string>General</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="invitationsGroup">
+         <property name="title">
+          <string>Invitations</string>
+         </property>
+         <layout class="QVBoxLayout" name="invitationsLayout">
+          <item>
+           <widget class="QCheckBox" name="openWindowCheck">
+            <property name="text">
+             <string>Open the game window when an invitation arrives</string>
+            </property>
+            <property name="toolTip">
+             <string>When off, invitations wait in "Your games" on the Backgammon page</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="contactsOnlyCheck">
+            <property name="text">
+             <string>Only accept invitations from my contacts</string>
+            </property>
+            <property name="toolTip">
+             <string>Invitations from identities that are not in your contacts are ignored. Banned identities are always ignored.</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="toasterCheck">
+            <property name="text">
+             <string>Show a toaster for new invitations</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="generalPageSpacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Vertical</enum>
+         </property>
+         <property name="sizeType">
+          <enum>QSizePolicy::Policy::Expanding</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="boardPage">
+      <layout class="QVBoxLayout" name="boardPageLayout" stretch="0,0,1">
+       <item>
+        <widget class="QLabel" name="boardTitle">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="text">
+          <string>Board</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="boardGroup">
+         <property name="title">
+          <string>Board</string>
+         </property>
+         <layout class="QVBoxLayout" name="boardLayout">
+          <item>
+           <layout class="QHBoxLayout" name="themeLayout">
+            <item>
+             <widget class="QLabel" name="themeLabel">
+              <property name="text">
+               <string>Colours:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="themeCombo">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="themePreview">
+            <property name="minimumSize">
+             <size>
+              <width>320</width>
+              <height>150</height>
+             </size>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="backgroundCheck">
+            <property name="text">
+             <string>Game window background in the board's colours</string>
+            </property>
+            <property name="toolTip">
+             <string>Fill the game window around the board with a colour that suits the board: green for the wooden boards, dark red for Marrakesh, ...</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="themeHint">
+            <property name="text">
+             <string>Open games change colour right away.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="boardPageSpacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Vertical</enum>
+         </property>
+         <property name="sizeType">
+          <enum>QSizePolicy::Policy::Expanding</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="soundsPage">
+      <layout class="QVBoxLayout" name="soundsPageLayout" stretch="0,1">
+       <item>
+        <widget class="QLabel" name="soundsTitle">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="text">
+          <string>Sounds</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="soundsGroup">
+         <property name="title">
+          <string>Play sounds</string>
+         </property>
+         <property name="checkable">
+          <bool>true</bool>
+         </property>
+         <layout class="QVBoxLayout" name="soundsLayout">
+          <item>
+           <layout class="QHBoxLayout" name="volumeLayout">
+            <item>
+             <widget class="QLabel" name="volumeLabel">
+              <property name="text">
+               <string>Volume:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSlider" name="volumeSlider">
+              <property name="maximum">
+               <number>100</number>
+              </property>
+              <property name="singleStep">
+               <number>5</number>
+              </property>
+              <property name="pageStep">
+               <number>10</number>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="volumeValue">
+              <property name="minimumSize">
+               <size>
+                <width>40</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="text">
+               <string notr="true">80%</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="eventsLabel">
+            <property name="text">
+             <string>Play a sound when (double-click an entry to hear it):</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QListWidget" name="eventsList" />
+          </item>
+          <item>
+           <widget class="QLabel" name="muteHint">
+            <property name="text">
+             <string>No sound plays while RetroShare's sounds are muted.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="debugPage">
+      <layout class="QVBoxLayout" name="debugPageLayout" stretch="0,0,1">
+       <item>
+        <widget class="QLabel" name="debugTitle">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="text">
+          <string>Debug</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="debugGroup">
+         <property name="title">
+          <string>Debug</string>
+         </property>
+         <layout class="QVBoxLayout" name="debugLayout">
+          <item>
+           <widget class="QCheckBox" name="tunnelLogCheck">
+            <property name="text">
+             <string>Log tunnel activity</string>
+            </property>
+            <property name="toolTip">
+             <string>Tunnel requests, status changes, packets sent and received, reconnections and closed tunnels (backgammon_tunnels.log)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="gameLogCheck">
+            <property name="text">
+             <string>Log game activity</string>
+            </property>
+            <property name="toolTip">
+             <string>Invitations (also the ones refused, and why), match start and end, dice, turns and doubles (backgammon_activity.log)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="logFolderLabel">
+            <property name="text">
+             <string notr="true">Log folder</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextInteractionFlag::TextSelectableByMouse</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="debugButtonsLayout">
+            <item>
+             <widget class="QPushButton" name="trafficButton">
+              <property name="text">
+               <string>Debug window…</string>
+              </property>
+              <property name="toolTip">
+               <string>Open the RetroChess debug window: Backgammon packets, tunnels and matches next to the chess ones. Works without logging.</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="logFolderButton">
+              <property name="text">
+               <string>Open log folder</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="debugPageSpacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Vertical</enum>
+         </property>
+         <property name="sizeType">
+          <enum>QSizePolicy::Policy::Expanding</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources />
+ <connections />
+</ui>

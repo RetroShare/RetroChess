@@ -1,0 +1,164 @@
+/*
+ * Backgammon plugin styles.
+ *
+ * Built into the plugin from gui/Backgammon_qss.qrc and applied to the game
+ * window, the Backgammon page and the invitation toaster. The rules are
+ * scoped by object name so they only touch the plugin's own widgets; the
+ * RetroShare skin (Standard light/dark, ...) still styles everything else.
+ */
+
+/* ---- Avatars: no frame, no background ---- */
+
+AvatarWidget#oppAvatar,
+AvatarWidget#myAvatar,
+AvatarWidget#avatarWidget {
+	border: none;
+	padding: 0;
+	background: transparent;
+}
+
+/* ---- Game window: the players above the board ---- */
+
+/* The skin draws the header gradient (QFrame#headerFrame) but only styles its
+   direct children (the two player boxes); the labels sit one level deeper.
+   No text colour here: the window gives the labels the text colour the skin
+   gives the player boxes (white on the Standard header, normal text without
+   a skin). */
+QFrame#oppFrame,
+QFrame#myFrame {
+	border: 1px solid transparent;
+	border-radius: 8px;
+}
+
+QFrame#oppFrame QLabel,
+QFrame#myFrame QLabel {
+	background: transparent;
+	border: none;
+}
+
+/* The player who has to act now (property "active" set by the window). */
+QFrame#oppFrame[active="true"],
+QFrame#myFrame[active="true"] {
+	background: rgba(255, 196, 0, 45);
+	border: 1px solid rgba(230, 170, 0, 160);
+}
+
+/* ---- Game window in the board's colours ----
+   Property "windowTheme" of the game window: "dark" or "light" background
+   (the colour itself comes from the board theme), empty when switched off.
+   Only the header and the side panel: popups of the window keep their look. */
+
+BackgammonGameWindow[windowTheme="dark"] QFrame#headerFrame,
+BackgammonGameWindow[windowTheme="light"] QFrame#headerFrame,
+BackgammonGameWindow[windowTheme="dark"] QWidget#sidePanel,
+BackgammonGameWindow[windowTheme="light"] QWidget#sidePanel {
+	background: transparent;
+}
+
+BackgammonGameWindow[windowTheme="dark"] QFrame#headerFrame QLabel,
+BackgammonGameWindow[windowTheme="dark"] QWidget#sidePanel QLabel {
+	color: white;
+	/* Some skins give labels their own box (white on the light skin):
+	   the text has to sit on the window colour. */
+	background: transparent;
+	border: none;
+}
+
+BackgammonGameWindow[windowTheme="light"] QFrame#headerFrame QLabel,
+BackgammonGameWindow[windowTheme="light"] QWidget#sidePanel QLabel {
+	color: #1a1a1a;
+	/* Some skins give labels their own box (white on the light skin):
+	   the text has to sit on the window colour. */
+	background: transparent;
+	border: none;
+}
+
+/* ---- Game window: Accept button of an invitation ----
+   Accept and Decline both stretch to the height of their row (sizePolicy in
+   the .ui), so they are the same height with any skin. */
+
+BackgammonGameWindow QPushButton#acceptButton {
+	color: white;
+	font-weight: bold;
+	padding: 3px 14px;
+	border: 1px solid #199909;
+	border-radius: 4px;
+	background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #2bc417, stop: 1 #14800a);
+}
+
+BackgammonGameWindow QPushButton#acceptButton:hover {
+	border-color: #35d51f;
+	background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #35d51f, stop: 1 #18930c);
+}
+
+BackgammonGameWindow QPushButton#acceptButton:pressed {
+	background-color: #116a06;
+}
+
+/* ---- Game window: "Your opponent doubles to 2." ---- */
+
+QFrame#cubeOfferFrame {
+	background: #fff4d6;
+	border: 1px solid #e0b84a;
+	border-radius: 6px;
+}
+
+QFrame#cubeOfferFrame QLabel {
+	background: transparent;
+	border: none;
+	color: #1a1a1a;
+}
+
+/* ---- Result popup when a match ends (BackgammonResultDialog) ---- */
+
+BackgammonResultDialog QLabel#titleLabel {
+	font-size: 20px;
+	font-weight: bold;
+}
+
+BackgammonResultDialog[outcome="won"] QLabel#titleLabel {
+	color: #2e9e44;
+}
+
+BackgammonResultDialog[outcome="lost"] QLabel#titleLabel {
+	color: #c0392b;
+}
+
+BackgammonResultDialog QLabel#messageLabel {
+	font-size: 13px;
+}
+
+BackgammonResultDialog QLabel#scoreLabel {
+	font-size: 15px;
+	font-weight: bold;
+}
+
+BackgammonResultDialog QPushButton {
+	min-width: 90px;
+	min-height: 26px;
+}
+
+/* ---- Backgammon page ---- */
+
+QLabel#serviceStatusLabel {
+	color: #b00020;
+}
+
+/* ---- Invitation toaster ---- */
+
+BackgammonToaster QPushButton#toasterButton {
+	border: 1px solid #199909;
+	font-size: 12pt;
+	color: white;
+	min-height: 24px;
+	border-radius: 6px;
+	background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 0.67, stop: 0 #22c70d, stop: 1 #116a06);
+}
+
+BackgammonToaster QPushButton#toasterButton:hover {
+	border-color: #35d51f;
+}
+
+BackgammonToaster QPushButton#toasterButton:pressed {
+	background-color: #116a06;
+}

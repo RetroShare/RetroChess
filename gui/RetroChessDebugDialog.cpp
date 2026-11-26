@@ -22,6 +22,7 @@
 #include "ui_RetroChessDebugDialog.h"
 
 #include "interface/rsRetroChess.h"
+#include "../backgammon/RetroChessBackgammon.h"
 #include "util/misc.h"
 
 #include <retroshare/rsidentity.h>
@@ -33,6 +34,9 @@
 #include <QPointer>
 #include <QRegularExpression>
 #include <QScrollBar>
+
+#include <algorithm>
+#include <string>
 
 namespace {
 constexpr int kMaxRows = 5000;
@@ -60,7 +64,7 @@ ParsedLine parseLine(const QString &text)
 {
 	static const QRegularExpression token(QStringLiteral("\\b(tunnel|to|from|peer|host|type|bytes)=(\\S+)"));
 	static const QRegularExpression problem(QStringLiteral(
-	        "\\bok=0\\b|\\berror=[1-9]|timeout|timed out|DROPPED|dropped|ignored|failed|giving up|"
+	        "\\bok=0\\b|\\berror=[1-9]|timeout|timed out|DROPPED|dropped|ignored|failed|FAILED|giving up|"
 	        "REMOTELY_CLOSED|TUNNEL_DN|DESYNC|REJECT|ORPHAN|unknown to GxsTunnel|did not come"));
 	ParsedLine p;
 	const QString verb = text.section(QLatin1Char(' '), 0, 0);
@@ -155,6 +159,8 @@ RetroChessDebugDialog::RetroChessDebugDialog(QWidget *parent)
 
 	ui->comboArea->addItem(tr("All areas"), -1);
 	for (int c = 0; c < RetroChessTunnelDebug::CategoryCount; ++c)
+		ui->comboArea->addItem(QString::fromLatin1(RetroChessTunnelDebug::categoryName(c)), c);
+	for (int c : {RetroChessTunnelDebug::BackgammonTunnel, RetroChessTunnelDebug::BackgammonGame})
 		ui->comboArea->addItem(QString::fromLatin1(RetroChessTunnelDebug::categoryName(c)), c);
 
 	pollEvents();
@@ -297,6 +303,17 @@ void RetroChessDebugDialog::refreshTunnels()
 	std::map<RsGxsTunnelId, std::string> roles;
 	const bool available = rsRetroChess && rsRetroChess->tunnelTraffic(tunnels);
 	if (rsRetroChess) rsRetroChess->debugPeers(peers, roles);
+	// Backgammon matches. RetroShare shares one tunnel per pair of
+	// identities between services, so a tunnel may be listed already.
+	for (const RetroChessBackgammon::DebugMatch &m : RetroChessBackgammon::debugMatches()) {
+		const std::string role = "backgammon: " + m.what + " (" + std::to_string(m.packetsSent)
+		        + " sent, " + std::to_string(m.packetsReceived) + " received)";
+		bool listed = false;
+		for (const auto &t : tunnels) listed = listed || t.tunnel_id == m.info.tunnel_id;
+		if (!listed) tunnels.push_back(m.info);
+		std::string &text = roles[m.info.tunnel_id];
+		text = text.empty() ? role : text + ", " + role;
+	}
 	const int scroll = ui->treeTunnels->verticalScrollBar()->value();
 	ui->treeTunnels->setUpdatesEnabled(false);
 	ui->treeTunnels->clear();
@@ -327,7 +344,7 @@ void RetroChessDebugDialog::refreshTunnels()
 	}
 	if (tunnels.empty()) {
 		auto *item = new QTreeWidgetItem(ui->treeTunnels);
-		item->setText(0, available ? tr("no GXS tunnels used by RetroChess") : tr("tunnel statistics are unavailable"));
+		item->setText(0, available ? tr("no GXS tunnels used by RetroChess or Backgammon") : tr("tunnel statistics are unavailable"));
 	}
 	for (int c = 0; c < 8; ++c) ui->treeTunnels->resizeColumnToContents(c);
 	ui->treeTunnels->verticalScrollBar()->setValue(scroll);
@@ -342,6 +359,28 @@ void RetroChessDebugDialog::refreshContacts()
 	if (rsRetroChess) {
 		rsRetroChess->debugPeers(peers, roles);
 		rsRetroChess->tunnelTraffic(tunnels);
+	}
+	// Backgammon matches: their activity on the identity's line, and their
+	// tunnels for the status column.
+	for (const RetroChessBackgammon::DebugMatch &m : RetroChessBackgammon::debugMatches()) {
+		const RsGxsId &id = m.info.destination_gxs_id;
+		const std::string activity = "backgammon: " + m.what;
+		auto peer = std::find_if(peers.begin(), peers.end(),
+		                         [&id](const RsRetroChessDebugPeer &p) { return p.id == id; });
+		if (peer == peers.end()) {
+			RsRetroChessDebugPeer added;
+			added.id = id;
+			added.ownId = m.info.source_gxs_id;
+			added.tunnel = m.info.tunnel_id;
+			added.tunnelRole = "backgammon";
+			added.activity = activity;
+			peers.push_back(added);
+		} else {
+			peer->activity = peer->activity.empty() ? activity : peer->activity + ", " + activity;
+		}
+		bool listed = false;
+		for (const auto &t : tunnels) listed = listed || t.tunnel_id == m.info.tunnel_id;
+		if (!listed) tunnels.push_back(m.info);
 	}
 	std::map<RsGxsTunnelId, const RsGxsTunnelService::GxsTunnelInfo *> byId;
 	for (const auto &t : tunnels) byId[t.tunnel_id] = &t;
@@ -387,7 +426,7 @@ void RetroChessDebugDialog::refreshContacts()
 	}
 	if (peers.empty()) {
 		auto *item = new QTreeWidgetItem(ui->treeContacts);
-		item->setText(0, tr("no chess contacts, games or invitations"));
+		item->setText(0, tr("no chess contacts, games or invitations, no Backgammon matches"));
 	}
 	for (int c = 0; c < 9; ++c) ui->treeContacts->resizeColumnToContents(c);
 	ui->treeContacts->verticalScrollBar()->setValue(scroll);

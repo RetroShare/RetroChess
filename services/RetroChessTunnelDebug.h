@@ -85,6 +85,14 @@ enum Category {
 	CategoryCount
 };
 
+// Areas of the extra games in the debug window. They are only recorded for
+// the window (record()), never in the chess log files or chess settings:
+// backgammon/ keeps its own log files and switches.
+enum ExtraArea {
+	BackgammonTunnel = 100,
+	BackgammonGame
+};
+
 // Name used in log lines, settings keys and RETROCHESS_DEBUG.
 inline const char *categoryName(int category)
 {
@@ -95,6 +103,8 @@ inline const char *categoryName(int category)
 	case Game:        return "game";
 	case Spectate:    return "spectate";
 	case Storage:     return "storage";
+	case BackgammonTunnel: return "backgammon-tunnel";
+	case BackgammonGame:   return "backgammon-game";
 	default:          return "?";
 	}
 }
