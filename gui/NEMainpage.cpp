@@ -2414,10 +2414,9 @@ void NEMainpage::setupPlayersTab()
 			        && !rsRetroChess->preferredChessIdentity().isNull()));
 			QAction *accept = incoming ? menu.addAction(tr("Accept invitation")) : nullptr;
 			const QString peerStatus = item->data(1, Qt::UserRole + 1).toString();
-			FourConnect::addContactAction(menu, id, rsRetroChess->preferredChessIdentity(),
-			        peerStatus == "available" || peerStatus == "playing" || peerStatus == "busy");
-			RetroChessBackgammon::addContactAction(menu, id, rsRetroChess->preferredChessIdentity(),
-			        peerStatus == "available" || peerStatus == "playing" || peerStatus == "busy");
+			const bool otherGames = peerStatus == "available" || peerStatus == "playing";
+			FourConnect::addContactAction(menu, id, rsRetroChess->preferredChessIdentity(), otherGames);
+			RetroChessBackgammon::addContactAction(menu, id, rsRetroChess->preferredChessIdentity(), otherGames);
 			QAction *decline = incoming ? menu.addAction(tr("Decline invitation")) : nullptr;
 			QAction *chatAction = nullptr;
 			if (tree == ui->savedContacts) {
