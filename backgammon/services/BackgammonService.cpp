@@ -209,7 +209,7 @@ QList<BackgammonGameWindow *> BackgammonService::games() const
 /* Tunnel callbacks                                                          */
 /* ------------------------------------------------------------------------ */
 
-void BackgammonService::notifyTunnelStatus(const RsGxsTunnelId &id, uint32_t status)
+void BackgammonService::notifyTunnelStatus(const RsGxsTunnelId &id, RsGxsTunnelService::GxsTunnelStatus status)
 {
     if (m_stopped)
         return;
@@ -236,7 +236,7 @@ void BackgammonService::receiveData(const RsGxsTunnelId &id, unsigned char *data
                               Qt::QueuedConnection);
 }
 
-void BackgammonService::handleStatus(const RsGxsTunnelId &id, uint32_t status)
+void BackgammonService::handleStatus(const RsGxsTunnelId &id, RsGxsTunnelService::GxsTunnelStatus status)
 {
     if (m_stopped)
         return;
@@ -246,7 +246,7 @@ void BackgammonService::handleStatus(const RsGxsTunnelId &id, uint32_t status)
     BackgammonGameWindow *window = it->second.window;
 
     switch (status) {
-    case RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK:
+    case RsGxsTunnelService::GxsTunnelStatus::CAN_TALK:
         if (it->second.inviter && window->phase() == BackgammonGameWindow::Connecting)
             sendInvite(id);
         if (window->linkDown()) {
@@ -255,12 +255,15 @@ void BackgammonService::handleStatus(const RsGxsTunnelId &id, uint32_t status)
         }
         break;
 
-    case RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN:
-    case RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED:
+    case RsGxsTunnelService::GxsTunnelStatus::TUNNEL_DN:
+    case RsGxsTunnelService::GxsTunnelStatus::REMOTELY_CLOSED:
         // The tunnel is shared with every other service using GXS tunnels
         // and one of them may have closed it. That says nothing about the
         // opponent having left: an 'R' or 'X' packet does. Dig it again.
         reconnect(id);
+        break;
+
+    default:
         break;
     }
 }
@@ -580,7 +583,7 @@ void BackgammonService::watchInvitation(const RsGxsTunnelId &id)
         // The tunnel may be shared and already up: ask its state.
         RsGxsTunnelService::GxsTunnelInfo info;
         const bool canTalk = m_net && m_net->getTunnelInfo(id, info)
-                             && info.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK;
+                             && info.tunnel_status == RsGxsTunnelService::GxsTunnelStatus::CAN_TALK;
         if (canTalk && *reachedAt < 0) {
             *reachedAt = elapsed;
             if (!session->second.delivered)
