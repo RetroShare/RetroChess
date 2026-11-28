@@ -55,6 +55,7 @@
 // there; the window shows that state live in its Tunnels and Contacts tabs.
 // The last kMaxEvents lines are kept.
 
+#include <type_traits>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -321,6 +322,14 @@ inline const char *statusName(uint32_t status)
 	case 3: return "REMOTELY_CLOSED";
 	default: return "?";
 	}
+}
+
+// Overload for libretroshare's scoped enum (RsGxsTunnelService::GxsTunnelStatus,
+// libretroshare PR #435), which no longer converts to uint32_t implicitly.
+template<typename E, typename = typename std::enable_if<std::is_enum<E>::value>::type>
+inline const char *statusName(E status)
+{
+	return statusName(static_cast<uint32_t>(status));
 }
 
 // Short description of a tunnel payload: JSON "type" field, or "raw".

@@ -125,7 +125,7 @@ struct p3RetroChess {
     bool loadList(std::list<RsItem *> &);
     bool addChessContact(const Id &);
     void removeChessContact(const Id &);
-    bool acceptDataFromPeer(const Id &, const Id &, bool);
+    bool acceptDataFromPeer(const Id &, bool);
     void receiveData(const Id &, unsigned char *, uint32_t);
     void handleRawData(const Id &, const Id &, const RsGxsTunnelService::GxsTunnelInfo &, const uint8_t *, uint32_t) { ++delivered; }
 };
@@ -265,7 +265,7 @@ int main()
     assert(empty.mChessIdentitiesConfigured && empty.mChessIdentities.empty());
 
     p3RetroChess visitor;
-    assert(visitor.acceptDataFromPeer(2, 102, false));
+    assert(visitor.acceptDataFromPeer(2, false));
     visitor.receiveData(102, static_cast<unsigned char *>(std::malloc(1)), 1);
     assert(visitor.delivered == 1 && freedPackets == 1);
     assert(visitor.mTunnelToGxsIdMap.count(102));
@@ -273,12 +273,12 @@ int main()
 
     p3RetroChess disabled;
     disabled.enabled = false;
-    assert(disabled.acceptDataFromPeer(2, 102, false)); // always true: GxsTunnel would leak the buffer
+    assert(disabled.acceptDataFromPeer(2, false)); // always true: GxsTunnel would leak the buffer
     disabled.receiveData(102, static_cast<unsigned char *>(std::malloc(1)), 1);
     assert(disabled.delivered == 0 && freedPackets == 2);
     assert(!disabled.mTunnelToGxsIdMap.count(102));
     disabled.mGameSessions["2"] = {};
-    assert(disabled.acceptDataFromPeer(2, 102, false));
+    assert(disabled.acceptDataFromPeer(2, false));
     disabled.receiveData(102, static_cast<unsigned char *>(std::malloc(1)), 1);
     assert(disabled.delivered == 1 && freedPackets == 3); // Existing game may finish.
     std::cout << "Chess presence regression checks passed\n";

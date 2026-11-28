@@ -56,6 +56,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <type_traits>
 
 // RetroChess: every line also goes to the RetroChess debug window.
 #include "../../services/RetroChessTunnelDebug.h"
@@ -184,6 +185,14 @@ inline const char *statusName(uint32_t status)
     case 3: return "REMOTELY_CLOSED";
     default: return "?";
     }
+}
+
+// Overload for libretroshare's scoped enum (RsGxsTunnelService::GxsTunnelStatus,
+// libretroshare PR #435), which no longer converts to uint32_t implicitly.
+template<typename E, typename = typename std::enable_if<std::is_enum<E>::value>::type>
+inline const char *statusName(E status)
+{
+    return statusName(static_cast<uint32_t>(status));
 }
 
 // Name of a packet op (see the protocol in BackgammonService.h).

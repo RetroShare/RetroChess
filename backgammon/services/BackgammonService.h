@@ -72,8 +72,8 @@ public:
 
     // RsGxsTunnelClientService (called from RetroShare threads)
     void connectToGxsTunnelService(RsGxsTunnelService *service) override;
-    bool acceptDataFromPeer(const RsGxsId &, const RsGxsTunnelId &, bool) override { return true; }
-    void notifyTunnelStatus(const RsGxsTunnelId &id, uint32_t status) override;
+    bool acceptDataFromPeer(const RsGxsId &, bool) override { return true; }
+    void notifyTunnelStatus(const RsGxsTunnelId &id, RsGxsTunnelService::GxsTunnelStatus status) override;
     void receiveData(const RsGxsTunnelId &id, unsigned char *data, uint32_t size) override;
 
     bool isConnected() const { return m_net != nullptr; }
@@ -123,7 +123,7 @@ private:
 
     BackgammonService();
 
-    void handleStatus(const RsGxsTunnelId &id, uint32_t status);
+    void handleStatus(const RsGxsTunnelId &id, RsGxsTunnelService::GxsTunnelStatus status);
     void handlePacket(const RsGxsTunnelId &id, const QByteArray &packet);
     void notifyGamesChanged();
     void reconnect(const RsGxsTunnelId &id);

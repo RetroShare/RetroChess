@@ -839,7 +839,7 @@ void p3RetroChess::tickChessPresence()
         for (const auto &entry : tunnels) {
             RsGxsTunnelService::GxsTunnelInfo info;
             if (mGxsTunnels->getTunnelInfo(entry.second, info)
-                    && info.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN)
+                    && info.tunnel_status == RsGxsTunnelService::GxsTunnelStatus::TUNNEL_DN)
                 routeDown.insert(entry.first);
         }
     }
@@ -1504,7 +1504,7 @@ bool p3RetroChess::sendLeaderboardDataGxs(const RsGxsId &gxsId, const QByteArray
         for (const auto &tunnel : incoming) {
             RsGxsTunnelService::GxsTunnelInfo info;
             if (mGxsTunnels->getTunnelInfo(tunnel, info)
-                    && info.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK
+                    && info.tunnel_status == RsGxsTunnelService::GxsTunnelStatus::CAN_TALK
                     && info.destination_gxs_id == gxsId) {
                 tunnelId = tunnel;
                 break;
@@ -1817,8 +1817,8 @@ void p3RetroChess::handleGxsTick()
         RsGxsTunnelService::GxsTunnelInfo tinfo;
         const bool haveInfo = mGxsTunnels->getTunnelInfo(it->second, tinfo);
         if (!haveInfo
-                || (tinfo.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK
-                    && tinfo.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED)) {
+                || (tinfo.tunnel_status != RsGxsTunnelService::GxsTunnelStatus::CAN_TALK
+                    && tinfo.tunnel_status != RsGxsTunnelService::GxsTunnelStatus::REMOTELY_CLOSED)) {
             // Still connecting (TUNNEL_DN is also the engine's initial state) or
             // unknown to the tunnel service: keep waiting, but not forever.
             if (nowTs - startedAt[it->first] > kPendingTunnelTimeoutSec) {
@@ -1851,7 +1851,7 @@ void p3RetroChess::handleGxsTick()
         }
 
         // Check if the tunnel is "Connected" (CAN_TALK)
-        if (tinfo.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK) {
+        if (tinfo.tunnel_status == RsGxsTunnelService::GxsTunnelStatus::CAN_TALK) {
             RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
             auto pit = mPendingTunnels.find(it->first);
             if (pit == mPendingTunnels.end() || pit->second != it->second)
@@ -1892,7 +1892,7 @@ void p3RetroChess::handleGxsTick()
         // TUNNEL_DN is also the engine's initial, still-connecting state.
         // Keep the invitation queued until CAN_TALK; only an explicit remote
         // close cancels a pending connection.
-        else if (tinfo.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED) {
+        else if (tinfo.tunnel_status == RsGxsTunnelService::GxsTunnelStatus::REMOTELY_CLOSED) {
             RsStackMutex stack(mRetroChessMtx); /****** LOCKED MUTEX *******/
             auto pit = mPendingTunnels.find(it->first);
             if (pit != mPendingTunnels.end() && pit->second == it->second) {
@@ -2375,7 +2375,7 @@ void p3RetroChess::closePendingGxsTunnels()
 
 // services/p3RetroChess.cc
 
-void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t tunnel_status)
+void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, RsGxsTunnelService::GxsTunnelStatus tunnel_status)
 {
     std::lock_guard<std::recursive_mutex> guard(mTunnelCallbackMtx);
     if (mShutDown) return;
@@ -2383,8 +2383,8 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
     CHESS_TLOG("STATUS tunnel=" << tunnel_id << " -> " << statusName(tunnel_status));
 
     // React to tunnel being closed or going down
-    if (tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED &&
-        tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN)
+    if (tunnel_status != RsGxsTunnelService::GxsTunnelStatus::REMOTELY_CLOSED &&
+        tunnel_status != RsGxsTunnelService::GxsTunnelStatus::TUNNEL_DN)
         return;
 
     // Important: on the side that opened the tunnel, GxsTunnel turns a remote
@@ -2395,7 +2395,7 @@ void p3RetroChess::notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, uint32_t t
     // So every tunnel we stop using is either closed or kept under watch.
     // The close itself happens from tick() (closeQueuedGxsTunnels), not from
     // inside this GxsTunnel callback.
-    const bool remoteClose = tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED;
+    const bool remoteClose = tunnel_status == RsGxsTunnelService::GxsTunnelStatus::REMOTELY_CLOSED;
     RsGxsId gxs_id;          // peer whose active tunnel went away
     RsGxsId pendingPeer;     // peer whose pending tunnel was remotely closed
     const char *action = "nothing to do";
@@ -2550,10 +2550,10 @@ void p3RetroChess::connectToGxsTunnelService(RsGxsTunnelService *tunnel_service)
     }
 }
 
-bool p3RetroChess::acceptDataFromPeer(const RsGxsId& /*gxs_id*/, const RsGxsTunnelId& /*tunnel_id*/, bool /*am_I_client_side*/)
+bool p3RetroChess::acceptDataFromPeer(const RsGxsId& /*gxs_id*/, bool /*am_I_client_side*/)
 {
-    // Always accept: GxsTunnel hands the buffer over to the client even when
-    // this returns false and then never frees it. The identity checks (and
+    // Always accept: older GxsTunnel versions hand the buffer over to the
+    // client even when this returns false and then never free it. The identity checks (and
     // the sender bookkeeping) are done once per packet in receiveData(), which
     // already has to query the tunnel; querying it here as well cost a second
     // GxsTunnel lookup (a scan of its whole unacknowledged-packet queue) per
@@ -2625,9 +2625,9 @@ bool p3RetroChess::openGxsTunnel(const RsGxsId &to, const RsGxsId &from, RsGxsTu
     mGxsTunnels->getTunnelsInfo(infos);
     for (const auto &info : infos) {
         if (info.destination_gxs_id != to || info.source_gxs_id != from) continue;
-        if (info.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK
-                && info.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) continue;
-        if (!reuseDownTunnel && info.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) {
+        if (info.tunnel_status != RsGxsTunnelService::GxsTunnelStatus::CAN_TALK
+                && info.tunnel_status != RsGxsTunnelService::GxsTunnelStatus::TUNNEL_DN) continue;
+        if (!reuseDownTunnel && info.tunnel_status == RsGxsTunnelService::GxsTunnelStatus::TUNNEL_DN) {
             // We already waited for this route to come back and it did not:
             // GxsTunnel keeps re-digging the dead route, while a fresh request
             // usually finds a working one within seconds. Nothing can be sent
@@ -2684,7 +2684,7 @@ bool p3RetroChess::closeGxsTunnel(const RsGxsTunnelId &tunnel, const char *reaso
     static const time_t kDeferredCloseMaxSec = 60;
     RsGxsTunnelService::GxsTunnelInfo info;
     if (mGxsTunnels->getTunnelInfo(tunnel, info) && info.pending_data_packets > 0
-            && info.tunnel_status != RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED) {
+            && info.tunnel_status != RsGxsTunnelService::GxsTunnelStatus::REMOTELY_CLOSED) {
         bool added;
         {
             RsStackMutex stack(mRetroChessMtx);
@@ -2752,7 +2752,7 @@ void p3RetroChess::processDeferredCloses()
         if (info.pending_data_packets == 0) {
             closeGxsTunnelNow(tunnel, entry.second.reason.c_str());
         } else if (now >= entry.second.deadline
-                   || info.tunnel_status == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED) {
+                   || info.tunnel_status == RsGxsTunnelService::GxsTunnelStatus::REMOTELY_CLOSED) {
             CHESS_TLOG("CLOSE tunnel=" << tunnel << " giving up on " << info.pending_data_packets
                        << " unacknowledged packet(s)");
             closeGxsTunnelNow(tunnel, entry.second.reason.c_str());
@@ -2957,7 +2957,7 @@ bool p3RetroChess::tunnelTraffic(std::vector<RsGxsTunnelService::GxsTunnelInfo> 
     // from that service take the chess mutex in the opposite direction.
     for (const auto &id : tracked) {
         RsGxsTunnelService::GxsTunnelInfo info{};
-        // The bulk query does not initialize is_client_side in this core.
+        // The single-tunnel query fills in the service sets the bulk query may not.
         if (!mGxsTunnels->getTunnelInfo(id, info)) continue;
         info.tunnel_id = id; // The single-tunnel query does not populate this.
         infos.push_back(info);

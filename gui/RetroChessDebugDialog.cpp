@@ -331,7 +331,9 @@ void RetroChessDebugDialog::refreshTunnels()
 		item->setToolTip(1, QString::fromStdString(t.destination_gxs_id.toStdString()));
 		item->setText(2, peerText(t.source_gxs_id));
 		item->setToolTip(2, QString::fromStdString(t.source_gxs_id.toStdString()));
-		item->setText(3, t.is_client_side ? tr("we opened it") : tr("opened by the peer"));
+		// Services that opened the tunnel on our side / on the peer's side
+		// (libretroshare #435; replaces is_client_side).
+		item->setText(3, !t.client_side_services.empty() ? tr("we opened it") : tr("opened by the peer"));
 		item->setText(4, tunnelStatusText(t.tunnel_status));
 		item->setText(5, roleText);
 		item->setText(6, QString::number(t.pending_data_packets));

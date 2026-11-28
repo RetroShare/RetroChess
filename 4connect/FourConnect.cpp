@@ -487,7 +487,7 @@ public:
     }
     // Packets are filtered in receiveData(): the core does not free a buffer
     // refused here, so refusing would leak it.
-    bool acceptDataFromPeer(const RsGxsId&,const RsGxsTunnelId&,bool) override { return true; }
+    bool acceptDataFromPeer(const RsGxsId&,bool) override { return true; }
     // Same rules as chess: never our own identity, never a banned identity,
     // and only on one of our identities enabled for chess.
     static bool allowedPeer(const RsGxsTunnelService::GxsTunnelInfo &info)
@@ -618,16 +618,16 @@ public:
         m->playSound(QStringLiteral("qrc:/sound/ping.mp3"),
                      RetroChessSettings::invitationSoundEnabled());
     }
-    void notifyTunnelStatus(const RsGxsTunnelId &id,uint32_t state) override
+    void notifyTunnelStatus(const RsGxsTunnelId &id,RsGxsTunnelService::GxsTunnelStatus state) override
     {
         QTimer::singleShot(0,qApp,[=] {
             auto it = games.find(id);
             if (it == games.end()) return;
             Match *m = it->second;
-            if (state == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_CAN_TALK) {
+            if (state == RsGxsTunnelService::GxsTunnelStatus::CAN_TALK) {
                 if (m->linkDown) { m->linkDown = false; m->refresh(); }
                 ready(id,m);
-            } else if (state == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_TUNNEL_DN) {
+            } else if (state == RsGxsTunnelService::GxsTunnelStatus::TUNNEL_DN) {
                 // The core re-digs the tunnel by itself; give it time, then
                 // give up instead of waiting for a move forever.
                 if (m->phase == Ended || m->linkDown) return;
@@ -638,7 +638,7 @@ public:
                     if (m->linkDown && m->linkEpoch == epoch)
                         m->finish(QObject::tr("Connection to opponent lost"));
                 });
-            } else if (state == RsGxsTunnelService::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED) {
+            } else if (state == RsGxsTunnelService::GxsTunnelStatus::REMOTELY_CLOSED) {
                 if (m->phase != Ended) m->finish(QObject::tr("Opponent disconnected"));
             }
         });
