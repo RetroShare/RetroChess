@@ -23,6 +23,7 @@
 #include "../../backgammon/RetroChessBackgammon.h"
 #include "gui/RetroChessNotify.h"
 #include "gui/RetroChessSettings.h"
+#include "gui/RetroChessSoundPlayer.h"
 #include "gui/SoundManager.h"
 #include "gui/settings/rsharesettings.h"
 #include "gui/toaster/ToasterItem.h"
@@ -42,7 +43,7 @@ const char *SETTINGS_KEY = "ToasterNotifyInvites";
 
 RetroChessToasterNotify::RetroChessToasterNotify(
         RetroChessNotify *notify, QObject *parent)
-    : ToasterNotify(parent), mNotify(notify), mInviteSound(new QMediaPlayer(this))
+    : ToasterNotify(parent), mNotify(notify), mInviteSound(new RetroChessSoundPlayer(this))
 {
 	connect(mNotify, &RetroChessNotify::chessInviteClearedGxs, this,
 	        [this](const RsGxsId &gxsId) {

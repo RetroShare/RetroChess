@@ -103,6 +103,7 @@ set(RETROCHESS_HEADERS
 
     gui/RetroChessChatWidgetHolder.h
     gui/RetroChessSettings.h
+    gui/RetroChessSoundPlayer.h
     gui/RetroChessUserNotify.h
     gui/toaster/ChessToaster.h
     gui/toaster/RetroChessToasterNotify.h

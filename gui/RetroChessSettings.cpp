@@ -38,6 +38,7 @@
 #include "chess.h"
 #include "ChessGameReviewDialog.h"
 #include "RetroChessDebugDialog.h"
+#include "RetroChessSoundPlayer.h"
 #include <QPointer>
 #include <QMediaPlayer>
 #include <QPainter>
@@ -652,7 +653,7 @@ RetroChessSettingsDialog::RetroChessSettingsDialog(QWidget *parent, bool identit
 	soundsRoot->addWidget(new QLabel(
 	        tr("Choose which RetroChess events are allowed to play a sound. Preview buttons play a sample."), soundsPage));
 
-	QMediaPlayer *player = new QMediaPlayer(this);
+	QMediaPlayer *player = new RetroChessSoundPlayer(this);
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	QAudioOutput *audioOutput = new QAudioOutput(player);
 	player->setAudioOutput(audioOutput);

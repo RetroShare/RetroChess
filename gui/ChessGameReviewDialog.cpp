@@ -21,6 +21,7 @@
 #include "ChessGameReviewDialog.h"
 
 #include "RetroChessSettings.h"
+#include "RetroChessSoundPlayer.h"
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QAudioOutput>
@@ -248,8 +249,8 @@ ChessGameReviewDialog::ChessGameReviewDialog(
 	side->addWidget(m_resultBar);
 
 	// Audio setup
-	m_moveSound = new QMediaPlayer(this);
-	m_captureSound = new QMediaPlayer(this);
+	m_moveSound = new RetroChessSoundPlayer(this);
+	m_captureSound = new RetroChessSoundPlayer(this);
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	m_moveSound->setAudioOutput(new QAudioOutput(m_moveSound));
 	m_captureSound->setAudioOutput(new QAudioOutput(m_captureSound));
