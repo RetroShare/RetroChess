@@ -72,7 +72,7 @@ public:
 
     // RsGxsTunnelClientService (called from RetroShare threads)
     void connectToGxsTunnelService(RsGxsTunnelService *service) override;
-    bool acceptDataFromPeer(const RsGxsId &, const RsGxsTunnelId &, bool) override { return true; }
+    bool acceptDataFromPeer(const RsGxsId &, bool) override { return true; }
     void notifyTunnelStatus(const RsGxsTunnelId &id, RsGxsTunnelService::GxsTunnelStatus status) override;
     void receiveData(const RsGxsTunnelId &id, unsigned char *data, uint32_t size) override;
 

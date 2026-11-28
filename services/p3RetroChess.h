@@ -179,7 +179,7 @@ public:
 	virtual void notifyTunnelStatus(const RsGxsTunnelId& tunnel_id, RsGxsTunnelService::GxsTunnelStatus tunnel_status) override;
 	virtual void receiveData(const RsGxsTunnelId& id, unsigned char *data, uint32_t data_size) override;
 	virtual void connectToGxsTunnelService(RsGxsTunnelService *tunnel_service) override;
-	virtual bool acceptDataFromPeer(const RsGxsId& gxs_id, const RsGxsTunnelId& tunnel_id, bool am_I_client_side) override;
+	virtual bool acceptDataFromPeer(const RsGxsId& gxs_id, bool am_I_client_side) override;
 
 	// Called when the plugin is stopped, before the GUI objects mNotify points
 	// to are deleted. GxsTunnel has no way to unregister a client, so it keeps

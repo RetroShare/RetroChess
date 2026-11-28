@@ -487,7 +487,7 @@ public:
     }
     // Packets are filtered in receiveData(): the core does not free a buffer
     // refused here, so refusing would leak it.
-    bool acceptDataFromPeer(const RsGxsId&,const RsGxsTunnelId&,bool) override { return true; }
+    bool acceptDataFromPeer(const RsGxsId&,bool) override { return true; }
     // Same rules as chess: never our own identity, never a banned identity,
     // and only on one of our identities enabled for chess.
     static bool allowedPeer(const RsGxsTunnelService::GxsTunnelInfo &info)

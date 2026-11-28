@@ -2550,10 +2550,10 @@ void p3RetroChess::connectToGxsTunnelService(RsGxsTunnelService *tunnel_service)
     }
 }
 
-bool p3RetroChess::acceptDataFromPeer(const RsGxsId& /*gxs_id*/, const RsGxsTunnelId& /*tunnel_id*/, bool /*am_I_client_side*/)
+bool p3RetroChess::acceptDataFromPeer(const RsGxsId& /*gxs_id*/, bool /*am_I_client_side*/)
 {
-    // Always accept: GxsTunnel hands the buffer over to the client even when
-    // this returns false and then never frees it. The identity checks (and
+    // Always accept: older GxsTunnel versions hand the buffer over to the
+    // client even when this returns false and then never free it. The identity checks (and
     // the sender bookkeeping) are done once per packet in receiveData(), which
     // already has to query the tunnel; querying it here as well cost a second
     // GxsTunnel lookup (a scan of its whole unacknowledged-packet queue) per
@@ -2957,7 +2957,7 @@ bool p3RetroChess::tunnelTraffic(std::vector<RsGxsTunnelService::GxsTunnelInfo> 
     // from that service take the chess mutex in the opposite direction.
     for (const auto &id : tracked) {
         RsGxsTunnelService::GxsTunnelInfo info{};
-        // The bulk query does not initialize is_client_side in this core.
+        // The single-tunnel query fills in the service sets the bulk query may not.
         if (!mGxsTunnels->getTunnelInfo(id, info)) continue;
         info.tunnel_id = id; // The single-tunnel query does not populate this.
         infos.push_back(info);

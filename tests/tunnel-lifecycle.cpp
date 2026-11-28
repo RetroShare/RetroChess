@@ -64,17 +64,18 @@ struct Notify {
 };
 // Fake GxsTunnel: tunnel id = 1000 + peer, like the real deterministic ids.
 struct RsGxsTunnelService {
-    enum {
-        RS_GXS_TUNNEL_STATUS_UNKNOWN = 0, RS_GXS_TUNNEL_STATUS_TUNNEL_DN = 1,
-        RS_GXS_TUNNEL_STATUS_CAN_TALK = 2, RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED = 3
+    // Scoped, as in libretroshare since PR #435.
+    enum class GxsTunnelStatus : uint32_t {
+        UNKNOWN = 0, TUNNEL_DN = 1, CAN_TALK = 2, REMOTELY_CLOSED = 3
     };
     struct GxsTunnelInfo {
         Id tunnel_id, destination_gxs_id, source_gxs_id = 5;
-        uint32_t tunnel_status = 0, total_size_sent = 0, total_size_received = 0, pending_data_packets = 0;
+        GxsTunnelStatus tunnel_status = GxsTunnelStatus::UNKNOWN;
+        uint32_t total_size_sent = 0, total_size_received = 0, pending_data_packets = 0;
     };
-    std::map<Id, uint32_t> tunnels;   // tunnel -> status
+    std::map<Id, GxsTunnelStatus> tunnels;   // tunnel -> status
     std::map<Id, uint32_t> unacked;   // tunnel -> packets not acknowledged yet
-    uint32_t newTunnelStatus = RS_GXS_TUNNEL_STATUS_CAN_TALK;
+    GxsTunnelStatus newTunnelStatus = GxsTunnelStatus::CAN_TALK;
     unsigned int requests = 0;
     std::vector<std::pair<Id, QVariantMap>> sends;
     std::vector<Id> closes;
@@ -96,7 +97,7 @@ struct RsGxsTunnelService {
     bool sendData(Id tunnel, int service, const uint8_t *bytes, unsigned int size) {
         assert(service == RETRO_CHESS_GXS_TUNNEL_SERVICE_ID);
         sends.push_back({tunnel, QJsonDocument::fromJson(QByteArray(reinterpret_cast<const char *>(bytes), size)).toVariant().toMap()});
-        return tunnels.count(tunnel) && tunnels[tunnel] == RS_GXS_TUNNEL_STATUS_CAN_TALK;
+        return tunnels.count(tunnel) && tunnels[tunnel] == GxsTunnelStatus::CAN_TALK;
     }
     bool getTunnelsInfo(std::vector<GxsTunnelInfo> &infos) {
         for (const auto &t : tunnels) { GxsTunnelInfo info; getTunnelInfo(t.first, info); infos.push_back(info); }
@@ -158,7 +159,7 @@ struct p3RetroChess {
     void sweepOrphanGxsTunnels();
     void tickChessPresence();
     bool handleChessPresence(const Id &, const Id &, const RsGxsTunnelService::GxsTunnelInfo &, const QVariantMap &);
-    void notifyTunnelStatus(const Id &, uint32_t);
+    void notifyTunnelStatus(const Id &, RsGxsTunnelService::GxsTunnelStatus);
     void handleGxsTick();
     // Same order as the production tick().
     void tick() {
@@ -187,7 +188,7 @@ int main()
         assert(chess.mPendingTunnels.count(7) && chess.transport.requests == 1);
         chess.tick();                                   // CAN_TALK -> active, probe sent
         assert(chess.mActiveTunnels.count(7));
-        chess.notifyTunnelStatus(1007, S::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED);
+        chess.notifyTunnelStatus(1007, S::GxsTunnelStatus::REMOTELY_CLOSED);
         assert(!chess.mActiveTunnels.count(7) && !chess.mPendingTunnels.count(7));
         assert(chess.transport.closes.empty());         // not from inside the callback
         chess.closeQueuedGxsTunnels();
@@ -201,13 +202,13 @@ int main()
     {
         p3RetroChess chess;
         chess.mActiveTunnels[7] = 1007;
-        chess.transport.tunnels[1007] = S::RS_GXS_TUNNEL_STATUS_TUNNEL_DN;
+        chess.transport.tunnels[1007] = S::GxsTunnelStatus::TUNNEL_DN;
         chess.mGameSessions["7"] = {};
-        chess.notifyTunnelStatus(1007, S::RS_GXS_TUNNEL_STATUS_TUNNEL_DN);
+        chess.notifyTunnelStatus(1007, S::GxsTunnelStatus::TUNNEL_DN);
         assert(chess.mPendingTunnels.count(7) && chess.mTunnelsToClose.empty());
         chess.tick();
         assert(chess.transport.closes.empty() && chess.mPendingTunnels.count(7));
-        chess.transport.tunnels[1007] = S::RS_GXS_TUNNEL_STATUS_CAN_TALK;   // turtle found a new route
+        chess.transport.tunnels[1007] = S::GxsTunnelStatus::CAN_TALK;   // turtle found a new route
         chess.tick();
         assert(chess.mActiveTunnels.count(7) && chess.notify.ready == 1);
         assert(chess.transport.closes.empty());
@@ -217,8 +218,8 @@ int main()
     {
         p3RetroChess chess;
         chess.mActiveTunnels[7] = 1007;
-        chess.transport.tunnels[1007] = S::RS_GXS_TUNNEL_STATUS_TUNNEL_DN;
-        chess.notifyTunnelStatus(1007, S::RS_GXS_TUNNEL_STATUS_TUNNEL_DN);
+        chess.transport.tunnels[1007] = S::GxsTunnelStatus::TUNNEL_DN;
+        chess.notifyTunnelStatus(1007, S::GxsTunnelStatus::TUNNEL_DN);
         chess.tick();
         clockNow += 121;
         chess.tick();
@@ -229,8 +230,8 @@ int main()
     // 4. Down/closed tunnels we do not track any more are released too.
     {
         p3RetroChess chess;
-        chess.transport.tunnels[1009] = S::RS_GXS_TUNNEL_STATUS_TUNNEL_DN;
-        chess.notifyTunnelStatus(1009, S::RS_GXS_TUNNEL_STATUS_TUNNEL_DN);
+        chess.transport.tunnels[1009] = S::GxsTunnelStatus::TUNNEL_DN;
+        chess.notifyTunnelStatus(1009, S::GxsTunnelStatus::TUNNEL_DN);
         chess.closeQueuedGxsTunnels();
         assert(chess.transport.closes.size() == 1 && chess.transport.closes[0] == Id(1009));
     }
@@ -239,7 +240,7 @@ int main()
     {
         p3RetroChess chess;
         chess.mActiveTunnels[7] = 1007;
-        chess.notifyTunnelStatus(1007, S::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED);
+        chess.notifyTunnelStatus(1007, S::GxsTunnelStatus::REMOTELY_CLOSED);
         chess.mPendingTunnels[7] = 1007;                // user re-invited before tick()
         chess.closeQueuedGxsTunnels();
         assert(chess.transport.closes.empty() && chess.mTunnelsToClose.empty());
@@ -248,11 +249,11 @@ int main()
     // 6. Orphan sweep: a tunnel we opened but no longer track is closed.
     {
         p3RetroChess chess;
-        chess.transport.tunnels[1008] = S::RS_GXS_TUNNEL_STATUS_TUNNEL_DN;
+        chess.transport.tunnels[1008] = S::GxsTunnelStatus::TUNNEL_DN;
         chess.mOpenedTunnels.insert(1008);
         chess.mOpenedTunnels.insert(1007);
         chess.mActiveTunnels[7] = 1007;
-        chess.transport.tunnels[1007] = S::RS_GXS_TUNNEL_STATUS_CAN_TALK;
+        chess.transport.tunnels[1007] = S::GxsTunnelStatus::CAN_TALK;
         chess.sweepOrphanGxsTunnels();
         assert(chess.transport.closes.size() == 1 && chess.transport.closes[0] == Id(1008));
         assert(chess.mOpenedTunnels.count(1007));
@@ -267,7 +268,7 @@ int main()
         assert(chess.mPendingTunnels.count(7) && !chess.mPendingTunnels.count(3));
         assert(chess.mChessContacts.at(3).yieldUntil == clockNow + kPresenceYieldSec);
         // Peer 3 dials us: its probe is answered and its tunnel adopted.
-        chess.transport.tunnels[1003] = S::RS_GXS_TUNNEL_STATUS_CAN_TALK;
+        chess.transport.tunnels[1003] = S::GxsTunnelStatus::CAN_TALK;
         QVariantMap request;
         request["type"] = "chess_presence_request";
         request["version"] = 1;
@@ -310,7 +311,7 @@ int main()
     //    (GxsTunnel never frees unacknowledged packets of a closed tunnel).
     {
         p3RetroChess chess;
-        chess.transport.tunnels[1007] = S::RS_GXS_TUNNEL_STATUS_CAN_TALK;
+        chess.transport.tunnels[1007] = S::GxsTunnelStatus::CAN_TALK;
         chess.transport.unacked[1007] = 1;             // e.g. player_leave in flight
         chess.mOpenedTunnels.insert(1007);
         chess.closeGxsTunnel(1007, "test");
@@ -324,7 +325,7 @@ int main()
 
         // Never acknowledged: closed anyway after the grace period.
         p3RetroChess stuck;
-        stuck.transport.tunnels[1008] = S::RS_GXS_TUNNEL_STATUS_TUNNEL_DN;
+        stuck.transport.tunnels[1008] = S::GxsTunnelStatus::TUNNEL_DN;
         stuck.transport.unacked[1008] = 2;
         stuck.closeGxsTunnel(1008, "test");
         stuck.processDeferredCloses();
@@ -335,14 +336,14 @@ int main()
 
         // Remotely closed: nothing will be acknowledged, close right away.
         p3RetroChess remote;
-        remote.transport.tunnels[1009] = S::RS_GXS_TUNNEL_STATUS_REMOTELY_CLOSED;
+        remote.transport.tunnels[1009] = S::GxsTunnelStatus::REMOTELY_CLOSED;
         remote.transport.unacked[1009] = 1;
         remote.closeGxsTunnel(1009, "test");
         assert(remote.transport.closes.size() == 1 && remote.mDeferredCloses.empty());
 
         // Picked up again (same deterministic id) before the close happened.
         p3RetroChess reused;
-        reused.transport.tunnels[1007] = S::RS_GXS_TUNNEL_STATUS_CAN_TALK;
+        reused.transport.tunnels[1007] = S::GxsTunnelStatus::CAN_TALK;
         reused.transport.unacked[1007] = 1;
         reused.closeGxsTunnel(1007, "test");
         reused.mActiveTunnels[7] = 1007;
