@@ -22,6 +22,7 @@
 #include "FourBoard.h"
 #include "ui_FourResultDialog.h"
 #include "../gui/RetroChessSettings.h"
+#include "../gui/RetroChessSoundPlayer.h"
 #include "../interface/rsRetroChess.h"
 #include "gui/SoundManager.h"
 
@@ -341,7 +342,7 @@ struct Match : QDialog
     {
         if (!enabled || SoundManager::isMute()) return;
         if (!audio) {
-            audio = new QMediaPlayer(this);
+            audio = new RetroChessSoundPlayer(this);
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
             auto *output = new QAudioOutput(audio);
             output->setVolume(1.0f);

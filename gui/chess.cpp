@@ -51,6 +51,7 @@
 #include "ChessBoard.h"
 #include "ChessClockWidget.h"
 #include "RetroChessLeaderboard.h"
+#include "RetroChessSoundPlayer.h"
 
 #include <QPointer>
 #include <QIcon>
@@ -3089,7 +3090,7 @@ void RetroChessWindow::updateEndGameBadges(int ply)
 QMediaPlayer *RetroChessWindow::soundPlayer(QMediaPlayer *&player, const char *source, int volumePercent)
 {
 	if (player) return player;
-	player = new QMediaPlayer(this);
+	player = new RetroChessSoundPlayer(this);
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	player->setAudioOutput(new QAudioOutput(player));
 	player->audioOutput()->setVolume(volumePercent / 100.0f);
